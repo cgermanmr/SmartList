@@ -1,6 +1,7 @@
 # PrecioLocal — Angular 19
 
-Documento único del proyecto: propósito, arquitectura, funcionalidades, puesta en marcha, despliegue y roadmap.
+Estado actual del proyecto: propósito, arquitectura, funcionalidades, puesta en marcha y despliegue.
+Roadmap, features futuros e ideas viven en [`docs/`](docs/README.md).
 
 ## Propósito del Proyecto
 
@@ -9,7 +10,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 
 - UI completamente en **español** (formato de fechas `es-AR`, moneda `$`)
 - Fase actual: **Fase 1 — Frontend Angular con localStorage (sin backend)**
-- Roadmap: Fase 2 (backend .NET 8 + DB), Fase 3 (React Native móvil), Fase 4 (microservicios)
+- Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
+- Roadmap: Fase 2 (backend .NET 8 + DB), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 
 ---
 
@@ -30,6 +32,11 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 ## Estructura del Proyecto
 
 ```
+docs/
+├── README.md                   # Índice de features futuros, priorización y prerrequisitos
+├── roadmap.md                  # Fases 2–4
+├── ideas.md                    # Bandeja de ideas sin analizar
+└── features/                   # Un archivo por feature (NN-nombre.md)
 src/
 ├── app/
 │   ├── models/
@@ -276,24 +283,9 @@ Paleta custom `primary` (teal) en `tailwind.config.js`:
 
 ## Roadmap
 
-### Fase 2 — Backend
-- .NET 8 ASP.NET Core + SQL Server / PostgreSQL
-- API REST documentada, autenticación JWT, CORS
-- Migrar localStorage → API, sincronización en nube, datos compartidos entre dispositivos, backups
-- Analytics: búsquedas, reportes de precios, estadísticas de uso
-- Comunidad: calificaciones de comercios, comentarios en precios, reputación de usuarios
-
-### Fase 3 — React Native (iOS + Android)
-- Cámara, lector de código de barras, GPS, notificaciones push, offline avanzado
-- API compartida con la web, login universal
-
-### Fase 4 — Microservicios
-- Autenticación, Productos, Precios, Usuarios, Pagos
-
-### Ideas futuras
-- Favoritos, alertas de precio bajo, listas de compra personalizadas
-- Compartir carrito, cupones y promociones, recomendaciones personalizadas
-- Billeteras digitales / pagos integrados, chat con comerciantes
+Fases técnicas en [`docs/roadmap.md`](docs/roadmap.md). Features planificados (calculadora de precio unitario,
+comparación por comercio, lista compartida, promociones de comercios, pedidos a comercios), su priorización y
+prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`docs/ideas.md`](docs/ideas.md).
 
 ---
 
@@ -316,4 +308,6 @@ Paleta custom `primary` (teal) en `tailwind.config.js`:
 
 ## Documentación
 
-Toda la documentación del proyecto vive en este archivo. `README.md` queda como presentación breve para GitHub.
+- Este archivo describe **lo que existe hoy**. Al implementar un feature, actualizar *Funcionalidades* y *Estado Actual*.
+- [`docs/`](docs/README.md) contiene **lo que viene**: roadmap, un archivo por feature e ideas.
+- `README.md` queda como presentación breve para GitHub.

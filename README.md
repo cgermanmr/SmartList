@@ -32,6 +32,8 @@ https://app.netlify.com/drop), Vercel o GitHub Pages. Al ser una SPA, el hosting
 Fase 1: frontend con persistencia local. Próximas fases: backend .NET 8 con base de datos y autenticación JWT,
 app móvil en React Native y, más adelante, microservicios.
 
+Roadmap, features planificados e ideas: [`docs/`](docs/README.md).
+
 ## Licencia
 
 MIT
