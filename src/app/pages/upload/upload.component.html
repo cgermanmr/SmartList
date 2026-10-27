@@ -1,0 +1,122 @@
+<div class="max-w-md mx-auto">
+
+  <!-- Tabs -->
+  <div class="flex border-b border-gray-200 mb-6">
+    <button
+      (click)="activeTab = 'price'"
+      [class.border-b-2]="activeTab === 'price'"
+      [class.border-primary-700]="activeTab === 'price'"
+      [class.text-primary-700]="activeTab === 'price'"
+      class="px-4 py-3 font-semibold text-gray-500 hover:text-primary-700 transition-colors">
+      💲 Cargar Precio
+    </button>
+    <button
+      (click)="activeTab = 'product'"
+      [class.border-b-2]="activeTab === 'product'"
+      [class.border-primary-700]="activeTab === 'product'"
+      [class.text-primary-700]="activeTab === 'product'"
+      class="px-4 py-3 font-semibold text-gray-500 hover:text-primary-700 transition-colors">
+      ➕ Agregar Producto
+    </button>
+  </div>
+
+  <!-- Tab: Cargar Precio -->
+  <div *ngIf="activeTab === 'price'">
+    <h1 class="text-2xl font-bold mb-6">Cargar Precio</h1>
+
+    <form (ngSubmit)="submitPrice()" class="space-y-4">
+      <div>
+        <label class="block font-semibold mb-2">Producto *</label>
+        <select [(ngModel)]="priceForm.productId" name="productId" class="input-field">
+          <option value="">Selecciona un producto</option>
+          <option *ngFor="let p of products" value="{{ p.id }}">{{ p.name }}</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-2">Precio ($) *</label>
+        <input
+          [(ngModel)]="priceForm.amount"
+          name="amount"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="150.50"
+          class="input-field"
+        >
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-2">Barrio *</label>
+        <input
+          [(ngModel)]="priceForm.barrio"
+          name="barrio"
+          type="text"
+          placeholder="Ej: Almagro"
+          class="input-field"
+        >
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-2">Tienda (Opcional)</label>
+        <input
+          [(ngModel)]="priceForm.store"
+          name="store"
+          type="text"
+          placeholder="Ej: Almacen Don Carlos"
+          class="input-field"
+        >
+      </div>
+
+      <button type="submit" class="btn-primary w-full">Compartir Precio</button>
+    </form>
+  </div>
+
+  <!-- Tab: Agregar Producto -->
+  <div *ngIf="activeTab === 'product'">
+    <h1 class="text-2xl font-bold mb-6">Agregar Producto</h1>
+
+    <form (ngSubmit)="submitProduct()" class="space-y-4">
+      <div>
+        <label class="block font-semibold mb-2">Nombre del producto *</label>
+        <input
+          [(ngModel)]="productForm.name"
+          name="name"
+          type="text"
+          placeholder="Ej: Arroz Largo Fino 1kg"
+          class="input-field"
+        >
+      </div>
+
+      <div>
+        <label class="block font-semibold mb-2">Categoría *</label>
+        <input
+          [(ngModel)]="productForm.category"
+          name="category"
+          type="text"
+          placeholder="Ej: Almacen"
+          class="input-field"
+          list="categories"
+        >
+        <datalist id="categories">
+          <option value="Lacteos">
+          <option value="Almacen">
+          <option value="Aceites">
+          <option value="Proteina">
+          <option value="Bebidas">
+          <option value="Verduras">
+          <option value="Frutas">
+          <option value="Limpieza">
+        </datalist>
+      </div>
+
+      <button type="submit" class="btn-primary w-full">Agregar Producto</button>
+    </form>
+  </div>
+
+  <!-- Mensaje de feedback -->
+  <div *ngIf="message" [ngClass]="messageClass" class="mt-4 p-4 rounded">
+    {{ message }}
+  </div>
+
+</div>

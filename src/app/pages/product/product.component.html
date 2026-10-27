@@ -1,0 +1,145 @@
+<div *ngIf="product">
+  <div class="mb-6">
+    <button (click)="goBack()" class="text-primary-700 hover:text-primary-800 font-semibold">
+      ← Volver
+    </button>
+  </div>
+
+  <div class="card p-6 mb-6">
+    <h1 class="text-3xl font-bold mb-2">{{ product.name }}</h1>
+    <p class="text-gray-600 mb-4">Categoría: {{ product.category }}</p>
+
+    <div *ngIf="stats" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-blue-50 p-4 rounded">
+        <p class="text-xs text-gray-600">Precio Actual</p>
+        <p class="text-2xl font-bold text-blue-700">${{ stats.current | number: '1.2-2' }}</p>
+      </div>
+      <div class="bg-green-50 p-4 rounded">
+        <p class="text-xs text-gray-600">Mínimo</p>
+        <p class="text-2xl font-bold text-green-700">${{ stats.min | number: '1.2-2' }}</p>
+      </div>
+      <div class="bg-red-50 p-4 rounded">
+        <p class="text-xs text-gray-600">Máximo</p>
+        <p class="text-2xl font-bold text-red-700">${{ stats.max | number: '1.2-2' }}</p>
+      </div>
+      <div class="bg-purple-50 p-4 rounded">
+        <p class="text-xs text-gray-600">Promedio</p>
+        <p class="text-2xl font-bold text-purple-700">${{ stats.avg | number: '1.2-2' }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gráfico de evolución de precios (solo si hay más de 3 registros) -->
+  <ng-container *ngIf="getChartData() as chart">
+    <div class="card p-6 mb-6">
+      <h2 class="text-xl font-bold mb-4">Evolución del Precio</h2>
+      <svg [attr.viewBox]="'0 0 ' + chart.W + ' ' + chart.H"
+           class="w-full" style="height:180px" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stop-color="#0f766e" stop-opacity="0.18"/>
+            <stop offset="100%" stop-color="#0f766e" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Líneas guía horizontales -->
+        <g *ngFor="let gy of chart.gridY">
+          <line [attr.x1]="chart.padL" [attr.y1]="gy"
+                [attr.x2]="chart.W - 16" [attr.y2]="gy"
+                stroke="#e5e7eb" stroke-width="1"/>
+        </g>
+
+        <!-- Etiquetas eje Y -->
+        <g *ngFor="let gy of chart.gridY; let gi = index">
+          <text [attr.x]="chart.padL - 6" [attr.y]="gy + 4"
+                text-anchor="end" font-size="10" fill="#9ca3af">
+            ${{ chart.gridLabels[gi] | number:'1.0-0' }}
+          </text>
+        </g>
+
+        <!-- Área rellena -->
+        <path [attr.d]="chart.areaPath" fill="url(#areaGrad)"/>
+
+        <!-- Línea -->
+        <polyline [attr.points]="chart.polyline"
+                  fill="none" stroke="#0f766e" stroke-width="2.5"
+                  stroke-linejoin="round" stroke-linecap="round"/>
+
+        <!-- Puntos -->
+        <g *ngFor="let pt of chart.points">
+          <circle [attr.cx]="pt.x" [attr.cy]="pt.y" r="4"
+                  fill="white" stroke="#0f766e" stroke-width="2"/>
+          <title>${{ pt.price | number:'1.2-2' }}</title>
+        </g>
+
+        <!-- Etiquetas eje X -->
+        <g *ngFor="let pt of chart.xLabels">
+          <text [attr.x]="pt.x" [attr.y]="chart.padT + chart.cH + chart.padB - 6"
+                text-anchor="middle" font-size="10" fill="#9ca3af">
+            {{ pt.label }}
+          </text>
+        </g>
+      </svg>
+    </div>
+  </ng-container>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="lg:col-span-2">
+      <h2 class="text-xl font-bold mb-4">Historial de Precios</h2>
+      <div class="space-y-2">
+        <div *ngFor="let price of prices" class="card p-4">
+
+          <!-- Modo visualización -->
+          <div *ngIf="editingPriceId !== price.id" class="flex justify-between items-center">
+            <div>
+              <p class="font-semibold">${{ price.amount | number: '1.2-2' }}</p>
+              <p class="text-sm text-gray-600">{{ price.barrio }} - {{ price.store }}</p>
+            </div>
+            <div class="flex items-center gap-3">
+              <p class="text-xs text-gray-500">{{ price.date | date: 'short' }}</p>
+              <button (click)="startEdit(price)"
+                      class="text-gray-400 hover:text-primary-700 text-sm transition-colors"
+                      title="Editar precio">
+                ✏️
+              </button>
+            </div>
+          </div>
+
+          <!-- Modo edición inline -->
+          <div *ngIf="editingPriceId === price.id">
+            <p class="text-sm text-gray-500 mb-2">
+              {{ price.barrio }} - {{ price.store }} · {{ price.date | date: 'short' }}
+            </p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-gray-600 font-semibold">$</span>
+              <input
+                type="number"
+                [(ngModel)]="editingAmount"
+                step="0.01"
+                min="0"
+                class="input-field w-32"
+                (keyup.enter)="saveEdit(price)"
+                (keyup.escape)="cancelEdit()"
+              >
+              <button (click)="saveEdit(price)" class="btn-primary py-1 px-3 text-sm">Guardar</button>
+              <button (click)="cancelEdit()" class="btn-secondary py-1 px-3 text-sm">Cancelar</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="card p-6">
+      <h2 class="text-xl font-bold mb-4">Agregar al Carrito</h2>
+      <p class="text-2xl font-bold text-primary-700 mb-4">${{ stats?.current || 0 | number: '1.2-2' }}</p>
+      <button (click)="addToCart()" class="btn-primary w-full">
+        Añadir al Carrito
+      </button>
+    </div>
+  </div>
+</div>
+
+<div *ngIf="!product" class="text-center py-12">
+  <p class="text-gray-500">Producto no encontrado</p>
+</div>
