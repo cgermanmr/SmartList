@@ -29,3 +29,11 @@ la tabla del [índice](README.md).
 - Recomendaciones personalizadas
 - Billeteras digitales / pagos integrados
 - Chat con comerciantes
+
+## Calidad y deuda técnica
+
+- **Botón anidado en el historial de compras** (`pages/purchases/purchases.component.html`): el botón
+  "🛒 Repetir" está dentro del botón que expande la compra. Es HTML inválido (un `<button>` no puede contener
+  otro), los lectores de pantalla lo anuncian mal y depende de `$event.stopPropagation()` para no expandir al
+  hacer clic. Sacar "Repetir" fuera del botón de expandir (p. ej. el encabezado como `div` con dos botones
+  hermanos).
