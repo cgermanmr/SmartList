@@ -32,3 +32,29 @@ export interface Purchase {
   store?: string;
   paymentMethod?: string;
 }
+
+export type Magnitude = 'peso' | 'volumen' | 'unidades';
+export type Unit = 'g' | 'kg' | 'ml' | 'l' | 'u';
+export type PromoType = 'ninguna' | 'nxm' | 'enesima' | 'descuento';
+
+export interface Promo {
+  type: PromoType;
+  take: number | null;     // NxM: unidades que se llevan (3 en 3x2)
+  pay: number | null;      // NxM: unidades que se pagan (2 en 3x2)
+  nth: number | null;      // N-ésima: unidad con descuento (2 en "70% en la 2da")
+  percent: number | null;  // N-ésima y descuento directo: % de DESCUENTO
+}
+
+export interface Presentation {
+  id: string;              // Date.now().toString() + sufijo aleatorio
+  label: string;           // opcional; vacío → "Presentación N"
+  price: number | null;
+  quantity: number | null;
+  unit: Unit;
+  promo: Promo;
+}
+
+export interface CalculatorState {
+  magnitude: Magnitude;
+  presentations: Presentation[];  // largo entre 2 y 6
+}

@@ -40,15 +40,18 @@ docs/
 src/
 ├── app/
 │   ├── models/
-│   │   └── product.ts          # Interfaces: Product, Price, CartItem, Purchase
+│   │   └── product.ts          # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
 │   ├── services/
 │   │   └── data.service.ts     # Servicio único con toda la lógica de datos + persistencia
+│   ├── utils/
+│   │   └── unit-price.ts       # Funciones puras de la calculadora (precio unitario, promos, comparación)
 │   ├── pages/                  # Cada página = *.component.ts + *.component.html
 │   │   ├── search/             # Búsqueda, último precio, variación %, +/- cantidad en carrito
 │   │   ├── cart/               # Carrito, comparación vs última compra, checkout con medio de pago
 │   │   ├── upload/             # Tabs: cargar precio / agregar producto
 │   │   ├── product/            # Detalle: stats, gráfico SVG, historial editable
-│   │   └── purchases/          # Historial de compras, recargar compra al carrito
+│   │   ├── purchases/          # Historial de compras, recargar compra al carrito
+│   │   └── calculator/         # Calculadora de precio unitario ($/kg, $/l, $/u) con promociones
 │   ├── app.component.ts/.html  # Layout: header (contador + total carrito), nav, router-outlet, footer
 │   └── app.routes.ts           # Rutas con lazy loading (loadComponent)
 ├── index.html                  # lang="es", theme-color, link a manifest
@@ -64,7 +67,7 @@ src/
 - **Standalone Components** — sin NgModules; cada componente declara sus `imports` (`CommonModule`, `FormsModule`, `RouterModule`)
 - **Templates en archivo separado** — `templateUrl: './x.component.html'` (no inline)
 - **DataService** — servicio único `providedIn: 'root'`, inyectado por constructor (`constructor(private data: DataService)`)
-- **Estado** — un `BehaviorSubject` privado por colección, expuesto como Observable con sufijo `$`: `products$`, `prices$`, `cart$`, `purchases$`; getters síncronos `getProducts()`, `getPrices()`, `getCart()`, `getPurchases()`
+- **Estado** — un `BehaviorSubject` privado por colección, expuesto como Observable con sufijo `$`: `products$`, `prices$`, `cart$`, `purchases$`, `calculator$`; getters síncronos `getProducts()`, `getPrices()`, `getCart()`, `getPurchases()`, `getCalculator()`
 - **Patrón de mutación** — construir el nuevo array → `subject.next(next)` → `saveToStorage(KEY, next)`
 - **Sin NgRx** — estado gestionado directamente con RxJS
 - **IDs** — se generan con `Date.now().toString()` (sin UUID)
@@ -78,8 +81,11 @@ src/
 | `preciolocal_prices` | `Price[]` | 3 precios de ejemplo (`DEFAULT_PRICES`) |
 | `preciolocal_cart` | `CartItem[]` | `[]` |
 | `preciolocal_purchases` | `Purchase[]` (más reciente primero) | `[]` |
+| `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`DEFAULT_CALCULATOR`) |
 
-`loadFromStorage` / `saveToStorage` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
+`loadFromStorage<T>` / `saveToStorage<T>` (genéricos, no solo arrays) envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
+`preciolocal_calculator` además se valida al cargar (`loadCalculator`): si la magnitud, el largo (2–6) o la forma de alguna
+presentación no es válida, se usa el estado inicial.
 Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar con `new Date(p.date)`.
 
 ### Rutas
@@ -90,6 +96,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/upload` | UploadComponent | 📸 Cargar Precio | Cargar precio o producto nuevo |
 | `/cart` | CartComponent | 🛒 Mi Carrito | Carrito y checkout |
 | `/purchases` | PurchasesComponent | 📋 Historial | Historial de compras |
+| `/calculadora` | CalculatorComponent | 🧮 Calculadora | Comparar presentaciones por precio unitario |
 | `/product/:id` | ProductComponent | — | Detalle del producto |
 | `**` | — | — | Redirige a `/` |
 
@@ -134,6 +141,36 @@ interface Purchase {
 }
 ```
 
+Tipos de la calculadora (no se relacionan con `Product` ni `Price`):
+
+```typescript
+type Magnitude = 'peso' | 'volumen' | 'unidades';
+type Unit = 'g' | 'kg' | 'ml' | 'l' | 'u';
+type PromoType = 'ninguna' | 'nxm' | 'enesima' | 'descuento';
+
+interface Promo {          // plano: los campos que no usa el tipo quedan en null
+  type: PromoType;
+  take: number | null;     // NxM: unidades que se llevan
+  pay: number | null;      // NxM: unidades que se pagan
+  nth: number | null;      // N-ésima: unidad con descuento
+  percent: number | null;  // N-ésima y descuento directo: % de descuento
+}
+
+interface Presentation {
+  id: string;
+  label: string;           // vacío → "Presentación N"
+  price: number | null;
+  quantity: number | null;
+  unit: Unit;
+  promo: Promo;
+}
+
+interface CalculatorState {
+  magnitude: Magnitude;
+  presentations: Presentation[];  // entre 2 y 6
+}
+```
+
 ---
 
 ## Funcionalidades (Fase 1)
@@ -167,8 +204,18 @@ interface Purchase {
 - Por ítem: variación % del precio pagado vs último precio registrado
 - "Cargar al carrito": si el carrito tiene ítems pregunta si **reemplazar o combinar** (`loadPurchaseToCart(purchase, merge)`); usa el precio actual registrado de cada producto
 
+### Calculadora de precio unitario (`/calculadora`)
+- Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
+- Magnitud fija por comparación: **Peso** (`g`, `kg`), **Volumen** (`ml`, `l`) o **Unidades** (`u`); al cambiarla, todas las unidades pasan a la de defecto (`g`, `ml`, `u`) y se conservan precios, cantidades y promos
+- De **2 a 6 presentaciones**, cada una con nombre opcional, precio, cantidad y unidad
+- Promoción opcional por presentación: NxM (3x2), % de descuento en la N-ésima unidad ("70% en la 2da" = la 2da cuesta 30 %), % de descuento directo; las promos asumen **lote completo** y muestran la leyenda "llevando N"
+- Resultado en vivo normalizado a **$/kg**, **$/l** o **$/u**: la más conveniente en verde (todas las empatadas), `+X %` en las demás, "Completar datos" en las inválidas; hay ganador solo con al menos 2 válidas
+- Cálculo en `utils/unit-price.ts` (`toBaseQuantity`, `lotOf`, `unitPrice`, `compare`), sin dependencias de Angular
+- Guarda la última comparación en `preciolocal_calculator`; "Nueva comparación" vuelve al estado inicial sin confirmar
+
 ### Layout y PWA
 - Header con contador de ítems y total del carrito
+- Nav con scroll horizontal (`overflow-x-auto`) para que los 5 ítems entren en móvil
 - `manifest.json` con `display: standalone` → instalable desde el navegador
 - **No hay service worker**: la app no funciona offline sin conexión inicial (los datos sí persisten en localStorage)
 
@@ -297,6 +344,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Carrito con cantidades/precios editables y comparación contra última compra
 - [x] Checkout con medio de pago y registro automático de precios pagados
 - [x] Historial de compras con recarga al carrito (reemplazar/combinar)
+- [x] Calculadora de precio unitario con promociones y última comparación guardada
 - [x] Persistencia en localStorage
 - [x] PWA instalable (manifest)
 - [ ] Service worker / modo offline

@@ -1,11 +1,13 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { Product, Price, CartItem, Purchase } from '../models/product';
+import { Product, Price, CartItem, Purchase, CalculatorState, Magnitude, PromoType } from '../models/product';
+import { UNITS_BY_MAGNITUDE } from '../utils/unit-price';
 
-const PRODUCTS_KEY  = 'preciolocal_products';
-const PRICES_KEY    = 'preciolocal_prices';
-const CART_KEY      = 'preciolocal_cart';
-const PURCHASES_KEY = 'preciolocal_purchases';
+const PRODUCTS_KEY   = 'preciolocal_products';
+const PRICES_KEY     = 'preciolocal_prices';
+const CART_KEY       = 'preciolocal_cart';
+const PURCHASES_KEY  = 'preciolocal_purchases';
+const CALCULATOR_KEY = 'preciolocal_calculator';
 
 const DEFAULT_PRODUCTS: Product[] = [
   { id: '1', name: 'Leche 1L',          category: 'Lacteos'   },
@@ -24,7 +26,18 @@ const DEFAULT_PRICES: Price[] = [
   { id: '3', productId: '2', amount: 45,  date: new Date(), barrio: 'Almagro',   store: 'Panaderia' },
 ];
 
-function loadFromStorage<T>(key: string, fallback: T[]): T[] {
+const DEFAULT_CALCULATOR: CalculatorState = {
+  magnitude: 'peso',
+  presentations: [
+    { id: '1', label: '', price: null, quantity: null, unit: 'g', promo: { type: 'ninguna', take: null, pay: null, nth: null, percent: null } },
+    { id: '2', label: '', price: null, quantity: null, unit: 'g', promo: { type: 'ninguna', take: null, pay: null, nth: null, percent: null } },
+  ],
+};
+
+const MAGNITUDES: Magnitude[] = ['peso', 'volumen', 'unidades'];
+const PROMO_TYPES: PromoType[] = ['ninguna', 'nxm', 'enesima', 'descuento'];
+
+function loadFromStorage<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
@@ -33,10 +46,41 @@ function loadFromStorage<T>(key: string, fallback: T[]): T[] {
   }
 }
 
-function saveToStorage<T>(key: string, value: T[]): void {
+function saveToStorage<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch { /* cuota excedida u otros errores */ }
+}
+
+function isNumberOrNull(value: unknown): boolean {
+  return value === null || typeof value === 'number';
+}
+
+function isValidPresentation(p: any, magnitude: Magnitude): boolean {
+  return !!p && typeof p === 'object'
+    && typeof p.id === 'string'
+    && typeof p.label === 'string'
+    && isNumberOrNull(p.price)
+    && isNumberOrNull(p.quantity)
+    && UNITS_BY_MAGNITUDE[magnitude].includes(p.unit)
+    && !!p.promo && typeof p.promo === 'object'
+    && PROMO_TYPES.includes(p.promo.type)
+    && isNumberOrNull(p.promo.take)
+    && isNumberOrNull(p.promo.pay)
+    && isNumberOrNull(p.promo.nth)
+    && isNumberOrNull(p.promo.percent);
+}
+
+/** Valida la forma del estado guardado; si no es válida devuelve el estado inicial */
+function loadCalculator(): CalculatorState {
+  const state = loadFromStorage<Partial<CalculatorState> | null>(CALCULATOR_KEY, null);
+  const valid = !!state
+    && MAGNITUDES.includes(state.magnitude as Magnitude)
+    && Array.isArray(state.presentations)
+    && state.presentations.length >= 2
+    && state.presentations.length <= 6
+    && state.presentations.every(p => isValidPresentation(p, state.magnitude as Magnitude));
+  return valid ? state as CalculatorState : structuredClone(DEFAULT_CALCULATOR);
 }
 
 @Injectable({ providedIn: 'root' })
@@ -46,16 +90,19 @@ export class DataService {
   private prices    = new BehaviorSubject<Price[]>   (loadFromStorage(PRICES_KEY,    DEFAULT_PRICES));
   private cart      = new BehaviorSubject<CartItem[]>(loadFromStorage(CART_KEY,      []));
   private purchases = new BehaviorSubject<Purchase[]>(loadFromStorage(PURCHASES_KEY, []));
+  private calculator = new BehaviorSubject<CalculatorState>(loadCalculator());
 
-  products$  = this.products.asObservable();
-  prices$    = this.prices.asObservable();
-  cart$      = this.cart.asObservable();
-  purchases$ = this.purchases.asObservable();
+  products$   = this.products.asObservable();
+  prices$     = this.prices.asObservable();
+  cart$       = this.cart.asObservable();
+  purchases$  = this.purchases.asObservable();
+  calculator$ = this.calculator.asObservable();
 
-  getProducts()  { return this.products.value;  }
-  getPrices()    { return this.prices.value;    }
-  getCart()      { return this.cart.value;      }
-  getPurchases() { return this.purchases.value; }
+  getProducts()   { return this.products.value;   }
+  getPrices()     { return this.prices.value;     }
+  getCart()       { return this.cart.value;       }
+  getPurchases()  { return this.purchases.value;  }
+  getCalculator() { return this.calculator.value; }
 
   // ── Productos ─────────────────────────────────────────────
   addProduct(product: Product) {
@@ -189,5 +236,18 @@ export class DataService {
       if (item) return item.price;
     }
     return null;
+  }
+
+  // ── Calculadora ───────────────────────────────────────────
+  saveCalculator(state: CalculatorState) {
+    const next: CalculatorState = { ...state, presentations: [...state.presentations] };
+    this.calculator.next(next);
+    saveToStorage(CALCULATOR_KEY, next);
+  }
+
+  resetCalculator() {
+    const next = structuredClone(DEFAULT_CALCULATOR);
+    this.calculator.next(next);
+    saveToStorage(CALCULATOR_KEY, next);
   }
 }

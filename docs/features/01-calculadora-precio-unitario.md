@@ -1,7 +1,8 @@
 # 01 — Calculadora de precio unitario
 
-- **Estado:** Idea
+- **Estado:** Hecho
 - **Fase:** 1 (sin backend)
+- **Spec:** [`specs/01-calculadora-precio-unitario.md`](../../specs/01-calculadora-precio-unitario.md)
 
 ## Problema
 

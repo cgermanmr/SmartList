@@ -1,0 +1,224 @@
+<div class="max-w-2xl mx-auto">
+  <h1 class="text-2xl font-bold mb-2">🧮 Calculadora de precio unitario</h1>
+  <p class="text-gray-600 mb-6">Compará presentaciones del mismo producto por precio por kg, litro o unidad.</p>
+
+  <!-- Magnitud -->
+  <div class="mb-6">
+    <span id="magnitude-label" class="block font-semibold mb-2">¿Qué vas a comparar?</span>
+    <div role="group" aria-labelledby="magnitude-label" class="grid grid-cols-3 gap-2">
+      <button
+        *ngFor="let m of magnitudes"
+        type="button"
+        (click)="setMagnitude(m.value)"
+        [attr.aria-pressed]="state.magnitude === m.value"
+        [class.bg-primary-700]="state.magnitude === m.value"
+        [class.text-white]="state.magnitude === m.value"
+        [class.border-primary-700]="state.magnitude === m.value"
+        class="flex flex-col items-center px-2 py-2 rounded-lg border border-gray-300 bg-white font-semibold text-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200">
+        <span aria-hidden="true">{{ m.icon }}</span>
+        <span>{{ m.label }}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Presentaciones -->
+  <div class="flex items-center justify-between mb-2">
+    <h2 class="font-semibold">Presentaciones</h2>
+    <button
+      type="button"
+      (click)="reset()"
+      class="px-3 py-1 rounded-lg text-sm font-semibold text-primary-700 hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200">
+      ↺ Nueva comparación
+    </button>
+  </div>
+
+  <div class="space-y-4 mb-4">
+    <div
+      *ngFor="let p of state.presentations; let i = index; trackBy: trackById"
+      [class.border-green-500]="results[p.id]?.isBest"
+      [class.ring-2]="results[p.id]?.isBest"
+      [class.ring-green-200]="results[p.id]?.isBest"
+      class="card p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <label [for]="'label-' + p.id" class="sr-only">Nombre de la presentación {{ i + 1 }}</label>
+        <input
+          [id]="'label-' + p.id"
+          [(ngModel)]="p.label"
+          (ngModelChange)="save()"
+          type="text"
+          [placeholder]="'Presentación ' + (i + 1)"
+          class="input-field font-semibold"
+        >
+        <button
+          type="button"
+          (click)="removePresentation(p.id)"
+          [disabled]="!canRemove"
+          [attr.aria-label]="'Quitar presentación ' + (i + 1)"
+          class="shrink-0 w-10 h-10 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 disabled:cursor-not-allowed">
+          ✕
+        </button>
+      </div>
+
+      <div class="grid grid-cols-[1fr_1fr_auto] gap-2">
+        <div>
+          <label [for]="'price-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Precio ($)</label>
+          <input
+            [id]="'price-' + p.id"
+            [(ngModel)]="p.price"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="any"
+            placeholder="0"
+            class="input-field"
+          >
+        </div>
+        <div>
+          <label [for]="'quantity-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Cantidad</label>
+          <input
+            [id]="'quantity-' + p.id"
+            [(ngModel)]="p.quantity"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            step="any"
+            placeholder="0"
+            class="input-field"
+          >
+        </div>
+        <div>
+          <label [for]="'unit-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Unidad</label>
+          <select
+            [id]="'unit-' + p.id"
+            [(ngModel)]="p.unit"
+            (ngModelChange)="save()"
+            class="input-field">
+            <option *ngFor="let u of units" [value]="u">{{ u }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Promoción -->
+      <div class="mt-3">
+        <label [for]="'promo-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Promoción</label>
+        <select
+          [id]="'promo-' + p.id"
+          [(ngModel)]="p.promo.type"
+          (ngModelChange)="save()"
+          class="input-field">
+          <option *ngFor="let t of promoTypes" [value]="t.value">{{ t.label }}</option>
+        </select>
+      </div>
+
+      <div *ngIf="p.promo.type === 'nxm'" class="grid grid-cols-2 gap-2 mt-2">
+        <div>
+          <label [for]="'take-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Llevás</label>
+          <input
+            [id]="'take-' + p.id"
+            [(ngModel)]="p.promo.take"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="numeric"
+            min="2"
+            step="1"
+            placeholder="3"
+            class="input-field"
+          >
+        </div>
+        <div>
+          <label [for]="'pay-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Pagás</label>
+          <input
+            [id]="'pay-' + p.id"
+            [(ngModel)]="p.promo.pay"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            step="1"
+            placeholder="2"
+            class="input-field"
+          >
+        </div>
+      </div>
+
+      <div *ngIf="p.promo.type === 'enesima'" class="grid grid-cols-2 gap-2 mt-2">
+        <div>
+          <label [for]="'nth-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">En la unidad N°</label>
+          <input
+            [id]="'nth-' + p.id"
+            [(ngModel)]="p.promo.nth"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="numeric"
+            min="2"
+            step="1"
+            placeholder="2"
+            class="input-field"
+          >
+        </div>
+        <div>
+          <label [for]="'nth-percent-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Descuento (%)</label>
+          <input
+            [id]="'nth-percent-' + p.id"
+            [(ngModel)]="p.promo.percent"
+            (ngModelChange)="save()"
+            type="number"
+            inputmode="decimal"
+            min="0"
+            max="100"
+            step="any"
+            placeholder="70"
+            class="input-field"
+          >
+        </div>
+      </div>
+
+      <div *ngIf="p.promo.type === 'descuento'" class="mt-2">
+        <label [for]="'percent-' + p.id" class="block text-sm font-semibold text-gray-600 mb-1">Descuento (%)</label>
+        <input
+          [id]="'percent-' + p.id"
+          [(ngModel)]="p.promo.percent"
+          (ngModelChange)="save()"
+          type="number"
+          inputmode="decimal"
+          min="0"
+          max="100"
+          step="any"
+          placeholder="20"
+          class="input-field"
+        >
+      </div>
+
+      <!-- Resultado -->
+      <div *ngIf="results[p.id] as r" aria-live="polite"
+           class="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+        <ng-container *ngIf="r.unitPrice !== null; else incomplete">
+          <p class="text-xl font-bold" [class.text-green-700]="r.isBest" [class.text-gray-800]="!r.isBest">
+            ${{ r.unitPrice | number: '1.2-2' }}<span class="text-sm font-semibold text-gray-500">/{{ baseUnit }}</span>
+            <span *ngIf="r.lotUnits > 1" class="block text-sm font-normal text-gray-500">llevando {{ r.lotUnits }}</span>
+          </p>
+          <span *ngIf="r.isBest" class="px-2 py-1 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+            ✓ Más conveniente
+          </span>
+          <span *ngIf="r.diffPercent !== null" class="px-2 py-1 rounded-full bg-red-100 text-red-700 text-sm font-semibold">
+            +{{ r.diffPercent | number: '1.0-2' }} %
+          </span>
+        </ng-container>
+        <ng-template #incomplete>
+          <p class="text-sm text-gray-500">Completar datos</p>
+        </ng-template>
+      </div>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    (click)="addPresentation()"
+    [disabled]="!canAdd"
+    class="btn-secondary w-full disabled:opacity-50 disabled:cursor-not-allowed">
+    + Agregar presentación
+  </button>
+  <p *ngIf="!canAdd" class="text-sm text-gray-500 text-center mt-2">Máximo 6 presentaciones.</p>
+</div>

@@ -22,6 +22,10 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/purchases/purchases.component').then(m => m.PurchasesComponent)
   },
   {
+    path: 'calculadora',
+    loadComponent: () => import('./pages/calculator/calculator.component').then(m => m.CalculatorComponent)
+  },
+  {
     path: '**',
     redirectTo: ''
   }
