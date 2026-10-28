@@ -1,6 +1,6 @@
 # SPEC 02 — "Repetir" fuera del botón de expandir en el historial
 
-> **Estado:** Borrador
+> **Estado:** Implementado (en la migración a Next.js, [SPEC 06](06-migracion-nextjs-vercel.md))
 > **Depende de:** —
 > **Fecha:** 2026-10-28
 > **Objetivo:** Sacar el botón "🛒 Repetir" de adentro del botón que expande cada compra en `/purchases`, para que el HTML sea válido, accesible y no dependa de `stopPropagation()`.

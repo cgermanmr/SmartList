@@ -63,8 +63,8 @@ listas chicas con pocas personas editando.
 
 | Opción | A favor | En contra |
 |---|---|---|
-| Backend .NET 8 + **SignalR** (previsto en Fase 2) | Alineado con el roadmap, control total | Requiere tener backend, auth y hosting antes |
-| Servicio realtime gestionado como paso intermedio | Se puede entregar antes que el backend completo | Dependencia externa; luego hay que migrar |
+| **Supabase Realtime** + Auth + RLS (Fase 2 del roadmap) | Postgres con suscripciones a cambios, auth incluida, sin servidor propio; integración con Vercel | Dependencia de un servicio gestionado |
+| Backend .NET 8 + SignalR | Control total | Requiere construir y hostear backend y auth propios; ya no es el plan del roadmap |
 
 ## UI/UX
 
@@ -75,7 +75,7 @@ listas chicas con pocas personas editando.
 ## Dependencias
 
 - Backend + autenticación (Fase 2 del [roadmap](../roadmap.md)).
-- Canal de tiempo real (SignalR o equivalente).
+- Canal de tiempo real (Supabase Realtime).
 - Service worker para el modo offline (evolución futura).
 
 ## Preguntas abiertas

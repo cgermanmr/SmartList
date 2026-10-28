@@ -12,7 +12,7 @@ pack de 6 vs unidad suelta) y a simple vista no se sabe cuál conviene. Las prom
 
 ## Qué existe hoy
 
-Nada. `Product` (`src/app/models/product.ts`) no guarda tamaño ni unidad, así que tampoco se puede calcular
+Nada. `Product` (`src/lib/models.ts`) no guarda tamaño ni unidad, así que tampoco se puede calcular
 el precio por kilo o por litro a partir de los precios registrados.
 
 ## Alcance MVP
