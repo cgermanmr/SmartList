@@ -3,20 +3,22 @@
 Fases del proyecto. Los features concretos de producto están en [`features/`](features/) y priorizados en el
 [índice](README.md).
 
-## Fase 1 — Frontend Angular con localStorage (actual)
+## Fase 1 — Frontend Next.js con localStorage (actual)
 
-App funcional sin backend. Ver *Estado Actual* en [`CLAUDE.md`](../CLAUDE.md).
+App funcional sin backend, publicada en Vercel con CI en GitHub Actions
+([SPEC 06](../specs/06-migracion-nextjs-vercel.md); antes era Angular 19). Ver *Estado Actual* en [`CLAUDE.md`](../CLAUDE.md).
 
 Pendiente dentro de la fase:
 - Service worker / modo offline
-- Tests y lint configurados
 - [01 — Calculadora de precio unitario](features/01-calculadora-precio-unitario.md)
 - [02 — Comparación por comercio](features/02-comparacion-por-comercio.md)
 
-## Fase 2 — Backend
+## Fase 2 — Backend (Supabase)
 
-- .NET 8 ASP.NET Core + SQL Server / PostgreSQL
-- API REST documentada, autenticación JWT, CORS
+- **Supabase**: Postgres + Auth + Realtime, con seguridad por filas (RLS); reemplaza al backend .NET 8
+  que estaba previsto. Se usa desde el cliente con `supabase-js`; el código de servidor de Next.js (route
+  handlers, server actions) queda para lo que necesite secretos (p. ej. Web Push)
+- Variables `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` vía la integración de Vercel
 - Migrar localStorage → API, sincronización en nube, datos compartidos entre dispositivos, backups
 - Analytics: búsquedas, reportes de precios, estadísticas de uso
 - Comunidad: calificaciones de comercios, comentarios en precios, reputación de usuarios

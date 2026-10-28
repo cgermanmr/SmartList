@@ -1,9 +1,26 @@
-node_modules/
-dist/
-.angular/
+# dependencias
+/node_modules
+
+# tests
+/coverage
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# vercel
+.vercel
+
+# variables de entorno (solo se versiona .env.example)
+.env*
+!.env.example
+
+# misc
 .DS_Store
 *.log
-.env
+*.pem
 .vscode/
 .idea/
 .playwright-mcp/

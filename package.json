@@ -1,39 +1,34 @@
 {
   "name": "precio-local",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "PWA para comparar precios y gestionar carrito de compras",
-  "scripts": {
-    "ng": "ng",
-    "start": "ng serve --open",
-    "build": "ng build",
-    "build:prod": "ng build --configuration production",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "lint": "ng lint",
-    "format": "prettier --write \"src/**/*.{ts,html,css}\""
-  },
   "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev -p 4200",
+    "build": "next build",
+    "start": "next start -p 4200",
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "dependencies": {
-    "@angular/animations": "^19.0.0",
-    "@angular/common": "^19.0.0",
-    "@angular/compiler": "^19.0.0",
-    "@angular/core": "^19.0.0",
-    "@angular/forms": "^19.0.0",
-    "@angular/platform-browser": "^19.0.0",
-    "@angular/platform-browser-dynamic": "^19.0.0",
-    "@angular/router": "^19.0.0",
-    "rxjs": "^7.8.0",
-    "tslib": "^2.6.0",
-    "zone.js": "^0.15.0"
+    "next": "16.4.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^19.0.0",
-    "@angular/cli": "^19.0.0",
-    "@angular/compiler-cli": "^19.0.0",
-    "@types/node": "^20.0.0",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.4.0",
-    "autoprefixer": "^10.4.0",
-    "typescript": "^5.6.0"
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.3",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^5.0.5"
   }
 }

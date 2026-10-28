@@ -4,6 +4,8 @@
 > **Depende de:** [SPEC 02](02-boton-repetir-historial.md) (mismo template de `/purchases`), [SPEC 03](03-panel-gasto-mensual.md) (`paymentLabel`)
 > **Fecha:** 2026-10-28
 > **Objetivo:** Permitir descargar desde `/purchases` el historial de compras y el historial de precios como archivos CSV que se abren bien con doble clic en Excel en español.
+>
+> **Nota (2026-10-28):** escrita para la versión Angular. Desde la [SPEC 06](06-migracion-nextjs-vercel.md) la app es Next.js: las páginas están en `src/app/<ruta>/page.tsx`, la lógica de datos en `src/lib/store.ts` (Zustand) y el formato en `src/lib/format.ts`. Adaptar rutas de archivos y sintaxis de templates al implementarla.
 
 Origen: [`docs/ideas.md`](../docs/ideas.md) → *Análisis de gastos* → "Exportar historial de compras y precios a CSV".
 

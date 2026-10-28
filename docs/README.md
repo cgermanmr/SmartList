@@ -38,7 +38,7 @@ Piezas que no son features en sí, pero que varios features necesitan. Conviene 
 |---|---|---|
 | **Catálogo de comercios** (`Store`) | 02, 04, 05 | Hoy `barrio` y `store` son texto libre en cada `Price`; "Coto" y "coto" son comercios distintos |
 | **Presentación del producto** (tamaño + unidad) | 01, 02 | Hoy `Product` no tiene tamaño; no se puede comparar $/kg ni $/l |
-| **Backend + autenticación** | 03, 04, 05 | Fase 2 del [roadmap](roadmap.md) |
+| **Backend + autenticación** | 03, 04, 05 | Fase 2 del [roadmap](roadmap.md): Supabase |
 | **Service worker** | 03 (offline), 04 (push) | Hoy la PWA solo tiene `manifest.json` |
 
 ## Cómo agregar un feature

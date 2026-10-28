@@ -34,8 +34,4 @@ enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se imple
 
 ## Calidad y deuda técnica
 
-- **Botón anidado en el historial de compras** (`pages/purchases/purchases.component.html`): el botón
-  "🛒 Repetir" está dentro del botón que expande la compra. Es HTML inválido (un `<button>` no puede contener
-  otro), los lectores de pantalla lo anuncian mal y depende de `$event.stopPropagation()` para no expandir al
-  hacer clic. Sacar "Repetir" fuera del botón de expandir (p. ej. el encabezado como `div` con dos botones
-  hermanos). → [spec 02](../specs/02-boton-repetir-historial.md)
+- (vacío por ahora)

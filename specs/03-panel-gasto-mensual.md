@@ -4,6 +4,8 @@
 > **Depende de:** —
 > **Fecha:** 2026-10-28
 > **Objetivo:** Agregar una página `/gastos` que muestre, a partir del historial de compras, cuánto se gastó por mes, cómo se compara con el mes anterior y cómo se reparte por categoría y por medio de pago.
+>
+> **Nota (2026-10-28):** escrita para la versión Angular. Desde la [SPEC 06](06-migracion-nextjs-vercel.md) la app es Next.js: las páginas están en `src/app/<ruta>/page.tsx`, la lógica de datos en `src/lib/store.ts` (Zustand) y el formato en `src/lib/format.ts`. Adaptar rutas de archivos y sintaxis de templates al implementarla.
 
 Origen: [`docs/ideas.md`](../docs/ideas.md) → *Análisis de gastos* → "Panel de gasto mensual".
 

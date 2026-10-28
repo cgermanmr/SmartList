@@ -4,6 +4,8 @@
 > **Depende de:** [SPEC 03 — Panel de gasto mensual](03-panel-gasto-mensual.md)
 > **Fecha:** 2026-10-28
 > **Objetivo:** Agregar a `/gastos` una sección que calcule cuánto subió (o bajó) la canasta propia entre el mes elegido y el mes anterior con compras, usando los precios realmente pagados.
+>
+> **Nota (2026-10-28):** escrita para la versión Angular. Desde la [SPEC 06](06-migracion-nextjs-vercel.md) la app es Next.js: las páginas están en `src/app/<ruta>/page.tsx`, la lógica de datos en `src/lib/store.ts` (Zustand) y el formato en `src/lib/format.ts`. Adaptar rutas de archivos y sintaxis de templates al implementarla.
 
 Origen: [`docs/ideas.md`](../docs/ideas.md) → *Análisis de gastos* → "Inflación personal".
 

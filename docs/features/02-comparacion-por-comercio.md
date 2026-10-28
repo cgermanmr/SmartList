@@ -11,13 +11,13 @@ agrupa por comercio.
 
 ## Qué existe hoy
 
-- `Price` guarda `barrio` (requerido) y `store` (opcional) como **texto libre** (`src/app/models/product.ts`).
+- `Price` guarda `barrio` (requerido) y `store` (opcional) como **texto libre** (`src/lib/models.ts`).
 - Detalle de producto (`/product/:id`): lista el historial con barrio, tienda y fecha, más estadísticas
-  generales (`getPriceStats` en `src/app/services/data.service.ts`), sin separar por comercio.
+  generales (`getPriceStats` en `src/lib/store.ts`), sin separar por comercio.
 - Carrito: badge contra el precio de la **última compra** (`getLastPurchasedPrice`), sin importar dónde fue.
 - Historial de compras (`/purchases`): variación del precio pagado vs el último precio registrado.
 - Checkout: si no se marca "comercio único", los precios se registran con barrio `Sin especificar` y sin
-  tienda (`src/app/pages/cart/cart.component.ts`), así que esos datos no sirven para comparar comercios.
+  tienda (`src/app/cart/page.tsx`), así que esos datos no sirven para comparar comercios.
 
 ## Alcance MVP
 
