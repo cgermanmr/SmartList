@@ -1,14 +1,16 @@
 # Bandeja de ideas
 
 Ideas sin analizar. Cuando una se define mejor, se crea su archivo en [`features/`](features/) y se agrega a
-la tabla del [índice](README.md).
+la tabla del [índice](README.md). Las ideas chicas pueden pasar directo a una spec en [`specs/`](../specs/): se
+enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se implementa.
 
 ## Análisis de gastos
 
 - **Panel de gasto mensual**: total gastado por mes, por categoría y por medio de pago, a partir de `Purchase`.
+  → [spec 03](../specs/03-panel-gasto-mensual.md)
 - **Inflación personal**: variación de la canasta propia entre compras o entre meses (mismos productos, mismas
-  cantidades), para comparar contra la inflación oficial.
-- Exportar historial de compras y precios a CSV.
+  cantidades), para comparar contra la inflación oficial. → [spec 04](../specs/04-inflacion-personal.md)
+- Exportar historial de compras y precios a CSV. → [spec 05](../specs/05-exportar-csv.md)
 
 ## Productos y precios
 
@@ -36,4 +38,4 @@ la tabla del [índice](README.md).
   "🛒 Repetir" está dentro del botón que expande la compra. Es HTML inválido (un `<button>` no puede contener
   otro), los lectores de pantalla lo anuncian mal y depende de `$event.stopPropagation()` para no expandir al
   hacer clic. Sacar "Repetir" fuera del botón de expandir (p. ej. el encabezado como `div` con dos botones
-  hermanos).
+  hermanos). → [spec 02](../specs/02-boton-repetir-historial.md)
