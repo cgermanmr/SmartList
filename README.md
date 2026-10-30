@@ -1,4 +1,4 @@
-# 💰 PrecioLocal
+# 💰 El Changuito
 
 PWA en **Next.js 16** + **Tailwind CSS** para que los vecinos registren y comparen precios de productos por barrio y
 comercio, armen su carrito y lleven un historial de compras. Los datos se guardan en `localStorage` (todavía sin backend).
@@ -27,7 +27,7 @@ npm run build      # build de producción
 
 ## Despliegue
 
-Continuo en **Vercel**: cada merge a `main` publica producción y cada push a `dev` o PR genera una URL de preview.
+Continuo en **Vercel**: cada merge a `main` publica producción en https://elchanguito.vercel.app y cada push a `dev` o PR genera una URL de preview.
 GitHub Actions corre lint, tests y build en cada cambio (`.github/workflows/ci.yml`).
 
 ## Estado

@@ -6,7 +6,7 @@ import StoreHydrator from '@/components/StoreHydrator';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PrecioLocal - Carrito de Compras',
+  title: 'El Changuito',
   description: 'PWA para comparar precios y gestionar compras',
   manifest: '/manifest.json',
   icons: { icon: '/icon.svg' },
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           <header className="bg-gradient-to-r from-primary-700 to-primary-600 text-white shadow-lg">
             <div className="max-w-6xl mx-auto px-4 py-4">
               <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold">💰 PrecioLocal</h1>
+                <h1 className="text-2xl font-bold">💰 El Changuito</h1>
                 <CartSummary />
               </div>
             </div>
@@ -39,7 +39,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           </main>
 
           <footer className="bg-gray-800 text-white text-center py-3 text-xs">
-            PrecioLocal © 2024 - PWA para comparar precios
+            El Changuito © 2024 - PWA para comparar precios
           </footer>
         </div>
       </body>

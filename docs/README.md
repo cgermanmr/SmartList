@@ -1,6 +1,6 @@
-# Documentación de PrecioLocal — ideas y features futuros
+# Documentación de El Changuito — ideas y features futuros
 
-PrecioLocal es una lista de precios **personal/familiar**: registrar lo que se paga, comparar compras de una
+El Changuito es una lista de precios **personal/familiar**: registrar lo que se paga, comparar compras de una
 fecha a otra, ver cómo suben los precios y cuánto se gasta. Esta carpeta reúne lo que **todavía no existe**
 en la app: features analizados, roadmap por fases e ideas sueltas.
 

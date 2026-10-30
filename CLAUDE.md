@@ -1,4 +1,4 @@
-# PrecioLocal — Next.js 16
+# El Changuito — Next.js 16
 
 Estado actual del proyecto: propósito, arquitectura, funcionalidades, puesta en marcha y despliegue.
 Roadmap, features futuros e ideas viven en [`docs/`](docs/README.md).
@@ -10,7 +10,7 @@ Roadmap, features futuros e ideas viven en [`docs/`](docs/README.md).
 
 ## Propósito del Proyecto
 
-**PrecioLocal** es una PWA para que los vecinos registren y consulten precios de productos en distintos
+**El Changuito** es una PWA para que los vecinos registren y consulten precios de productos en distintos
 comercios/barrios, armen un carrito de compras comparando contra precios anteriores y lleven un historial de compras.
 
 - UI completamente en **español** (números y fechas en `es-AR`: `1.234,56`, `28/10/2026 16:05`; moneda `$`)
@@ -18,6 +18,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
+- Se llamaba **PrecioLocal** hasta la [SPEC 07](specs/07-nombre-el-changuito.md)
 
 ---
 
@@ -108,7 +109,8 @@ src/
 | `preciolocal_purchases` | `Purchase[]` (más reciente primero) | `[]` |
 | `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`defaultCalculator()`) |
 
-El formato es el mismo que usaba la versión Angular: no hace falta migrar datos.
+El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Las claves conservan el prefijo
+`preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien ya usa la app).
 `loadFromStorage<T>` / `saveToStorage<T>` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
 `preciolocal_calculator` además se valida al cargar (`loadCalculator`): si la magnitud, el largo (2–6) o la forma de
 alguna presentación no es válida, se usa el estado inicial.
@@ -333,7 +335,7 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
 ## Build y Despliegue
 
 - **CI** — `.github/workflows/ci.yml` (Node 24): `npm ci → lint → test → build` en cada push a `main`/`dev` y en cada PR
-- **Vercel** — repo `cgermanmr/SmartList` conectado; **`main` → producción**, `dev` y PRs → URL de preview automática
+- **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - Supabase (Fase 2): integración del Marketplace de Vercel, que carga `NEXT_PUBLIC_SUPABASE_URL` y
   `NEXT_PUBLIC_SUPABASE_ANON_KEY`; en local, `.env.local` (ignorado por git)
