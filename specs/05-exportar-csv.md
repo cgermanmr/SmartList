@@ -44,7 +44,7 @@ Sin datos persistidos nuevos.
 
 ### Columnas
 
-**`preciolocal-compras-AAAA-MM-DD.csv`** — en el orden en que están guardadas las compras (más reciente primero) y los ítems dentro de cada una:
+**`elchanguito-compras-AAAA-MM-DD.csv`** — en el orden en que están guardadas las compras (más reciente primero) y los ítems dentro de cada una:
 
 | Columna | Origen | Formato |
 |---|---|---|
@@ -60,7 +60,7 @@ Sin datos persistidos nuevos.
 | Subtotal | `CartItem.subtotal` | dinero |
 | Total compra | `Purchase.total` | dinero (se repite en cada fila de la compra) |
 
-**`preciolocal-precios-AAAA-MM-DD.csv`** — ordenado por fecha, más reciente primero:
+**`elchanguito-precios-AAAA-MM-DD.csv`** — ordenado por fecha, más reciente primero:
 
 | Columna | Origen | Formato |
 |---|---|---|
@@ -126,7 +126,7 @@ cargarle un precio desde "Cargar Precio" con monto `1234.5`:
 
 - [ ] `npm run build:prod` termina sin errores ni warnings nuevos.
 - [ ] `/purchases` muestra "⬇️ Compras CSV" y "⬇️ Precios CSV"; sin compras el primero está deshabilitado.
-- [ ] Los archivos se llaman `preciolocal-compras-AAAA-MM-DD.csv` y `preciolocal-precios-AAAA-MM-DD.csv` con la fecha del día.
+- [ ] Los archivos se llaman `elchanguito-compras-AAAA-MM-DD.csv` y `elchanguito-precios-AAAA-MM-DD.csv` con la fecha del día.
 - [ ] Los tres primeros bytes de cada archivo son `EF BB BF` (BOM UTF-8).
 - [ ] Con doble clic en Excel es-AR cada columna queda en su celda y "Categoría", "Débito" y "Sin categoría" se ven con tildes.
 - [ ] Con el fixture de la spec 03, el CSV de compras tiene 1 encabezado y 6 filas; la primera es `31/10/2026 22:00;3;;;Efectivo;Pan Frances;Almacen;4;600,00;2400,00;2400,00`.

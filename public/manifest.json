@@ -1,6 +1,6 @@
 {
-  "name": "PrecioLocal - Carrito de Compras",
-  "short_name": "PrecioLocal",
+  "name": "El Changuito",
+  "short_name": "El Changuito",
   "description": "PWA para comparar precios y gestionar compras",
   "start_url": "/",
   "display": "standalone",
