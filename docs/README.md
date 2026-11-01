@@ -27,6 +27,7 @@ necesita backend.
 | 03 | [Lista de compras compartida](features/03-lista-compartida.md) | 2 | Idea | Backend + auth, tiempo real |
 | 04 | [Promociones de comercios de cercanía](features/04-promociones-comercios.md) | 2–3 | Idea | 02, backend + roles, service worker |
 | 05 | [Pedidos a comercios](features/05-pedidos-a-comercios.md) | 3–4 | Idea | 03, 04 |
+| 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | Analizado (specs 08–12) | Supabase (solo lectura), ETL diario |
 
 **Estados posibles:** Idea · Analizado · En curso · Parcial · Hecho.
 
@@ -37,7 +38,7 @@ Piezas que no son features en sí, pero que varios features necesitan. Conviene 
 | Prerrequisito | Lo necesitan | Notas |
 |---|---|---|
 | **Catálogo de comercios** (`Store`) | 02, 04, 05 | Hoy `barrio` y `store` son texto libre en cada `Price`; "Coto" y "coto" son comercios distintos |
-| **Presentación del producto** (tamaño + unidad) | 01, 02 | Hoy `Product` no tiene tamaño; no se puede comparar $/kg ni $/l |
+| **Presentación del producto** (tamaño + unidad) | 01, 02, 06 | Hoy `Product` no tiene tamaño; no se puede comparar $/kg ni $/l |
 | **Backend + autenticación** | 03, 04, 05 | Fase 2 del [roadmap](roadmap.md): Supabase |
 | **Service worker** | 03 (offline), 04 (push) | Hoy la PWA solo tiene `manifest.json` |
 
