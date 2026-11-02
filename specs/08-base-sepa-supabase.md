@@ -1,8 +1,8 @@
 # SPEC 08 — Base de precios SEPA en Supabase
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** —
-> **Fecha:** 2026-10-31
+> **Fecha:** 2026-11-01
 > **Objetivo:** Crear en Supabase las tablas con los precios de referencia del SEPA (Precios Claros) resumidos por producto y cadena, y un script que baja el archivo oficial del día, lo limpia, lo agrega y lo carga.
 
 Origen: [`docs/features/06-precios-sepa.md`](../docs/features/06-precios-sepa.md).
@@ -21,18 +21,21 @@ lo automatiza; las specs [10](10-productos-con-codigo-de-barras.md), [11](11-lec
 
 **Incluye:**
 
-- Migración SQL versionada en `supabase/migrations/` con las tablas `sepa_banderas`, `sepa_productos`,
-  `sepa_precios` y `sepa_cargas`, índices y RLS (lectura pública solo de las tres primeras).
+- Proyecto de la CLI de Supabase (`supabase/config.toml`) y la migración SQL versionada en `supabase/migrations/`
+  con las tablas `sepa_banderas`, `sepa_productos`, `sepa_precios` y `sepa_cargas`, índices y RLS (lectura pública
+  solo de las tres primeras).
 - Script `scripts/sepa/etl.ts` (Node 24, TypeScript sin compilar) que:
-  descarga el ZIP del día (o lee uno local) → lo recorre en streaming → limpia → agrega → carga en una transacción.
-- Modo `--dry-run`: hace todo menos escribir en la base e imprime las estadísticas.
+  descarga el ZIP del día a un archivo temporal (o lee uno local) → lo recorre en streaming → limpia → agrega →
+  carga en una transacción.
+- Modo `--dry-run`: hace todo menos conectarse a la base e imprime las estadísticas.
 - Funciones puras de limpieza y agregación con tests de Vitest.
 - `src/lib/gtin.ts` (validar y normalizar códigos de barras), compartido con la app en las specs siguientes.
 - `.env.example` con las variables nuevas.
+- `.mcp.json` versionado (MCP de Supabase del proyecto, sin secretos).
 
 **Fuera de alcance:**
 
-- Ejecución automática diaria (spec 09).
+- Ejecución automática diaria (spec 09), incluidos los reintentos de descarga.
 - Historial de precios SEPA (cada carga reemplaza a la anterior; ver *Decisiones*).
 - Detalle por sucursal o por provincia.
 - Cualquier cambio en la UI.
@@ -43,7 +46,10 @@ Dataset CKAN `sepa-precios` en `datos.produccion.gob.ar` (detalle en el feature 
 
 - `GET https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-precios` → `result.resources[]`.
   Los ZIP diarios tienen `format: "ZIP"` y `name` = día de la semana. Se elige el de `last_modified` más reciente.
+- Sin `--file`, el ZIP se baja a `os.tmpdir()` y se procesa por el mismo camino que `--file`. El temporal se borra
+  al terminar, también si hay error.
 - ZIP externo → carpeta `YYYY-MM-DD/` → un ZIP por comercio → `comercio.csv`, `sucursales.csv`, `productos.csv`.
+- **Fecha del archivo** = el nombre de la carpeta `YYYY-MM-DD/` del ZIP externo.
 - CSV con `|`, UTF-8 (a veces con BOM), campos con relleno de espacios, última línea `Última actualización: <ISO>`.
 
 ## Modelo de datos
@@ -71,7 +77,7 @@ create table public.sepa_productos (
   marca         text,
   cantidad      numeric(12,3),           -- presentación normalizada: 500
   unidad        text check (unidad in ('g', 'ml', 'u')),
-  banderas      integer not null,        -- en cuántas banderas aparece
+  banderas      integer not null,        -- precios en sepa_precios para este EAN (se recalcula en cada carga)
   actualizado   date not null
 );
 create index sepa_productos_descripcion_trgm on public.sepa_productos
@@ -99,7 +105,7 @@ create table public.sepa_cargas (
   banderas_ok       integer,
   omitidos          jsonb,               -- [{ "archivo": "...", "motivo": "zip roto" }, …]
   filas_leidas      bigint,
-  filas_precios     integer,
+  filas_precios     integer,             -- pares EAN × bandera del archivo
   detalle           text
 );
 
@@ -113,6 +119,20 @@ create policy "lectura pública" on public.sepa_productos for select to anon, au
 create policy "lectura pública" on public.sepa_precios   for select to anon, authenticated using (true);
 -- sepa_cargas sin políticas: solo la conexión del ETL (rol postgres) la lee y escribe
 ```
+
+### Archivos del ETL — `scripts/sepa/`
+
+| Archivo | Contenido |
+|---|---|
+| `etl.ts` | Punto de entrada: argumentos (`--file`, `--dry-run`, `--force`), descarga, orquestación, estadísticas, código de salida |
+| `clean.ts` | Funciones puras de limpieza (tabla de abajo) |
+| `aggregate.ts` | Agregación por comercio y acumulado de productos |
+| `read-zip.ts` | Lectura en streaming del ZIP externo, los ZIP internos y las líneas de cada CSV |
+| `load.ts` | Transacción de carga con `pg` |
+| `*.test.ts` | Tests de Vitest junto a cada módulo |
+
+Los scripts y `src/lib/gtin.ts` importan con ruta relativa y extensión `.ts` (Node no resuelve el alias `@/`) y
+usan solo sintaxis de TypeScript que Node puede borrar (sin `enum`, `namespace` ni propiedades en el constructor).
 
 ### Limpieza — `scripts/sepa/clean.ts` (funciones puras)
 
@@ -143,14 +163,16 @@ Se procesa **un comercio por vez** (cada ZIP interno), así la memoria queda aco
 
 ## Reglas
 
-**Se descarta, y se anota en `omitidos`:**
+**Se descarta el comercio entero, y se anota en `omitidos` con su motivo:**
 
-- Un ZIP interno vacío o que no se puede abrir (el 30/10 pasó con `comercio-sepa-36`).
+- Un ZIP interno vacío o que no se puede abrir (el 30/10 pasó con `comercio-sepa-36`) → `zip roto`.
+- Un `comercio.csv`, `sucursales.csv` o `productos.csv` faltante o sin las columnas esperadas → `encabezados inválidos`.
+- Un `productos.csv` sin pie con fecha → `sin fecha de actualización`.
 - Un comercio cuyo pie de `productos.csv` tiene **más de 7 días** de antigüedad respecto de la fecha del archivo
-  (Unicoop informaba precios del 11/06/2025). Se usa el pie de `productos.csv` y **no** el campo
+  (Unicoop informaba precios del 11/06/2025) → `desactualizado`. Se usa el pie de `productos.csv` y **no** el campo
   `comercio_ultima_actualizacion`: Changomás tiene ahí 2021-04-03 pero sus precios son del día.
 
-**Se descarta sin anotar:**
+**Se descarta la fila sin anotar:**
 
 - Filas con `productos_ean` ≠ `1`: `id_producto` es un código interno de la cadena, no un código de barras
   (~170 mil filas el 30/10, sobre todo de Coto y Carrefour).
@@ -163,8 +185,8 @@ Se procesa **un comercio por vez** (cada ZIP interno), así la memoria queda aco
 - `sepa_precios`: por `(ean, id_comercio-id_bandera)`: mínimo, mediana y máximo de `productos_precio_lista` entre
   sucursales, y cantidad de sucursales.
 - `sepa_banderas.sucursales`: filas de `sucursales.csv` de esa bandera.
-- `sepa_productos.descripcion` y `marca`: el valor más frecuente entre todas las filas del EAN (a igual cantidad,
-  el primero en orden alfabético). Se colapsan espacios repetidos.
+- `sepa_productos.descripcion` y `marca`: el valor más frecuente entre todas las filas del EAN en el archivo (a igual
+  cantidad, el primero en orden alfabético). Se colapsan espacios repetidos.
 - `sepa_productos.cantidad` / `unidad` (presentación): cada fila propone una con esta regla, y gana la más
   frecuente entre todas las filas del EAN:
   1. Si `productos_unidad_medida_presentacion` es de peso o volumen → `cantidad_presentacion × factor`
@@ -173,21 +195,30 @@ Se procesa **un comercio por vez** (cada ZIP interno), así la memoria queda aco
      (Carrefour: presentación `1 UNI`, referencia `40 GRM` → `40 g`).
   3. Si no, y ambas son unidades → `cantidad_presentacion` en `u` (huevos `6 EA` → `6 u`).
   4. Si no → la fila no propone presentación. Cantidad `0` o no numérica → tampoco.
-- `sepa_productos.banderas`: cantidad de banderas con precio para ese EAN.
+- `sepa_productos.banderas`: no lo calcula el script; se recalcula en SQL al final de la carga (paso 9).
 
-**Carga (una transacción):**
+**Carga (`load.ts`, una transacción):**
 
-1. Si ya hay una carga `ok` con la misma `fecha_archivo`, terminar sin hacer nada (salvo `--force`).
-2. **Freno de seguridad:** si las filas de precios a cargar son menos del 50 % de la última carga `ok`, abortar
-   con estado `error` sin tocar las tablas.
-3. Cargar en tablas temporales (`create temp table … on commit drop`) con `INSERT` multi-fila en lotes de 1000.
-4. `upsert` de `sepa_banderas` y `sepa_productos` (`on conflict … do update`).
-5. Para cada bandera cargada: `upsert` de sus precios y `delete` de sus precios con `actualizado` anterior a la
-   fecha del archivo (productos que dejó de informar).
-6. Las banderas **no** cargadas hoy (ZIP roto, comercio desactualizado) conservan sus precios anteriores; se
-   borran recién cuando su `actualizado` tiene más de 14 días.
-7. Borrar `sepa_productos` sin ningún precio.
-8. Registrar la ejecución en `sepa_cargas` (también cuando falla o se omite).
+1. Si la fecha del archivo es **anterior** a la de la última carga `ok`, terminar como `omitida` con motivo
+   "archivo anterior a la última carga" (salvo `--force`).
+2. Si ya hay una carga `ok` con la misma `fecha_archivo`, terminar como `omitida` sin tocar las tablas (salvo `--force`).
+3. **Freno de seguridad:** si las filas de precios del archivo son menos del 50 % de `filas_precios` de la última
+   carga `ok`, abortar con estado `error` sin tocar las tablas. `--force` **no** saltea el freno. Sin carga `ok`
+   previa no hay freno.
+4. Cargar en tablas temporales (`create temp table … on commit drop`) con `INSERT` multi-fila en lotes de 1000.
+5. `upsert` de `sepa_banderas` y `sepa_productos` (`on conflict … do update`).
+6. Para cada bandera cargada: `upsert` de sus precios y `delete` de sus precios cuyo `ean` no está en la tabla
+   temporal (productos que dejó de informar).
+7. Las banderas **no** cargadas hoy (ZIP roto, comercio desactualizado) conservan sus precios anteriores. Cuando su
+   `actualizado` tiene más de 14 días respecto de la fecha del archivo, se borra la fila de `sepa_banderas` y el
+   `on delete cascade` se lleva sus precios.
+8. Borrar `sepa_productos` sin ningún precio.
+9. Recalcular `sepa_productos.banderas` = cantidad de filas de `sepa_precios` por `ean`.
+10. Registrar la ejecución en `sepa_cargas`. Si la transacción falla, se hace `rollback` y el registro `error` se
+    escribe después, fuera de ella. Las `omitida` también se registran.
+
+**Salida del script:** estado `ok` u `omitida` → código 0; `error` → código 1. Con `--dry-run` no hay conexión ni
+registro: solo se imprimen las estadísticas.
 
 ## Configuración
 
@@ -217,12 +248,15 @@ SUPABASE_DB_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.sup
 Uso: `npm run sepa:etl` · `npm run sepa:etl -- --file ruta/sepa_viernes.zip` · `npm run sepa:etl -- --dry-run` ·
 `npm run sepa:etl -- --force`.
 
+Proyecto de Supabase: `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`), vacío al 01/11/2026.
+
 ## Plan de implementación
 
 1. **Dependencias y configuración.** `npm i -D fflate pg @types/pg supabase`. En `tsconfig.json`:
    `"allowImportingTsExtensions": true` (los scripts importan con extensión `.ts` porque Node los ejecuta sin
-   compilar). En `vitest.config.mts`: sumar `scripts/**/*.test.ts` a `include`. Crear `.env.example`.
-   Verificar: `npm run lint`, `npm test` y `npm run build` siguen pasando.
+   compilar) y `"erasableSyntaxOnly": true` (que `tsc` rechace la sintaxis que Node no puede borrar). En
+   `vitest.config.mts`: sumar `scripts/**/*.test.ts` a `include`. Script `sepa:etl` en `package.json`. Crear
+   `.env.example`. Versionar `.mcp.json`. Verificar: `npm run lint`, `npm test` y `npm run build` siguen pasando.
 2. **`src/lib/gtin.ts` + tests.** `isValidGtin(code)` (8, 12, 13 o 14 dígitos, dígito verificador GS1) y
    `toGtin13(code)` (EAN-8 y UPC-A se completan con ceros a la izquierda; un GTIN-14 que empieza con `0` pierde
    ese cero; cualquier otro caso → `null`). Verificar: tests con `7793704000911`, `77956262`, `012345678905`.
@@ -232,36 +266,51 @@ Uso: `npm run sepa:etl` · `npm run sepa:etl -- --file ruta/sepa_viernes.zip` ·
    3 sucursales, un EAN con descripciones distintas y uno con presentación Carrefour (`1 UNI` / `40 GRM`).
 5. **Lectura del ZIP** (`scripts/sepa/read-zip.ts`): ZIP externo y ZIP internos con `fflate` en streaming,
    líneas con `TextDecoderStream`, sin cargar ningún CSV entero en memoria (el de DIA pasa los 500 MB y supera el
-   largo máximo de un string). Verificar: test con un ZIP anidado armado en el test con `zipSync`, incluido un
-   ZIP interno vacío.
-6. **`--dry-run` sobre el archivo real.** Usar primero el archivo de referencia del 30/10/2026 con el que se
-   relevaron los números de esta spec, guardado fuera del repo en `D:\apps\archivos-sepa\sepa_viernes.zip`
+   largo máximo de un string). Validación de encabezados por comercio. Verificar: test con un ZIP anidado armado en
+   el test con `zipSync`, incluidos un ZIP interno vacío y uno con una columna faltante (ambos en `omitidos`).
+6. **`etl.ts` con `--dry-run` sobre el archivo real.** Argumentos, descarga a temporal y estadísticas. Usar primero
+   el archivo de referencia del 30/10/2026 con el que se relevaron los números de esta spec, guardado fuera del
+   repo en `D:\apps\archivos-sepa\sepa_viernes.zip`
    (`npm run sepa:etl -- --dry-run --file D:\apps\archivos-sepa\sepa_viernes.zip`). Verificar: algo menos de
    243.734 precios (EAN × bandera): ese es el conteo bruto del relevamiento, con Unicoop y con las filas sin EAN
-   real todavía incluidas. Además, ~75 mil productos,
-   Unicoop (`comercio-sepa-47`) y el ZIP vacío (`comercio-sepa-36`) en `omitidos`, y presentación en al menos el
-   90 % de los productos. Después repetir con el ZIP del día. Anotar los números reales en esta spec.
-7. **Migración.** `npx supabase login` → `npx supabase link --project-ref <ref>` → `npx supabase db push`.
-   Verificar: las 4 tablas en el dashboard, con RLS activo.
-8. **Carga.** `scripts/sepa/load.ts` con `pg` y la transacción de *Reglas*. Verificar: primera carga completa;
-   segunda ejecución con el mismo archivo termina como "omitida"; con `--force` vuelve a cargar sin duplicar.
+   real todavía incluidas. Además, ~75 mil productos, Unicoop (`comercio-sepa-47`) y el ZIP vacío
+   (`comercio-sepa-36`) en `omitidos`, y presentación en al menos el 90 % de los productos. Después repetir sin
+   `--file` (descarga el ZIP del día). Anotar los números reales en esta spec.
+7. **Migración.** `npx supabase init` (crea `supabase/config.toml`) → `npx supabase login` →
+   `npx supabase link --project-ref bjzeknajhrbtormkuunj` → `npx supabase db push`. Verificar: las 4 tablas en el
+   dashboard, con RLS activo, y la migración en el historial (`npx supabase migration list`).
+8. **Carga.** `scripts/sepa/load.ts` con `pg` y la transacción de *Reglas*, conectado desde `etl.ts`. Armar a mano
+   con 7-Zip, en `D:\apps\archivos-sepa\`, dos copias del archivo del 30/10: `sepa_sin_dia.zip` (sin el ZIP de DIA)
+   y `sepa_chicos.zip` (solo comercios chicos, menos del 50 % de los precios). Verificar en este orden:
+   1. Primera carga completa con `sepa_viernes.zip`.
+   2. Segunda ejecución con el mismo archivo → `omitida`.
+   3. Con `--force` → vuelve a cargar y la cantidad de filas no cambia.
+   4. `sepa_chicos.zip --force` → `error` por el freno; las tablas quedan como estaban.
+   5. `sepa_sin_dia.zip --force` → `ok`; los precios de DIA siguen con la misma cantidad y el mismo `actualizado`.
+   6. `sepa_viernes.zip --force` para dejar la base completa.
+   7. Si ya se cargó el ZIP del día, `sepa_viernes.zip` sin `--force` → `omitida` por archivo anterior.
 9. **Tamaño.** `select pg_size_pretty(pg_database_size('postgres'))` y el tamaño de cada tabla. Verificar: la base
    entera ocupa menos de 150 MB. Anotar los valores (los necesita la decisión de historial).
-10. **Documentación.** `CLAUDE.md`: árbol con `supabase/` y `scripts/sepa/`, script `sepa:etl`, variables de
-    entorno, sección de la base SEPA. Feature 06 → *En curso*.
+10. **Documentación.** `CLAUDE.md`: árbol con `supabase/`, `scripts/sepa/` y `.mcp.json`, script `sepa:etl`,
+    variables de entorno, sección de la base SEPA. Feature 06 → *En curso*.
 
 ## Criterios de aceptación
 
 - [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings; el build no necesita ninguna variable de entorno.
 - [ ] `npm run sepa:etl -- --dry-run` termina sin conexión a la base e imprime: fecha del archivo, banderas cargadas, omitidos con motivo, filas leídas y filas de precios.
+- [ ] Sin `--file`, el ZIP se baja a un temporal y el temporal no queda en disco al terminar (con éxito o con error).
 - [ ] Ningún CSV se carga entero en memoria; el proceso termina con menos de 2 GB de RAM.
+- [ ] Un comercio con una columna faltante queda en `omitidos` con motivo `encabezados inválidos` y los demás se cargan.
 - [ ] Después de una carga, `select count(*) from sepa_precios` coincide con lo informado por el script.
 - [ ] Un EAN con presentación al estilo Carrefour (`1 UNI` / referencia `40 GRM`) queda con `cantidad = 40`, `unidad = 'g'`.
 - [ ] Ningún `ean` de `sepa_productos` falla `isValidGtin`.
+- [ ] `sepa_productos.banderas` coincide con `count(*)` de `sepa_precios` por `ean` en todos los productos.
 - [ ] Con la clave publishable/anon (`curl …/rest/v1/sepa_precios?limit=1`) se leen precios; `sepa_cargas` devuelve vacío o error; cualquier `insert` es rechazado.
-- [ ] Repetir la carga del mismo archivo no cambia la cantidad de filas.
-- [ ] Si se simula un archivo con la mitad de los precios, la carga aborta, deja estado `error` y las tablas quedan como estaban.
-- [ ] Una bandera ausente en el archivo del día conserva sus precios con su `actualizado` anterior.
+- [ ] Repetir la carga del mismo archivo termina como `omitida`; con `--force`, no cambia la cantidad de filas.
+- [ ] Cargar un archivo anterior a la última carga `ok` sin `--force` termina como `omitida`.
+- [ ] `sepa_chicos.zip --force` aborta por el freno, deja estado `error` y las tablas quedan como estaban.
+- [ ] Después de `sepa_sin_dia.zip --force`, las banderas de DIA conservan la misma cantidad de precios y el mismo `actualizado`.
+- [ ] El script sale con código 0 en `ok` y `omitida`, y con código 1 en `error`.
 - [ ] La app funciona igual que antes (no se tocó la UI).
 
 ## Decisiones
@@ -272,8 +321,21 @@ Uso: `npm run sepa:etl` · `npm run sepa:etl -- --file ruta/sepa_viernes.zip` ·
 - **Sí:** guardar el EAN en GTIN-13 (13 dígitos). Así viene en el SEPA, y la app normaliza a lo mismo lo que lee el escáner (spec 11).
 - **Sí:** Node con TypeScript sin compilar (Node 24) en lugar de Python. Un solo lenguaje en el repo, los tests en Vitest y `gtin.ts` compartido con la app.
 - **Sí:** `fflate` para los ZIP. Lee en streaming, no tiene dependencias y sirve también para armar los ZIP de prueba.
+- **Sí:** bajar el ZIP a un archivo temporal antes de procesarlo. Un corte de red no deja el proceso a medias, la descarga y el procesamiento siguen un solo camino (el de `--file`) y los reintentos de la spec 09 quedan simples.
+- **No:** procesar el ZIP en streaming directo desde la red. Un corte a mitad obliga a empezar de cero.
 - **Sí:** `pg` contra el Session pooler en lugar de la API REST. Permite una transacción única (no queda la base a medio cargar) y la API REST con la clave secreta no aporta nada para un proceso batch.
-- **Sí:** migraciones con la CLI de Supabase en `supabase/migrations/`. Quedan versionadas y la Fase 2 sigue el mismo camino.
+- **Sí:** migraciones con la CLI de Supabase en `supabase/migrations/`. El historial de la base queda alineado con los archivos del repo y la Fase 2 sigue el mismo camino.
+- **No:** aplicar la migración con el MCP de Supabase (`apply_migration`). Registra su propia versión y un `db push` posterior puede chocar. El MCP queda para consultar e inspeccionar.
+- **Sí:** versionar `.mcp.json`. No tiene secretos (el `project_ref` ya es público en la URL de la API) y quien clone el repo tiene el MCP configurado.
+- **Sí:** encabezados inválidos omiten solo ese comercio. Una cadena que cambia su formato no frena la actualización de las demás; si cambian todas, el freno del 50 % aborta la carga.
+- **No:** abortar toda la carga por los encabezados de un comercio.
+- **Sí:** borrar los precios que una bandera dejó de informar comparando contra la tabla temporal. Funciona igual con `--force` sobre un archivo de la misma fecha, donde comparar por `actualizado` no borra nada.
+- **Sí:** las banderas ausentes más de 14 días se borran enteras (fila y precios por cascada). No quedan cadenas sin precios en la base.
+- **Sí:** recalcular `sepa_productos.banderas` en SQL. Siempre coincide con los precios de la base, incluidos los conservados de banderas ausentes.
+- **Sí:** un archivo anterior a la última carga `ok` se omite salvo `--force`. Evita pisar precios nuevos con viejos por error.
+- **Sí:** `--force` saltea las reglas de fecha pero no el freno del 50 %. El freno protege de un archivo incompleto, que es justo lo que no se puede forzar sin querer.
+- **Sí:** verificar el freno y la conservación de banderas con ZIP recortados a mano. No suma código que solo sirve para probar.
+- **No:** flag `--exclude` ni tests de integración contra Postgres (Supabase local con Docker). El primero es código solo de prueba; los segundos suman Docker al flujo y no entran en el CI actual.
 - **Sí:** lectura pública con RLS y sin login. Son datos abiertos (CC-BY-4.0); escribir solo puede la conexión del ETL.
 - **No (por ahora):** historial. Una foto semanal del agregado (~244 mil filas) llenaría el plan gratuito en meses. Se decide en otra spec con el tamaño medido en el paso 9.
 - **No:** usar la API del portal preciosclaros.gob.ar. No es oficial y el 31/10/2026 fallaba en todas las llamadas.
@@ -282,16 +344,18 @@ Uso: `npm run sepa:etl` · `npm run sepa:etl -- --file ruta/sepa_viernes.zip` ·
 
 | Riesgo | Mitigación |
 |---|---|
-| Cambia el formato del ZIP o de los CSV | El parser valida encabezados; si faltan columnas, aborta con `error` sin tocar las tablas |
+| Cambia el formato del ZIP o de los CSV | El parser valida encabezados por comercio y omite los que no cumplen; si cambian todos, el freno del 50 % aborta con `error` sin tocar las tablas |
 | Un día viene incompleto | Freno del 50 %; las banderas faltantes conservan sus precios hasta 14 días |
 | Precios absurdos por errores de carga de las cadenas | La mediana los amortigua; el mínimo y el máximo se muestran como rango, no como referencia |
 | Presentaciones mal informadas | Gana la más frecuente entre todas las filas del EAN; si ninguna sirve, queda `null` |
 | Se filtra `SUPABASE_DB_URL` | Solo en `.env.local` (ignorado) y en secrets de GitHub; nunca con prefijo `NEXT_PUBLIC_` |
 | Límite de 500 MB del plan gratuito | Medición obligatoria en el paso 9 |
+| Se carga por error un archivo viejo | Se omite si es anterior a la última carga `ok`, salvo `--force` |
+| El temporal de 325 MB queda en disco | Se borra en un `finally`, también si hay error |
 
 ## Lo que **no** incluye esta spec
 
-- Ejecución automática (spec 09).
+- Ejecución automática ni reintentos de descarga (spec 09).
 - Historial de precios SEPA.
 - Precios por sucursal o provincia.
 - Promociones.
