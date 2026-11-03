@@ -14,7 +14,8 @@ Roadmap, features futuros e ideas viven en [`docs/`](docs/README.md).
 comercios/barrios, armen un carrito de compras comparando contra precios anteriores y lleven un historial de compras.
 
 - UI completamente en **español** (números y fechas en `es-AR`: `1.234,56`, `28/10/2026 16:05`; moneda `$`)
-- Fase actual: **Fase 1 — Frontend Next.js con localStorage (sin backend)**, publicado en Vercel
+- Fase actual: **Fase 1 — Frontend Next.js con localStorage (sin backend)**, publicado en Vercel. Aparte, una base
+  Supabase de solo lectura con los precios de Precios Claros (SEPA) que la app todavía no consulta ([SPEC 08](specs/08-base-sepa-supabase.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -33,7 +34,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | Zustand | ^5 | Estado global |
 | Vitest | ^5 | Tests de la lógica pura |
 | ESLint | ^9 | Lint (`eslint-config-next`: core-web-vitals + typescript + reglas del React Compiler) |
-| Node.js | ≥ 24 | Runtime (local, CI y Vercel) |
+| Node.js | ≥ 24 | Runtime (local, CI y Vercel); los scripts del ETL corren como `.ts` sin compilar |
+| Supabase | CLI ^2 | Postgres de la base SEPA: migraciones en `supabase/migrations/`, carga con `pg` |
 
 ---
 
@@ -43,6 +45,18 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 .github/workflows/ci.yml        # lint + test + build en cada push a main/dev y en cada PR
 docs/                           # Roadmap, features futuros (features/NN-*.md) e ideas
 specs/                          # Specs NN-*.md (una por cambio)
+.mcp.json                       # MCP de Supabase del proyecto (sin secretos)
+.env.example                    # Variables de entorno; las reales van en .env.local (ignorado)
+scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar), con sus *.test.ts
+├── etl.ts                      # Punto de entrada: --file, --dry-run, --force; descarga, estadísticas, código de salida
+├── read-zip.ts                 # Lectura en streaming del ZIP externo, los ZIP internos y los CSV
+├── clean.ts                    # Limpieza pura de campos (EAN, precios, presentación, pie de archivo)
+├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales)
+└── load.ts                     # Carga en una transacción con pg y registro en sepa_cargas
+supabase/
+├── config.toml                 # Proyecto de la CLI (supabase init)
+├── migrations/                 # SQL versionado: 20261031000000_sepa.sql
+└── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #0f766e, display standalone
 └── icon.svg                    # Ícono de la app y favicon
@@ -70,6 +84,7 @@ src/
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
+    ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
 
@@ -271,6 +286,7 @@ npm start          # Sirve el build de producción en :4200
 npm run lint       # ESLint
 npm test           # Vitest (una pasada)
 npm run test:watch # Vitest en modo watch
+npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (ver Base de precios SEPA)
 ```
 
 ### Solución de problemas
@@ -281,6 +297,37 @@ npm run test:watch # Vitest en modo watch
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
+- **`sepa:etl` da `ENOTFOUND db.<ref>.supabase.co`** — la conexión directa es solo IPv6: usar la cadena del *Session pooler*
+- **`sepa:etl` da `SELF_SIGNED_CERT_IN_CHAIN`** — falta o cambió `supabase/prod-ca-2021.crt` (Project Settings → Database → SSL Configuration)
+
+---
+
+## Base de precios SEPA (Supabase)
+
+Precios de referencia de las grandes cadenas, de [Precios Claros (SEPA)](docs/features/06-precios-sepa.md). Detalle
+completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md).
+
+- **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
+  consultar e inspeccionar, no para aplicar migraciones
+- **Tablas** (`public`, RLS con lectura pública salvo `sepa_cargas`):
+
+| Tabla | Contenido |
+|---|---|
+| `sepa_banderas` | Cadenas (`id` = `comercio-bandera`, p. ej. `10-1`), sucursales y fecha de la última carga |
+| `sepa_productos` | EAN (GTIN-13), descripción, marca, presentación normalizada, cantidad de banderas con precio |
+| `sepa_precios` | Mínimo, mediana y máximo por EAN × bandera, sucursales que lo informan |
+| `sepa_cargas` | Registro de cada ejecución: estado `ok` / `omitida` / `error`, conteos, omitidos y detalle |
+
+- **ETL:** `npm run sepa:etl` baja el ZIP más reciente del dataset `sepa-precios` a un temporal, lo lee en streaming
+  (sin cargar ningún CSV entero), limpia, agrega y carga todo en **una sola transacción**. Opciones:
+  `-- --file ruta.zip` (ZIP local), `-- --dry-run` (sin base, solo estadísticas), `-- --force` (saltea las reglas de fecha)
+- **Reglas de carga:** se omite un archivo más viejo que la última carga `ok` o de una fecha ya cargada (salvo
+  `--force`); el **freno de seguridad** rechaza siempre un archivo con menos del 50 % de las filas de la última carga
+  `ok`; una bandera que no viene conserva sus precios hasta 14 días
+- **Números (02/11/2026):** 23 banderas, 75.216 productos, 236.058 precios; base de 98 MB; lectura ~2 min y carga
+  3 a 6 min
+- **Migraciones:** `npx supabase db push --linked` (requiere `npx supabase login` y `link` la primera vez)
+- **Carga manual** por ahora; la ejecución diaria en GitHub Actions es la [SPEC 09](specs/09-actualizacion-diaria-sepa.md)
 
 ---
 
@@ -339,6 +386,14 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - Supabase (Fase 2): integración del Marketplace de Vercel, que carga `NEXT_PUBLIC_SUPABASE_URL` y
   `NEXT_PUBLIC_SUPABASE_ANON_KEY`; en local, `.env.local` (ignorado por git)
+- Variables de entorno (plantilla en `.env.example`):
+
+| Variable | Dónde | Uso |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App (specs 10–12; hoy no se usan) |
+| `SUPABASE_DB_URL` | `.env.local` (y secret de GitHub en la spec 09) | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
+
+- El build no necesita ninguna variable de entorno
 
 ### Instalar en el móvil
 
@@ -377,6 +432,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] PWA instalable (manifest)
 - [x] Next.js 16 + Vercel con CI (lint, tests, build)
 - [ ] Service worker / modo offline
+- [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
+- [ ] Actualización diaria del SEPA en GitHub Actions (spec 09)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

@@ -28,6 +28,8 @@
       ]
     },
     "noImplicitOverride": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
