@@ -1,6 +1,6 @@
 # SPEC 08 — Base de precios SEPA en Supabase
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** —
 > **Fecha:** 2026-11-01
 > **Objetivo:** Crear en Supabase las tablas con los precios de referencia del SEPA (Precios Claros) resumidos por producto y cadena, y un script que baja el archivo oficial del día, lo limpia, lo agrega y lo carga.
@@ -57,7 +57,8 @@ Dataset CKAN `sepa-precios` en `datos.produccion.gob.ar` (detalle en el feature 
 ### Migración — `supabase/migrations/20261031000000_sepa.sql`
 
 ```sql
-create extension if not exists pg_trgm;
+-- En el esquema extensions, como el resto de las extensiones del proyecto (el asesor marca las que están en public)
+create extension if not exists pg_trgm with schema extensions;
 
 -- Una fila por bandera (cadena) del archivo: "Hipermercado Carrefour", "Disco", "Coto"…
 create table public.sepa_banderas (
@@ -81,7 +82,7 @@ create table public.sepa_productos (
   actualizado   date not null
 );
 create index sepa_productos_descripcion_trgm on public.sepa_productos
-  using gin (descripcion gin_trgm_ops);
+  using gin (descripcion extensions.gin_trgm_ops);
 
 -- Precio resumido por producto y bandera (precio de lista, sin promos)
 create table public.sepa_precios (
@@ -108,6 +109,11 @@ create table public.sepa_cargas (
   filas_precios     integer,             -- pares EAN × bandera del archivo
   detalle           text
 );
+
+-- Permisos explícitos: no dependen de los permisos por defecto del proyecto (que Supabase va a quitar)
+revoke all on public.sepa_banderas, public.sepa_productos, public.sepa_precios, public.sepa_cargas
+  from anon, authenticated;
+grant select on public.sepa_banderas, public.sepa_productos, public.sepa_precios to anon, authenticated;
 
 alter table public.sepa_banderas  enable row level security;
 alter table public.sepa_productos enable row level security;
@@ -172,6 +178,11 @@ Se procesa **un comercio por vez** (cada ZIP interno), así la memoria queda aco
   (Unicoop informaba precios del 11/06/2025) → `desactualizado`. Se usa el pie de `productos.csv` y **no** el campo
   `comercio_ultima_actualizacion`: Changomás tiene ahí 2021-04-03 pero sus precios son del día.
 
+**Registros partidos en varias líneas:** una línea con menos columnas que el encabezado se junta con las siguientes
+(separadas por un espacio) hasta completar las columnas. En el `sucursales.csv` de Comodín (`comercio-sepa-6`), la
+latitud y la longitud traen saltos de línea adentro y sin esto se reconoce 1 sucursal de 26. Si al juntar las líneas
+se pasa de columnas, el pedazo anterior se descarta y la línea se lee sola; el pie también descarta el pedazo pendiente.
+
 **Se descarta la fila sin anotar:**
 
 - Filas con `productos_ean` ≠ `1`: `id_producto` es un código interno de la cadena, no un código de barras
@@ -185,6 +196,9 @@ Se procesa **un comercio por vez** (cada ZIP interno), así la memoria queda aco
 - `sepa_precios`: por `(ean, id_comercio-id_bandera)`: mínimo, mediana y máximo de `productos_precio_lista` entre
   sucursales, y cantidad de sucursales.
 - `sepa_banderas.sucursales`: filas de `sucursales.csv` de esa bandera.
+- Una bandera de `comercio.csv` sin ningún precio válido no se carga (el 30/10: Topsy, Bomba, Maxi Comodín y
+  SuperChangomas `11-1` y `11-3`, sin sucursales). Si tenía precios de una carga anterior, se trata como ausente
+  (regla 7 de la carga).
 - `sepa_productos.descripcion` y `marca`: el valor más frecuente entre todas las filas del EAN en el archivo (a igual
   cantidad, el primero en orden alfabético). Se colapsan espacios repetidos.
 - `sepa_productos.cantidad` / `unidad` (presentación): cada fila propone una con esta regla, y gana la más
@@ -241,14 +255,21 @@ SUPABASE_DB_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.sup
 
 ```json
 "scripts": {
-  "sepa:etl": "node --env-file-if-exists=.env.local scripts/sepa/etl.ts"
+  "sepa:etl": "node --env-file-if-exists=.env.local --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/sepa/etl.ts"
 }
 ```
 
 Uso: `npm run sepa:etl` · `npm run sepa:etl -- --file ruta/sepa_viernes.zip` · `npm run sepa:etl -- --dry-run` ·
 `npm run sepa:etl -- --force`.
 
+`--disable-warning=MODULE_TYPELESS_PACKAGE_JSON`: Node avisa en cada ejecución que el `package.json` no declara
+`"type": "module"`. En lugar de cambiar el tipo de todo el paquete por un script, el aviso se apaga solo para este.
+
 Proyecto de Supabase: `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`), vacío al 01/11/2026.
+
+Conexión cifrada y verificada: `load.ts` conecta con `ssl: { ca }` usando `supabase/prod-ca-2021.crt` (*Supabase
+Root 2021 CA*, se baja de *Project Settings → Database → SSL Configuration*, vence en 2031). Es un certificado
+público y se versiona; sin él, `pg` rechaza la cadena del pooler (`SELF_SIGNED_CERT_IN_CHAIN`).
 
 ## Plan de implementación
 
@@ -294,24 +315,61 @@ Proyecto de Supabase: `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supa
 10. **Documentación.** `CLAUDE.md`: árbol con `supabase/`, `scripts/sepa/` y `.mcp.json`, script `sepa:etl`,
     variables de entorno, sección de la base SEPA. Feature 06 → *En curso*.
 
+### Números reales del `--dry-run` (paso 6)
+
+| | 30/10/2026 (`sepa_viernes.zip`) | 02/11/2026 (descarga, `sepa_lunes.zip`)¹ |
+|---|---|---|
+| Comercios leídos / omitidos | 12 / 2 | 14 / 2 |
+| Omitidos | `comercio-sepa-47` (Unicoop) `desactualizado`; `comercio-sepa-36` `zip roto` | Los mismos dos |
+| Banderas cargadas | 20 | 26 |
+| Filas leídas (válidas) | 14.258.002 (14.005.055) | 14.289.616 (14.014.246) |
+| Filas de precios (EAN × bandera) | 231.371 | 232.124 |
+| Productos | 72.290 | 73.443 |
+| Con presentación / con marca | 98,7 % / 99,9 % | 95,9 % / 99,8 % |
+| Duración / pico de memoria | 103 s / 660 MB | 169 s (con descarga) / 598 MB |
+
+¹ Medido antes de sumar los registros partidos y la exclusión de banderas sin precios. Con esas dos reglas, el 30/10
+pasó de 24 a 20 banderas y de 230.654 a 231.371 precios (Comodín: de 717 a 18.642 filas válidas y de 1 a 23
+sucursales, más las 3 de Maxi Comodín).
+
+El 02/11 aparecen comercios que no estaban el 30/10 (`comercio-sepa-3` Deheza, `-4` Estación Lima, `-8` Mariano Max)
+y falta `comercio-sepa-20` (La Agrícola). El temporal de la descarga no quedó en disco.
+
+### Tamaño medido (paso 9)
+
+Medido el 03/11/2026, con la carga del 02/11 sobre la del 30/10 (La Agrícola conserva sus precios por la regla 7):
+
+| Tabla | Filas | Datos | Índices | Total |
+|---|---|---|---|---|
+| `sepa_precios` | 236.058 | 34 MB | 18 MB (clave primaria) | 52 MB |
+| `sepa_productos` | 75.216 | 15 MB | 21 MB (16 MB trigramas + 4,6 MB clave primaria) | 36 MB |
+| `sepa_banderas` | 23 | 8 kB | 16 kB | 64 kB |
+| `sepa_cargas` | 8 | 8 kB | 16 kB | 32 kB |
+| **Base entera** (`pg_database_size`) | | | | **98 MB** |
+
+Las tablas SEPA suman 88 MB; los 10 MB restantes son del sistema (esquemas `auth`, `storage`, catálogo). Hasta los
+500 MB del plan gratuito quedan ~400 MB. Una copia semanal de `sepa_precios` tal como está (~52 MB con su índice)
+los llenaría en unas 8 semanas. Por eso el historial (spec futura) guarda el catálogo entero solo por tres semanas;
+las compras de cada usuario se conservan completas (ver [feature 06](../docs/features/06-precios-sepa.md)).
+
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings; el build no necesita ninguna variable de entorno.
-- [ ] `npm run sepa:etl -- --dry-run` termina sin conexión a la base e imprime: fecha del archivo, banderas cargadas, omitidos con motivo, filas leídas y filas de precios.
-- [ ] Sin `--file`, el ZIP se baja a un temporal y el temporal no queda en disco al terminar (con éxito o con error).
-- [ ] Ningún CSV se carga entero en memoria; el proceso termina con menos de 2 GB de RAM.
-- [ ] Un comercio con una columna faltante queda en `omitidos` con motivo `encabezados inválidos` y los demás se cargan.
-- [ ] Después de una carga, `select count(*) from sepa_precios` coincide con lo informado por el script.
-- [ ] Un EAN con presentación al estilo Carrefour (`1 UNI` / referencia `40 GRM`) queda con `cantidad = 40`, `unidad = 'g'`.
-- [ ] Ningún `ean` de `sepa_productos` falla `isValidGtin`.
-- [ ] `sepa_productos.banderas` coincide con `count(*)` de `sepa_precios` por `ean` en todos los productos.
-- [ ] Con la clave publishable/anon (`curl …/rest/v1/sepa_precios?limit=1`) se leen precios; `sepa_cargas` devuelve vacío o error; cualquier `insert` es rechazado.
-- [ ] Repetir la carga del mismo archivo termina como `omitida`; con `--force`, no cambia la cantidad de filas.
-- [ ] Cargar un archivo anterior a la última carga `ok` sin `--force` termina como `omitida`.
-- [ ] `sepa_chicos.zip --force` aborta por el freno, deja estado `error` y las tablas quedan como estaban.
-- [ ] Después de `sepa_sin_dia.zip --force`, las banderas de DIA conservan la misma cantidad de precios y el mismo `actualizado`.
-- [ ] El script sale con código 0 en `ok` y `omitida`, y con código 1 en `error`.
-- [ ] La app funciona igual que antes (no se tocó la UI).
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings; el build no necesita ninguna variable de entorno.
+- [x] `npm run sepa:etl -- --dry-run` termina sin conexión a la base e imprime: fecha del archivo, banderas cargadas, omitidos con motivo, filas leídas y filas de precios.
+- [x] Sin `--file`, el ZIP se baja a un temporal y el temporal no queda en disco al terminar (con éxito o con error).
+- [x] Ningún CSV se carga entero en memoria; el proceso termina con menos de 2 GB de RAM.
+- [x] Un comercio con una columna faltante queda en `omitidos` con motivo `encabezados inválidos` y los demás se cargan.
+- [x] Después de una carga, `select count(*) from sepa_precios` coincide con lo informado por el script.
+- [x] Un EAN con presentación al estilo Carrefour (`1 UNI` / referencia `40 GRM`) queda con `cantidad = 40`, `unidad = 'g'`.
+- [x] Ningún `ean` de `sepa_productos` falla `isValidGtin`.
+- [x] `sepa_productos.banderas` coincide con `count(*)` de `sepa_precios` por `ean` en todos los productos.
+- [x] Con la clave publishable/anon (`curl …/rest/v1/sepa_precios?limit=1`) se leen precios; `sepa_cargas` devuelve vacío o error; cualquier `insert` es rechazado.
+- [x] Repetir la carga del mismo archivo termina como `omitida`; con `--force`, no cambia la cantidad de filas.
+- [x] Cargar un archivo anterior a la última carga `ok` sin `--force` termina como `omitida`.
+- [x] `sepa_chicos.zip --force` aborta por el freno, deja estado `error` y las tablas quedan como estaban.
+- [x] Después de `sepa_sin_dia.zip --force`, las banderas de DIA conservan la misma cantidad de precios y el mismo `actualizado`.
+- [x] El script sale con código 0 en `ok` y `omitida`, y con código 1 en `error`.
+- [x] La app funciona igual que antes (no se tocó la UI).
 
 ## Decisiones
 
@@ -325,6 +383,10 @@ Proyecto de Supabase: `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supa
 - **No:** procesar el ZIP en streaming directo desde la red. Un corte a mitad obliga a empezar de cero.
 - **Sí:** `pg` contra el Session pooler en lugar de la API REST. Permite una transacción única (no queda la base a medio cargar) y la API REST con la clave secreta no aporta nada para un proceso batch.
 - **Sí:** migraciones con la CLI de Supabase en `supabase/migrations/`. El historial de la base queda alineado con los archivos del repo y la Fase 2 sigue el mismo camino.
+- **Sí:** permisos explícitos en la migración (`revoke all` a `anon` y `authenticated`, `grant select` en las tres tablas públicas). El proyecto hoy da todos los permisos por defecto a cada tabla nueva y Supabase anunció que los va a quitar: así la lectura pública no depende de eso y `sepa_cargas` queda cerrada también por permisos, no solo por RLS.
+- **Sí:** `pg_trgm` en el esquema `extensions`. Es donde están las demás extensiones del proyecto y evita la advertencia `extension_in_public` del asesor.
+- **Sí:** SSL verificando contra la autoridad certificante de Supabase (`supabase/prod-ca-2021.crt`). Cifra la conexión y comprueba que el servidor sea el del proyecto; `rejectUnauthorized: false` cifraría sin comprobar a quién se le manda la contraseña.
+- **Sí:** `fin` de `sepa_cargas` con `clock_timestamp()`. Dentro de la transacción `now()` devuelve la hora de inicio y la duración registrada saldría en cero.
 - **No:** aplicar la migración con el MCP de Supabase (`apply_migration`). Registra su propia versión y un `db push` posterior puede chocar. El MCP queda para consultar e inspeccionar.
 - **Sí:** versionar `.mcp.json`. No tiene secretos (el `project_ref` ya es público en la URL de la API) y quien clone el repo tiene el MCP configurado.
 - **Sí:** encabezados inválidos omiten solo ese comercio. Una cadena que cambia su formato no frena la actualización de las demás; si cambian todas, el freno del 50 % aborta la carga.

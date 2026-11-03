@@ -1,6 +1,6 @@
 # 06 — Precios de referencia de Precios Claros (SEPA)
 
-- **Estado:** Analizado
+- **Estado:** En curso (spec 08: base y carga manual)
 - **Fase:** 1–2 (ETL propio + Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Relevamiento hecho el 31/10/2026 descargando el ZIP del día y probando la API del portal. Los números de
@@ -131,7 +131,52 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
 | [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en el detalle y el carrito |
 
-Pendiente para una spec futura: historial semanal de precios SEPA (decidir con el tamaño medido en la spec 08).
+Pendiente para una spec futura: historial de precios SEPA. Criterio propuesto después de medir la base en la
+spec 08 (98 MB con el agregado vigente):
+
+- **Precios SEPA: el precio actual y los 2 anteriores de cada EAN × bandera**, cada uno con su vigencia
+  (`desde`, `hasta`). Un producto cuyo precio cambia una vez por mes conserva unos 3 meses; uno que cambia 3 veces
+  por semana, solo la última semana.
+- **Carga por diferencia:** el ZIP se sigue leyendo entero (el SEPA no publica cambios), pero en la base solo se
+  agrega una versión cuando el precio cambió o el producto es nuevo. Si no cambió, solo se extiende su vigencia.
+- **Compras del usuario: completas, sin límite.** Son los precios que pagó, ocupan poco y se pueden comparar contra
+  el SEPA en cualquier fecha de su historial.
+
+La comparación de las compras con precios SEPA depende de que estén en Supabase (Fase 2) y tengan EAN (spec 10).
+
+### Medición: cuánto cambian los precios (30/10 → 02/11)
+
+Comparando el agregado del ZIP del viernes 30/10 con el del lunes 02/11 (3 días, fin de semana en el medio):
+
+| | Filas | % de las 225.210 que están en los dos |
+|---|---|---|
+| Cambia la mediana | 8.944 | 4,0 % (3,2 % con más de 1 % de diferencia) |
+| Cambia el mínimo, la mediana o el máximo | 17.031 | 7,6 % |
+| EAN × bandera nuevos | 7.631 | — |
+| EAN × bandera que dejan de estar | 2.944 | — |
+
+Varía mucho por cadena: Changomas, SuperChangomas e HiperChangomas (`11-*`) cambian 0,2 %; Vea, Disco y Jumbo
+(`9-*`) ~6 %; Carrefour Express y Maxi (`10-3`, `10-4`) ~10 %; La Anónima (`2-1`) 17,5 %.
+
+### Tamaño estimado
+
+Cada fila de `sepa_precios` ocupa ~220 B con su índice (52 MB / 236 mil filas); con `desde` y `hasta`, ~240 B.
+
+- **Techo:** 3 versiones por EAN × bandera son ~710 mil filas, **~170 MB**. Con el resto de la base, ~215 MB: entra
+  holgado en los 500 MB del plan gratuito, haya los cambios que haya.
+- **Ritmo:** con ~4 % de cambios cada 3 días se agregan unas 3 mil versiones por día (~0,7 MB). El techo se acerca
+  recién cuando la mayoría de los precios cambió dos veces, que con la inflación actual es cuestión de meses.
+
+Para resolver en esa spec:
+
+1. **Qué cuenta como cambio.** Solo la mediana (4 %) o cualquiera de los tres valores (7,6 %). La mediana es el
+   precio de referencia; el mínimo y el máximo se mueven cuando cambia una sola sucursal.
+2. **No reescribir todas las filas cada día.** Actualizar el `hasta` de las ~220 mil que no cambian equivale a la
+   carga completa de hoy (3 a 6 minutos). Alternativa: no guardar el `hasta` de la versión vigente y tomarlo de
+   `sepa_banderas.actualizado` (la última carga de esa cadena); solo se escribe al cerrar una versión.
+3. **Los que dejan de estar** (2.944 en 3 días): cerrar su versión con la última fecha en que aparecieron, o
+   borrarlos como hoy.
+4. **Medir de un día al siguiente** (no de viernes a lunes) antes de cerrar la spec.
 
 ## Recomendación
 
