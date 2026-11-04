@@ -77,9 +77,9 @@ export function createConfirmer(): (raw: string) => string | null;
 | **Cargar precio** | Lo selecciona en el formulario | Ofrece agregarlo primero | Ofrece agregarlo primero |
 | **Agregar producto** | "Ya tenés este producto" con link | Completa el formulario (igual que elegirlo en el buscador) | Completa solo el EAN |
 
-Para pasar de Buscar o Cargar precio a Agregar producto se navega a `/upload?tab=producto&ean=<gtin13>`. Leer
-`useSearchParams` con Cache Components exige un `<Suspense>` arriba: `upload/page.tsx` pasa a Server Component
-que envuelve a `UploadForm.tsx`, igual que `product/[id]/`.
+Para pasar de Buscar o Cargar precio a Agregar producto se navega a `/upload?tab=producto&ean=<gtin13>`. Esa
+ruta (con `UploadForm.tsx` dentro de un `<Suspense>`) ya existe desde la spec 10, que la usa para la sección "En
+Precios Claros" de Buscar: esta spec solo la reutiliza.
 
 ## UI/UX
 
@@ -97,12 +97,9 @@ que envuelve a `UploadForm.tsx`, igual que `product/[id]/`.
    escritorio (sin API nativa en Windows) se carga el ponyfill desde el propio origen (pestaña Network).
 3. **Componente** `BarcodeScanner` con cámara, bucle de lectura, errores e ingreso manual. Verificar: en
    `localhost` con la webcam y un código impreso.
-4. **`/upload` con parámetros.** Separar `UploadForm.tsx` con `<Suspense>`; leer `tab` y `ean`; con `ean`,
-   buscar en el catálogo y completar. Verificar: `/upload?tab=producto&ean=7793704000911` abre la pestaña con
-   los datos.
-5. **Integración** en Buscar, Cargar precio y Agregar producto según la tabla.
-6. **Prueba en celulares** con la URL de preview de Vercel (HTTPS): Android con Chrome y iPhone con Safari.
-7. **Documentación.** `CLAUDE.md` (componente, `lib/barcode.ts`, Funcionalidades, nota de HTTPS y permisos).
+4. **Integración** en Buscar, Cargar precio y Agregar producto según la tabla.
+5. **Prueba en celulares** con la URL de preview de Vercel (HTTPS): Android con Chrome y iPhone con Safari.
+6. **Documentación.** `CLAUDE.md` (componente, `lib/barcode.ts`, Funcionalidades, nota de HTTPS y permisos).
 
 ## Criterios de aceptación
 
