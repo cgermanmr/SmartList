@@ -2,13 +2,14 @@
 // Uso: npm run sepa:etl [-- --file ruta.zip] [--dry-run] [--force]
 
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import { pipeline } from 'node:stream/promises';
 import { parseArgs } from 'node:util';
+import type pg from 'pg';
 import {
   type OmissionReason,
   type SepaBandera,
@@ -16,8 +17,9 @@ import {
   type SepaProducto,
   createProductAccumulator,
 } from './aggregate.ts';
-import { connect, loadSepa } from './load.ts';
+import { connect, lastOkFecha, lastOkInicio, loadSepa } from './load.ts';
 import { readSepaZip } from './read-zip.ts';
+import { type RunSummary, buildSummary, emptySummary } from './summary.ts';
 
 // ── Tipos ─────────────────────────────────────────────
 
@@ -48,37 +50,121 @@ export interface CkanResource {
 
 const CKAN_PACKAGE = 'https://datos.produccion.gob.ar/api/3/action/package_show?id=sepa-precios';
 
+// ISO 8601 con hora; la fracción y la zona son opcionales (CKAN manda `2026-11-04T16:19:50.656844`, sin zona)
+const CKAN_DATE = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)(\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/i;
+
+/** Fecha de CKAN (`last_modified`): si no trae zona horaria es UTC, no hora local. null si no se puede leer */
+export function parseCkanDate(text: string | null | undefined): Date | null {
+  const match = text ? CKAN_DATE.exec(text.trim()) : null;
+  if (!match) return null;
+  const [, base, fraction, zone] = match;
+  // Date solo acepta milisegundos: los microsegundos de CKAN se truncan
+  const ms = fraction ? fraction.slice(0, 4).padEnd(4, '0') : '';
+  const tz = !zone ? 'Z' : zone.length === 5 ? `${zone.slice(0, 3)}:${zone.slice(3)}` : zone.toUpperCase();
+  const date = new Date(`${base}${ms}${tz}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /** El ZIP diario de `last_modified` más reciente; null si no hay ninguno */
 export function pickLatestZip(resources: CkanResource[]): CkanResource | null {
   let latest: CkanResource | null = null;
   let latestTime = -Infinity;
   for (const resource of resources) {
-    if (resource.format?.toUpperCase() !== 'ZIP' || !resource.url || !resource.last_modified) continue;
-    const time = Date.parse(resource.last_modified);
-    if (Number.isNaN(time) || time <= latestTime) continue;
+    if (resource.format?.toUpperCase() !== 'ZIP' || !resource.url) continue;
+    const time = parseCkanDate(resource.last_modified)?.getTime();
+    if (time === undefined || time <= latestTime) continue;
     latest = resource;
     latestTime = time;
   }
   return latest;
 }
 
-async function fetchOk(url: string): Promise<Response> {
-  const response = await fetch(url);
-  if (!response.ok || !response.body) throw new Error(`${url} respondió ${response.status} ${response.statusText}`);
-  return response;
+/** Esperas entre intentos: 1, 2 y 4 minutos (1 intento + 3 reintentos) */
+export const RETRY_DELAYS_MS = [60_000, 120_000, 240_000];
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/**
+ * Pide `url` y procesa la respuesta con `consume`; si algo falla (red, estado HTTP o un corte mientras se lee el
+ * cuerpo), espera `delays[i]` ms y vuelve a empezar. Hace `delays.length + 1` intentos y propaga el último error.
+ */
+export async function fetchWithRetry<T = Response>(
+  url: string,
+  delays: readonly number[],
+  consume: (response: Response) => Promise<T> = async response => response as T,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok || !response.body) throw new Error(`${url} respondió ${response.status} ${response.statusText}`);
+      return await consume(response);
+    } catch (error) {
+      if (attempt >= delays.length) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`  Intento ${attempt + 1} de ${delays.length + 1} falló (${message}); ` +
+        `reintento en ${fmt(Math.round(delays[attempt] / 1000))} s`);
+      await sleep(delays[attempt]);
+    }
+  }
 }
 
-/** Baja el ZIP del día a `dir` y devuelve la ruta del archivo */
-async function downloadLatest(dir: string): Promise<string> {
-  const pkg = (await (await fetchOk(CKAN_PACKAGE)).json()) as { result?: { resources?: CkanResource[] } };
+/** El recurso ZIP más reciente del dataset, según `package_show` */
+async function fetchLatestResource(): Promise<CkanResource> {
+  const pkg = await fetchWithRetry(CKAN_PACKAGE, RETRY_DELAYS_MS,
+    response => response.json() as Promise<{ result?: { resources?: CkanResource[] } }>);
   const resource = pickLatestZip(pkg.result?.resources ?? []);
   if (!resource) throw new Error('El dataset sepa-precios no tiene ningún recurso ZIP');
+  return resource;
+}
 
-  console.log(`Descargando ${resource.name ?? 'ZIP'} (${resource.last_modified}) de ${resource.url}`);
+/** Baja el ZIP del recurso a `dir` y devuelve la ruta del archivo */
+async function download(resource: CkanResource, dir: string): Promise<string> {
+  console.log(`Descargando ${resource.name ?? 'ZIP'} de ${resource.url}`);
   const file = join(dir, 'sepa.zip');
-  const response = await fetchOk(resource.url!);
-  await pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), createWriteStream(file));
+  // Cada intento baja el archivo entero y sobrescribe el temporal (createWriteStream lo trunca)
+  await fetchWithRetry(resource.url!, RETRY_DELAYS_MS, response =>
+    pipeline(Readable.fromWeb(response.body as WebReadableStream<Uint8Array>), createWriteStream(file)));
   return file;
+}
+
+// ── Chequeo previo ─────────────────────────────────────────────
+
+/**
+ * ¿Hay un archivo que todavía no se cargó? Sí si el recurso se modificó después del inicio de la última carga ok
+ * (la de mayor fecha_archivo), o si nunca hubo una carga ok.
+ */
+export function hasNewFile(lastModified: Date, inicio: Date | null): boolean {
+  return inicio === null || lastModified.getTime() > inicio.getTime();
+}
+
+// ── Más de 3 días ─────────────────────────────────────────────
+
+/** Días sin precios nuevos a partir de los cuales la ejecución falla para que llegue el aviso */
+export const MAX_STALE_DAYS = 3;
+
+/** Fecha de hoy en hora argentina, como `YYYY-MM-DD` */
+export function todayInArgentina(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' }).format(now);
+}
+
+/** Días entre dos fechas `YYYY-MM-DD` (hoy − fecha) */
+export function daysSince(fecha: string, hoy: string): number {
+  return Math.round((Date.parse(`${hoy}T00:00:00Z`) - Date.parse(`${fecha}T00:00:00Z`)) / 86_400_000);
+}
+
+/** ¿Los precios están viejos? Sí si la última carga ok es de hace más de 3 días, o si no hay ninguna */
+export function isStale(fechaArchivo: string | null, hoy: string): boolean {
+  return fechaArchivo === null || daysSince(fechaArchivo, hoy) > MAX_STALE_DAYS;
+}
+
+/** Regla de "más de 3 días": el aviso si los precios están viejos, null si están al día */
+async function staleWarning(client: pg.Client): Promise<string | null> {
+  const fecha = await lastOkFecha(client);
+  const hoy = todayInArgentina();
+  if (!isStale(fecha, hoy)) return null;
+  return fecha === null
+    ? 'No hay ninguna carga ok en sepa_cargas.'
+    : `Más de ${MAX_STALE_DAYS} días sin precios nuevos: la última carga ok es del ${fecha} (${daysSince(fecha, hoy)} días).`;
 }
 
 // ── Lectura ─────────────────────────────────────────────
@@ -147,6 +233,8 @@ function printStats(data: SepaData, seconds: number): void {
 
 // ── Punto de entrada ─────────────────────────────────────────────
 
+const seconds = (since: number) => (performance.now() - since) / 1000;
+
 async function main(): Promise<number> {
   const { values } = parseArgs({
     options: {
@@ -155,44 +243,109 @@ async function main(): Promise<number> {
       force: { type: 'boolean', default: false },
     },
   });
+  const dryRun = values['dry-run'];
   const inicio = new Date();
   const start = performance.now();
+  const run: RunSummary = emptySummary('error');
+  let downloading = false;   // para distinguir "descarga fallida" de cualquier otro error
   let tempDir: string | null = null;
+  let client: pg.Client | null = null;
+
+  /** Regla de "más de 3 días" al terminar sin error: 1 si avisa */
+  const finish = async (db: pg.Client): Promise<number> => {
+    run.aviso = await staleWarning(db);
+    if (!run.aviso) return 0;
+    console.error(`\nAviso: ${run.aviso}`);
+    return 1;
+  };
 
   try {
+    // Se conecta antes de descargar para el chequeo previo; --dry-run no toca la base
+    if (!dryRun) {
+      const url = process.env.SUPABASE_DB_URL;
+      if (!url) throw new Error('Falta SUPABASE_DB_URL (Session pooler de Supabase) en .env.local o en el entorno');
+      client = await connect(url);
+    }
+
     let file = values.file;
     if (!file) {
-      tempDir = await mkdtemp(join(tmpdir(), 'sepa-'));
-      file = await downloadLatest(tempDir);
-    }
-    console.log(`Leyendo ${file}`);
-    const data = await readFile(file);
-    printStats(data, (performance.now() - start) / 1000);
+      downloading = true;
+      const resource = await fetchLatestResource();
+      const lastModified = parseCkanDate(resource.last_modified)!;   // pickLatestZip solo elige fechas válidas
+      run.lastModified = lastModified;
+      console.log(`Último ZIP: ${resource.name ?? '—'} (last_modified ${lastModified.toISOString()})`);
 
-    if (values['dry-run']) {
+      // Chequeo previo: es solo un atajo, las reglas 1 a 3 se vuelven a evaluar al cargar
+      if (client && !values.force) {
+        const ultimoInicio = await lastOkInicio(client);
+        if (!hasNewFile(lastModified, ultimoInicio)) {
+          console.log(`Sin archivo nuevo: el recurso no cambió desde la última carga ok (${ultimoInicio!.toISOString()}).`);
+          run.resultado = 'sin archivo nuevo';
+          run.detalle = `el recurso no cambió desde la última carga ok (${ultimoInicio!.toISOString()})`;
+          downloading = false;
+          return await finish(client);
+        }
+      }
+
+      tempDir = await mkdtemp(join(tmpdir(), 'sepa-'));
+      const downloadStart = performance.now();
+      file = await download(resource, tempDir);
+      run.segundos.descarga = seconds(downloadStart);
+      downloading = false;
+    }
+
+    console.log(`Leyendo ${file}`);
+    const readStart = performance.now();
+    const data = await readFile(file);
+    run.segundos.lectura = seconds(readStart);
+    run.fechaArchivo = data.fechaArchivo;
+    run.banderas = data.banderas.length;
+    run.omitidos = data.omitidos;
+    run.filasLeidas = data.filasLeidas;
+    run.filasPrecios = data.precios.length;
+    printStats(data, seconds(start));
+
+    if (!client) {
       console.log('\n--dry-run: no se conecta a la base.');
+      run.resultado = 'dry-run';
+      run.detalle = 'sin conexión a la base';
       return 0;
     }
 
-    const url = process.env.SUPABASE_DB_URL;
-    if (!url) throw new Error('Falta SUPABASE_DB_URL (Session pooler de Supabase) en .env.local o en el entorno');
     console.log(`\nCargando en la base${values.force ? ' (--force)' : ''}…`);
-    const client = await connect(url);
-    try {
-      const loadStart = performance.now();
-      const result = await loadSepa(client, data, { force: values.force, inicio });
-      console.log(`Estado:             ${result.estado}${result.detalle ? ` — ${result.detalle}` : ''}`);
-      if (result.preciosEnBase !== undefined) console.log(`sepa_precios:       ${fmt(result.preciosEnBase)} filas en la base`);
-      console.log(`Carga:              ${fmt(Math.round((performance.now() - loadStart) / 1000))} s`);
-      return result.estado === 'error' ? 1 : 0;
-    } finally {
-      await client.end();
-    }
+    const loadStart = performance.now();
+    const result = await loadSepa(client, data, { force: values.force, inicio });
+    run.segundos.carga = seconds(loadStart);
+    run.resultado = result.estado;
+    run.detalle = result.detalle;
+    console.log(`Estado:             ${result.estado}${result.detalle ? ` — ${result.detalle}` : ''}`);
+    if (result.preciosEnBase !== undefined) console.log(`sepa_precios:       ${fmt(result.preciosEnBase)} filas en la base`);
+    console.log(`Carga:              ${fmt(Math.round(run.segundos.carga))} s`);
+    if (result.estado === 'error') return 1;
+    return await finish(client);
   } catch (error) {
-    console.error(`\nError: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\nError: ${message}`);
+    run.resultado = downloading ? 'descarga fallida' : 'error';
+    run.detalle = message;
     return 1;
   } finally {
-    if (tempDir) await rm(tempDir, { recursive: true, force: true });
+    // Ni el cierre de la conexión ni el borrado del temporal impiden escribir el resumen
+    await client?.end().catch(() => {});
+    if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    run.segundos.total = seconds(start);
+    await writeSummary(run);
+  }
+}
+
+/** Agrega el resumen al job summary de GitHub si corre en Actions (o si se define GITHUB_STEP_SUMMARY a mano) */
+async function writeSummary(run: RunSummary): Promise<void> {
+  const path = process.env.GITHUB_STEP_SUMMARY;
+  if (!path) return;
+  try {
+    await appendFile(path, buildSummary(run), 'utf8');
+  } catch (error) {
+    console.error(`No se pudo escribir el resumen en ${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

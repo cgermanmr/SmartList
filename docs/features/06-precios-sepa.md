@@ -1,6 +1,6 @@
 # 06 — Precios de referencia de Precios Claros (SEPA)
 
-- **Estado:** En curso (spec 08: base y carga manual)
+- **Estado:** En curso (spec 08: base y carga; spec 09: carga diaria en GitHub Actions)
 - **Fase:** 1–2 (ETL propio + Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Relevamiento hecho el 31/10/2026 descargando el ZIP del día y probando la API del portal. Los números de
@@ -126,7 +126,7 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 | Spec | Qué hace |
 |---|---|
 | [08 — Base SEPA en Supabase](../../specs/08-base-sepa-supabase.md) | Tablas, limpieza, agregación y carga (manual) |
-| [09 — Actualización diaria](../../specs/09-actualizacion-diaria-sepa.md) | GitHub Actions todos los días a las 15:30 |
+| [09 — Actualización diaria](../../specs/09-actualizacion-diaria-sepa.md) | GitHub Actions a las 15:30 y 21:30, con chequeo previo, reintentos, bloqueo y aviso a los 3 días sin precios nuevos |
 | [10 — Productos con código de barras](../../specs/10-productos-con-codigo-de-barras.md) | EAN, marca y presentación en `Product`; buscador del catálogo SEPA |
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
 | [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en el detalle y el carrito |

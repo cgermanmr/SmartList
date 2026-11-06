@@ -15,7 +15,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 
 - UI completamente en **español** (números y fechas en `es-AR`: `1.234,56`, `28/10/2026 16:05`; moneda `$`)
 - Fase actual: **Fase 1 — Frontend Next.js con localStorage (sin backend)**, publicado en Vercel. Aparte, una base
-  Supabase de solo lectura con los precios de Precios Claros (SEPA) que la app todavía no consulta ([SPEC 08](specs/08-base-sepa-supabase.md))
+  Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions, que la
+  app todavía no consulta ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -43,16 +44,19 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 
 ```
 .github/workflows/ci.yml        # lint + test + build en cada push a main/dev y en cada PR
+.github/workflows/sepa.yml      # ETL del SEPA: 15:30 y 21:30 hora argentina y a mano (opción force)
 docs/                           # Roadmap, features futuros (features/NN-*.md) e ideas
 specs/                          # Specs NN-*.md (una por cambio)
 .mcp.json                       # MCP de Supabase del proyecto (sin secretos)
 .env.example                    # Variables de entorno; las reales van en .env.local (ignorado)
 scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar), con sus *.test.ts
-├── etl.ts                      # Punto de entrada: --file, --dry-run, --force; descarga, estadísticas, código de salida
+├── etl.ts                      # Punto de entrada: --file, --dry-run, --force; chequeo previo, descarga con reintentos,
+│                               #   estadísticas, regla de 3 días, código de salida
 ├── read-zip.ts                 # Lectura en streaming del ZIP externo, los ZIP internos y los CSV
 ├── clean.ts                    # Limpieza pura de campos (EAN, precios, presentación, pie de archivo)
 ├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales)
-└── load.ts                     # Carga en una transacción con pg y registro en sepa_cargas
+├── load.ts                     # Carga en una transacción con pg, bloqueo de sesión y registro en sepa_cargas
+└── summary.ts                  # Resumen Markdown de la ejecución para el job summary de GitHub
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql
@@ -299,13 +303,18 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
 - **`sepa:etl` da `ENOTFOUND db.<ref>.supabase.co`** — la conexión directa es solo IPv6: usar la cadena del *Session pooler*
 - **`sepa:etl` da `SELF_SIGNED_CERT_IN_CHAIN`** — falta o cambió `supabase/prod-ca-2021.crt` (Project Settings → Database → SSL Configuration)
+- **`sepa:etl` termina con "Más de 3 días sin precios nuevos"** — no hubo carga `ok` reciente: revisar las últimas
+  ejecuciones en *Actions → SEPA* y las filas de `sepa_cargas`
+- **`sepa:etl` termina como `omitida — otra carga en curso`** — otra carga (el workflow u otra local) tiene el
+  bloqueo: esperar a que termine; si el proceso murió, Postgres lo suelta al cerrarse la conexión
 
 ---
 
 ## Base de precios SEPA (Supabase)
 
 Precios de referencia de las grandes cadenas, de [Precios Claros (SEPA)](docs/features/06-precios-sepa.md). Detalle
-completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md).
+completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md) (base y carga) y la
+[SPEC 09](specs/09-actualizacion-diaria-sepa.md) (carga diaria).
 
 - **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
   consultar e inspeccionar, no para aplicar migraciones
@@ -320,14 +329,28 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 
 - **ETL:** `npm run sepa:etl` baja el ZIP más reciente del dataset `sepa-precios` a un temporal, lo lee en streaming
   (sin cargar ningún CSV entero), limpia, agrega y carga todo en **una sola transacción**. Opciones:
-  `-- --file ruta.zip` (ZIP local), `-- --dry-run` (sin base, solo estadísticas), `-- --force` (saltea las reglas de fecha)
+  `-- --file ruta.zip` (ZIP local), `-- --dry-run` (sin base, solo estadísticas), `-- --force` (saltea las reglas de fecha
+  y el chequeo previo). La consulta a CKAN y la descarga se intentan hasta 4 veces (esperas de 1, 2 y 4 min)
+- **Chequeo previo:** antes de descargar compara el `last_modified` del ZIP más reciente (UTC) con el `inicio` de la
+  última carga `ok` de mayor `fecha_archivo`; si no es posterior, termina con "sin archivo nuevo" en segundos, sin
+  bajar el ZIP y **sin fila** en `sepa_cargas`. No aplica con `--force`, `--file` ni `--dry-run`
+- **Una carga a la vez:** `loadSepa` toma `pg_try_advisory_lock(hashtext('sepa_etl'))` antes de las reglas y lo
+  suelta al terminar; si está tomado, registra `omitida` con "otra carga en curso". Necesita el *Session pooler*
+  (el *Transaction pooler* no sostiene bloqueos de sesión)
 - **Reglas de carga:** se omite un archivo más viejo que la última carga `ok` o de una fecha ya cargada (salvo
   `--force`); el **freno de seguridad** rechaza siempre un archivo con menos del 50 % de las filas de la última carga
   `ok`; una bandera que no viene conserva sus precios hasta 14 días
+- **Más de 3 días:** si termina sin error pero la `fecha_archivo` más reciente con carga `ok` tiene más de 3 días
+  (hora argentina), o no hay ninguna, sale con código 1 para que llegue el aviso. No aplica con `--dry-run`
+- **Código de salida:** 0 con `ok`, `omitida` o "sin archivo nuevo"; 1 con `error`, descarga fallida (sin fila en
+  `sepa_cargas`) o la regla de 3 días
+- **Resumen:** si existe `GITHUB_STEP_SUMMARY`, agrega una tabla Markdown con el resultado, los números y la duración
+  de descarga, lectura y carga, también si falla (`scripts/sepa/summary.ts`)
 - **Números (02/11/2026):** 23 banderas, 75.216 productos, 236.058 precios; base de 98 MB; lectura ~2 min y carga
-  3 a 6 min
+  3 a 6 min. El 04/11, en local, la lectura tardó ~3 min y la carga 8,5 a 10 min (~13 min en total)
 - **Migraciones:** `npx supabase db push --linked` (requiere `npx supabase login` y `link` la primera vez)
-- **Carga manual** por ahora; la ejecución diaria en GitHub Actions es la [SPEC 09](specs/09-actualizacion-diaria-sepa.md)
+- **Carga diaria:** workflow `SEPA` de GitHub Actions (ver *Build y Despliegue*); a mano sigue funcionando
+  `npm run sepa:etl`, y el bloqueo evita que pise al workflow
 
 ---
 
@@ -382,6 +405,13 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
 ## Build y Despliegue
 
 - **CI** — `.github/workflows/ci.yml` (Node 24): `npm ci → lint → test → build` en cada push a `main`/`dev` y en cada PR
+- **SEPA** — `.github/workflows/sepa.yml` (Node 24): `npm ci → npm run sepa:etl` con el secret `SUPABASE_DB_URL`
+  - Programado a las **15:30 y 21:30 hora argentina** (`30 18` y `30 0` UTC; el portal publica ~13:20). Los cron
+    solo corren desde `main`; la segunda corrida suele terminar en segundos con "sin archivo nuevo"
+  - A mano: *Actions → SEPA → Run workflow*, con la opción `force` para volver a cargar un archivo ya cargado
+  - `concurrency: sepa` sin cancelar y `timeout-minutes: 30`; el resumen de cada ejecución queda en el *job summary*
+  - Si falla, GitHub manda un mail a quien modificó por última vez el `cron`. Un repo público con 60 días sin
+    actividad desactiva los workflows programados: reactivarlos desde *Actions*
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - Supabase (Fase 2): integración del Marketplace de Vercel, que carga `NEXT_PUBLIC_SUPABASE_URL` y
@@ -391,7 +421,7 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
 | Variable | Dónde | Uso |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App (specs 10–12; hoy no se usan) |
-| `SUPABASE_DB_URL` | `.env.local` (y secret de GitHub en la spec 09) | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
+| `SUPABASE_DB_URL` | `.env.local` y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
 
 - El build no necesita ninguna variable de entorno
 
@@ -433,7 +463,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Next.js 16 + Vercel con CI (lint, tests, build)
 - [ ] Service worker / modo offline
 - [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
-- [ ] Actualización diaria del SEPA en GitHub Actions (spec 09)
+- [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

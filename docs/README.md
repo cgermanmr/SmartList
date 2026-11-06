@@ -27,7 +27,7 @@ necesita backend.
 | 03 | [Lista de compras compartida](features/03-lista-compartida.md) | 2 | Idea | Backend + auth, tiempo real |
 | 04 | [Promociones de comercios de cercanía](features/04-promociones-comercios.md) | 2–3 | Idea | 02, backend + roles, service worker |
 | 05 | [Pedidos a comercios](features/05-pedidos-a-comercios.md) | 3–4 | Idea | 03, 04 |
-| 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | En curso (spec 08; faltan 09–12) | Supabase (solo lectura), ETL diario |
+| 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | En curso (specs 08–09; faltan 10–12) | Supabase (solo lectura), ETL diario |
 
 **Estados posibles:** Idea · Analizado · En curso · Parcial · Hecho.
 

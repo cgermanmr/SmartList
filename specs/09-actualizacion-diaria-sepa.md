@@ -145,6 +145,9 @@ la spec 08 → carga → regla de 3 días → resumen.
    tercera responde, y otro que falla cuatro veces y propaga el error; las esperas son `[0, 0, 0]`.
 2. **Fecha de CKAN.** `parseCkanDate(texto)` exportada (UTC si no trae zona), usada por `pickLatestZip`. Verificar:
    tests con y sin zona; mirar la respuesta real de `package_show` y anotar acá el formato de `last_modified`.
+   - *Formato real (04/11/2026):* `2026-11-04T16:19:50.656844` — ISO 8601 **sin zona** y con microsegundos. Los
+     siete ZIP diarios tienen `last_modified` entre 16:19 y 16:20, que leídos como UTC son las ~13:20 hora argentina
+     de la publicación: confirma que es UTC. `parseCkanDate` trunca los microsegundos a milisegundos.
 3. **Chequeo previo.** En `etl.ts`, conectar antes de descargar (salvo `--dry-run`), consultar el `inicio` de la
    última carga `ok` de mayor `fecha_archivo` y decidir con una función pura `hasNewFile(lastModified, inicio)`.
    Verificar: tests de `hasNewFile` (posterior, igual, anterior, sin cargas previas); en local, si el archivo del

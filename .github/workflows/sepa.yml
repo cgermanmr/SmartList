@@ -1,0 +1,32 @@
+name: SEPA
+
+# Carga diaria de los precios de referencia del SEPA en Supabase (specs 08 y 09)
+on:
+  schedule:
+    - cron: '30 18 * * *'   # 15:30 hora argentina; el portal publica ~13:20
+    - cron: '30 0 * * *'    # 21:30 hora argentina; cubre atrasos del portal
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Volver a cargar aunque el archivo ya esté cargado'
+        type: boolean
+        default: false
+
+concurrency:
+  group: sepa
+  cancel-in-progress: false
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run sepa:etl -- ${{ inputs.force && '--force' || '' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

@@ -19,6 +19,9 @@ export interface LoadOptions {
 }
 
 const BATCH = 1000;
+/** Clave del bloqueo de sesión que impide dos cargas a la vez (spec 09): `hashtext('sepa_etl')` */
+export const LOCK_KEY = 'sepa_etl';
+export const LOCK_TAKEN = 'otra carga en curso';
 const MAX_DAYS_ABSENT = 14;
 const MIN_RATIO = 0.5;
 
@@ -28,9 +31,36 @@ const MIN_RATIO = 0.5;
 const CA_FILE = join(import.meta.dirname, '../../supabase/prod-ca-2021.crt');
 
 export async function connect(url: string): Promise<pg.Client> {
-  const client = new pg.Client({ connectionString: url, ssl: { ca: readFileSync(CA_FILE, 'utf8') } });
+  const client = new pg.Client({
+    connectionString: url,
+    ssl: { ca: readFileSync(CA_FILE, 'utf8') },
+    // La conexión queda abierta sin uso durante la descarga y la lectura (varios minutos): el keep-alive de TCP
+    // evita que un NAT o el pooler la corten por inactividad
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 30_000,
+  });
+  // Sin este listener, un corte de la conexión inactiva tiraría el proceso; la próxima consulta falla y lo informa
+  client.on('error', error => console.error(`Conexión a la base: ${error.message}`));
   await client.connect();
   return client;
+}
+
+/** fecha_archivo más reciente con carga ok (`YYYY-MM-DD`; regla de "más de 3 días", spec 09); null si no hay */
+export async function lastOkFecha(client: pg.Client): Promise<string | null> {
+  const { rows } = await client.query<{ fecha: string | null }>(
+    `select max(fecha_archivo)::text as fecha from public.sepa_cargas where estado = 'ok'`);
+  return rows[0]?.fecha ?? null;
+}
+
+/** `inicio` de la última carga ok de mayor fecha_archivo (chequeo previo, spec 09); null si no hay ninguna */
+export async function lastOkInicio(client: pg.Client): Promise<Date | null> {
+  const { rows } = await client.query<{ inicio: Date }>(`
+    select inicio from public.sepa_cargas
+    where estado = 'ok'
+    order by fecha_archivo desc, inicio desc
+    limit 1
+  `);
+  return rows[0]?.inicio ?? null;
 }
 
 // ── INSERT multi-fila ─────────────────────────────────────────────
@@ -177,8 +207,27 @@ async function cargar(client: pg.Client, data: SepaData): Promise<void> {
   `);
 }
 
-/** Aplica las reglas de carga y registra la ejecución en sepa_cargas */
+/**
+ * Aplica las reglas de carga y registra la ejecución en sepa_cargas. Toma el bloqueo de sesión antes de las reglas
+ * 1 a 3 (así ninguna carga las evalúa mientras otra escribe); si otra carga lo tiene, termina como omitida.
+ */
 export async function loadSepa(client: pg.Client, data: SepaData, options: LoadOptions): Promise<CargaResult> {
+  const { rows } = await client.query<{ locked: boolean }>('select pg_try_advisory_lock(hashtext($1)) as locked', [LOCK_KEY]);
+  if (!rows[0].locked) {
+    await registrar(client, data, options, 'omitida', LOCK_TAKEN);
+    return { estado: 'omitida', detalle: LOCK_TAKEN };
+  }
+
+  try {
+    return await loadLocked(client, data, options);
+  } finally {
+    // Si la conexión se cortó, Postgres ya soltó el bloqueo al cerrarla
+    await client.query('select pg_advisory_unlock(hashtext($1))', [LOCK_KEY])
+      .catch((error: unknown) => console.error(`No se pudo soltar el bloqueo: ${error instanceof Error ? error.message : String(error)}`));
+  }
+}
+
+async function loadLocked(client: pg.Client, data: SepaData, options: LoadOptions): Promise<CargaResult> {
   // 1–3. Fecha y freno: se deciden antes de tocar las tablas
   const regla = checkRules(data, await ultimaCarga(client, data.fechaArchivo), options.force);
   if (regla) {
