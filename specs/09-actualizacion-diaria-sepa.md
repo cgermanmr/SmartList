@@ -1,6 +1,6 @@
 # SPEC 09 — Actualización diaria automática de la base SEPA
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 08](08-base-sepa-supabase.md)
 > **Fecha:** 2026-11-04
 > **Objetivo:** Ejecutar el ETL de la spec 08 todos los días con GitHub Actions, sin intervención manual, y enterarse cuando falla.
@@ -167,6 +167,12 @@ la spec 08 → carga → regla de 3 días → resumen.
    `SUPABASE_DB_URL` con la cadena del Session pooler.
 8. **Workflow.** Crear `.github/workflows/sepa.yml`. Verificar: *Actions → SEPA → Run workflow* termina en verde,
    con el resumen visible. Anotar en esta spec la duración del job y la de cada etapa medidas en el runner.
+   - *Medido el 06/11/2026* (ejecución manual con `force`, [run 42153641035](https://github.com/cgermanmr/SmartList/actions/runs/42153641035)):
+     job de **2 min 41 s** (`npm ci` 7 s; `sepa:etl` 2 min 21 s): descarga 24 s, lectura 65 s, carga 49 s.
+     Cargó el archivo del jueves 05/11 (fila `ok` id 12, 236.918 precios). En el runner es ~5 veces más rápido que en
+     local (~13 min el 04/11, con 8,5 a 10 min de carga): el cuello de botella local era la red hasta el pooler.
+     Pico de memoria 2,5 GB (625 MB en local con un archivo del mismo tamaño); el runner tiene 16 GB, así que sobra
+     margen, pero conviene vigilarlo.
 9. **Ejecución programada.** Verificar al día siguiente: la corrida de las 15:30 cargó el archivo nuevo y la de las
    21:30 terminó con "sin archivo nuevo" sin descargar.
 10. **Documentación.** `CLAUDE.md`: *Build y Despliegue* (workflow SEPA, secret, horarios), *Base de precios SEPA*
