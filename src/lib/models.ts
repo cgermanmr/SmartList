@@ -3,6 +3,10 @@ export interface Product {
   name: string;
   category: string;
   image?: string;
+  ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
+  brand?: string;
+  size?: number;      // presentación: 500
+  sizeUnit?: Unit;    // va junto con size: los dos o ninguno
 }
 
 export interface CartItem {

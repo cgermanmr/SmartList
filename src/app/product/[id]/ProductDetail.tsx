@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PriceChart from '@/components/PriceChart';
-import { formatMoney, formatShortDateTime } from '@/lib/format';
+import SepaLinkDialog from '@/components/SepaLinkDialog';
+import { formatMoney, formatShortDateTime, formatSize } from '@/lib/format';
 import { newId } from '@/lib/ids';
-import { CartItem, Price } from '@/lib/models';
+import { CartItem, Price, Product } from '@/lib/models';
+import { sepaEnabled } from '@/lib/sepa';
 import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
 export default function ProductDetail() {
@@ -15,9 +17,21 @@ export default function ProductDetail() {
   const allPrices = useStore(s => s.prices);
   const addToCart = useStore(s => s.addToCart);
   const updatePrice = useStore(s => s.updatePrice);
+  const updateProduct = useStore(s => s.updateProduct);
 
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState('');
+  const [linkOpen, setLinkOpen] = useState(false);
+
+  // Vincular y quitar reemplazan el botón que tenía el foco: si quedó perdido, pasa al primero de los nuevos
+  const linkActions = useRef<HTMLDivElement>(null);
+  const ean = product?.ean;
+  const previousEan = useRef(ean);
+  useEffect(() => {
+    if (previousEan.current === ean) return;
+    previousEan.current = ean;
+    if (document.activeElement === document.body) linkActions.current?.querySelector('button')?.focus();
+  }, [ean]);
 
   if (!product) {
     return (
@@ -29,6 +43,7 @@ export default function ProductDetail() {
 
   const prices = getPricesForProduct(allPrices, product.id);
   const stats = getPriceStats(allPrices, product.id);
+  const details = productDetails(product);
 
   function add() {
     if (!product || !stats) return;
@@ -42,6 +57,11 @@ export default function ProductDetail() {
     };
     addToCart(item);
     alert('Producto añadido al carrito!');
+  }
+
+  function unlink() {
+    if (!product || !confirm('¿Quitar el vínculo con Precios Claros? La marca y la presentación se conservan.')) return;
+    updateProduct(product.id, { ean: undefined });
   }
 
   function startEdit(price: Price) {
@@ -65,7 +85,28 @@ export default function ProductDetail() {
 
       <div className="card p-6 mb-6">
         <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
+        {details && <p className="text-gray-600 mb-1 break-words">{details}</p>}
         <p className="text-gray-600 mb-4">Categoría: {product.category}</p>
+
+        {sepaEnabled && (
+          <div ref={linkActions} className="flex flex-wrap gap-2 mb-4">
+            {product.ean === undefined ? (
+              <button type="button" onClick={() => setLinkOpen(true)} className="btn-secondary">
+                Vincular con Precios Claros
+              </button>
+            ) : (
+              <>
+                <button type="button" onClick={() => setLinkOpen(true)} className="btn-secondary text-sm px-3 min-h-11">
+                  Cambiar vínculo
+                </button>
+                <button type="button" onClick={unlink} className="btn-secondary text-sm px-3 min-h-11">
+                  Quitar vínculo
+                </button>
+              </>
+            )}
+            <SepaLinkDialog product={product} open={linkOpen} onClose={() => setLinkOpen(false)} />
+          </div>
+        )}
 
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -162,4 +203,11 @@ export default function ProductDetail() {
       </div>
     </div>
   );
+}
+
+/** "Marca · 500 g · EAN 7793704000911" con lo que exista; vacío si no hay ninguno */
+function productDetails(product: Product): string {
+  const size = product.size !== undefined && product.sizeUnit ? formatSize(product.size, product.sizeUnit) : null;
+  const ean = product.ean ? `EAN ${product.ean}` : null;
+  return [product.brand, size, ean].filter(Boolean).join(' · ');
 }

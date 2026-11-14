@@ -1,6 +1,7 @@
 # 06 — Precios de referencia de Precios Claros (SEPA)
 
-- **Estado:** En curso (spec 08: base y carga; spec 09: carga diaria en GitHub Actions)
+- **Estado:** En curso (spec 08: base y carga; spec 09: carga diaria en GitHub Actions; spec 10: productos con
+  código de barras y catálogo en la app)
 - **Fase:** 1–2 (ETL propio + Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Relevamiento hecho el 31/10/2026 descargando el ZIP del día y probando la API del portal. Los números de
@@ -16,9 +17,13 @@ precios.
 
 ## Qué existe hoy
 
-- `Product` no tiene código de barras (EAN), y el SEPA identifica todo por EAN: no hay forma de cruzar datos.
-- `Product` tampoco tiene presentación (tamaño + unidad); el SEPA sí la trae.
-- No hay backend (Fase 1): todo vive en `localStorage`.
+- Base Supabase de solo lectura con el catálogo y los precios SEPA agregados por EAN × bandera, actualizada todos
+  los días (specs 08 y 09).
+- `Product` tiene `ean` (GTIN-13), `brand`, `size` y `sizeUnit` opcionales (spec 10). Se cargan a mano o desde el
+  buscador "Buscar en Precios Claros" (Agregar producto, Buscar y el detalle, donde se vincula un producto ya
+  cargado); marca y presentación se copian al vincular y no se actualizan solas.
+- La app consulta solo `sepa_productos`, con la clave publishable; todavía no muestra precios SEPA (spec 12).
+- Los datos propios siguen en `localStorage` (Fase 1).
 
 ## Fuentes disponibles
 
@@ -127,7 +132,7 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 |---|---|
 | [08 — Base SEPA en Supabase](../../specs/08-base-sepa-supabase.md) | Tablas, limpieza, agregación y carga (manual) |
 | [09 — Actualización diaria](../../specs/09-actualizacion-diaria-sepa.md) | GitHub Actions a las 15:30 y 21:30, con chequeo previo, reintentos, bloqueo y aviso a los 3 días sin precios nuevos |
-| [10 — Productos con código de barras](../../specs/10-productos-con-codigo-de-barras.md) | EAN, marca y presentación en `Product`; buscador del catálogo SEPA |
+| [10 — Productos con código de barras](../../specs/10-productos-con-codigo-de-barras.md) | EAN, marca y presentación en `Product`; buscador del catálogo SEPA en Agregar producto, Buscar y el detalle (vincular) |
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
 | [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en el detalle y el carrito |
 
@@ -255,6 +260,6 @@ interface ReferencePrice {  // salida del ETL, no se guarda en localStorage salv
 - ¿Referencia nacional, por provincia o por sucursales cercanas? Cambia el tamaño de la salida del ETL
   (244 mil filas por bandera vs 2 millones por bandera × provincia).
 - ¿Dónde se publica la salida en Fase 1 (Vercel Blob, Supabase Storage, GitHub Release)?
-- ¿Cómo se vinculan los productos ya cargados (texto libre) con un EAN: a mano, o sugiriendo coincidencias por
-  descripción?
+- ~~¿Cómo se vinculan los productos ya cargados (texto libre) con un EAN?~~ Resuelto en la spec 10: a mano, desde
+  el detalle ("Vincular con Precios Claros"), buscando en el catálogo; sin sugerencias automáticas.
 - ¿Qué precio mostrar: `precio_lista` o el de la promo cuando existe?

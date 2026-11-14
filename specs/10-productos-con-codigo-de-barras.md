@@ -21,14 +21,15 @@ Desde la spec 09 el catálogo se actualiza solo todos los días (~75 mil product
   sirviendo sin migración.
 - Acción `updateProduct` en el store.
 - Cliente de Supabase de solo lectura (`src/lib/supabase.ts`) y consultas al catálogo (`src/lib/sepa.ts`).
-- Búsqueda en el catálogo **sin importar los acentos** ("azúcar" y "azucar" encuentran lo mismo), sin migración.
+- Búsqueda en el catálogo por **descripción y marca**, **sin importar los acentos** ("azúcar" y "azucar" encuentran
+  lo mismo), sin migración.
 - **Cargar → Agregar producto:** campo "Código de barras" y buscador "Buscar en Precios Claros" que completa
   nombre, marca, presentación y EAN.
 - **Detalle de producto:** se ven EAN, marca y presentación. Sin EAN: "Vincular con Precios Claros". Con EAN:
   "Cambiar vínculo" y "Quitar vínculo", para corregir un vínculo equivocado.
 - **Buscar:** si el texto son solo dígitos, también busca por EAN (parcial) entre los productos propios.
 - **Buscar en el catálogo:** en `/`, debajo de los productos propios, una sección "En Precios Claros" con los
-  productos del catálogo SEPA que coinciden por nombre (o por EAN). Tocar uno abre Agregar producto con los datos
+  productos del catálogo SEPA que coinciden por nombre o marca (o por EAN). Tocar uno abre Agregar producto con los datos
   completos.
 - **`/upload` con parámetros** (`?tab=producto&ean=<gtin13>`): abre la pestaña producto con los datos del catálogo
   ya completos. Lo usan Buscar en esta spec y el lector de la spec 11.
@@ -90,20 +91,30 @@ export function getSepaProduct(ean: string): Promise<SepaProduct | null>;
 export function toSepaProduct(row: SepaProductRow): SepaProduct;
 /** Nombre sugerido: descripción en formato título, sin la marca repetida al final (pura, con tests) */
 export function suggestedName(p: SepaProduct): string;
+/** Filtro `or` de una palabra: está en la descripción o en la marca (pura, con tests) */
+export function wordFilter(word: string): string;
 /** Patrón de una palabra que ignora acentos y escapa los caracteres especiales de regex (pura, con tests) */
 export function accentPattern(word: string): string;
 ```
 
 - **Búsqueda por texto:** el texto se parte en palabras y cada una se convierte con `accentPattern`; todas deben
-  aparecer (`.imatch('descripcion', patrón)` por palabra, que es `~*` en Postgres). El índice trigram de la spec 08
-  soporta `~*`: medido el 06/11/2026, "yerba playadito" tarda 1,8 ms y "azúcar" encuentra 229 productos (220 sin
-  tilde + 9 con tilde; con `ilike` eran 9). Orden `banderas desc, descripcion`, límite 20.
+  aparecer, cada una en la descripción **o** en la marca (`.or(wordFilter(palabra))`, que es `~*` en Postgres sobre
+  las dos columnas). Así "yerba playadito" encuentra el producto cuya descripción es "YERBA" y cuya marca es
+  "PLAYADITO". Orden `banderas desc, descripcion`, límite 20.
+- **`wordFilter`:** dentro de un `or` de PostgREST el patrón va entre comillas, con `\` y `"` escapados, para que una
+  coma o un paréntesis del texto no rompan el filtro.
+- **Medido el 06/11/2026:** "azúcar" encuentra 229 productos (220 sin tilde + 9 con tilde; con `ilike` eran 9). Solo
+  en la descripción, el índice trigram de la spec 08 soporta `~*` y "yerba playadito" tarda 1,8 ms y encuentra 3
+  productos; con la marca, `marca` no tiene índice y el `or` recorre la tabla: ~90 ms y 5 productos.
 - **`accentPattern`:** pasa a minúsculas, saca las tildes (`normalize('NFD')`), escapa `\ . * + ? ^ $ ( ) [ ] { } |`
   y reemplaza cada vocal y la `n` por su clase: `a → [aá]`, `e → [eé]`, `i → [ií]`, `o → [oó]`, `u → [uúü]`,
   `n → [nñ]`. Ejemplo: `"Azúcar"` → `"[aá]z[uúü]c[aá]r"`.
 - **Búsqueda por EAN:** si `query` son solo dígitos y `toGtin13(query)` es válido → `eq('ean', …)`. Si son dígitos
   pero no un GTIN válido, se busca como texto.
-- Errores de red o de Supabase → la promesa rechaza; la UI muestra "No se pudo consultar Precios Claros".
+- **Marcas de relleno:** `toSepaProduct` deja `brand` en `null` si `marca` es `S/D`, `SIN MARCA`, `GENERICO` o `.`
+  (sin distinguir mayúsculas). Medido el 06/11/2026: 16.568 de 75.611 productos, el 22 %.
+- Errores de red o de Supabase → la promesa rechaza; la UI muestra "No se pudo consultar Precios Claros". Las dos
+  consultas llevan `.retry(false)`: los reintentos de `supabase-js` (a 1, 2 y 4 s) demoraban el mensaje unos 7 s.
 
 ### Cliente — `src/lib/supabase.ts`
 
@@ -197,6 +208,7 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 - [ ] Sin variables de Supabase la app funciona como antes y no muestra el buscador SEPA ni los botones de vínculo.
 - [ ] Buscar "yerba playadito" en Agregar producto lista resultados en menos de 2 s; al tocar uno se completan nombre, marca, presentación y EAN.
 - [ ] "azúcar" y "azucar" devuelven los mismos resultados en el catálogo.
+- [ ] "yerba playadito" encuentra el EAN `7793704000911`, que tiene "YERBA" en la descripción y "PLAYADITO" solo en la marca.
 - [ ] Un texto con caracteres especiales (`(`, `[`, `*`, `\`) no rompe la búsqueda: devuelve resultados o "Sin resultados".
 - [ ] Se guarda el producto con categoría elegida y aparece en Buscar con su EAN.
 - [ ] Un EAN inválido (`7793704000912`) muestra "Código de barras inválido" y no guarda.
@@ -224,7 +236,9 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 - **Sí:** consultar desde el navegador con `supabase-js`. La tabla es pública por RLS y no hace falta un route handler.
 - **No:** guardar el catálogo SEPA en `localStorage`. Son decenas de MB y se desactualiza a diario.
 - **Sí:** nombre sugerido editable. Las descripciones del SEPA vienen en mayúsculas, abreviadas y a veces cortadas a 20 caracteres ("DULCE D LECHE REPOST").
-- **Sí:** ignorar acentos con una expresión regular armada en la app (`accentPattern` + `~*`). El índice trigram la soporta (1,8 ms medido), encuentra las dos formas y no necesita migración.
+- **Sí:** ignorar acentos con una expresión regular armada en la app (`accentPattern` + `~*`). Encuentra las dos formas y no necesita migración.
+- **Sí:** buscar también en la marca. Muchas descripciones no la repiten (la yerba Playadito más difundida dice solo "YERBA"). Sin índice en `marca` la consulta recorre la tabla, pero ~90 ms alcanzan de sobra.
+- **Sí:** sin reintentos automáticos en las consultas al catálogo (`.retry(false)`). Con ellos, sin conexión se veía "Buscando…" unos 7 s antes del error (medido el 06/11/2026). A cambio, un corte breve no se recupera solo: alcanza con seguir escribiendo.
 - **No:** sacar las tildes del texto antes de consultar. Es más simple, pero pierde los ~1.800 productos que tienen acento en la descripción.
 - **No:** `unaccent` con una función inmutable y un índice nuevo. Es más prolijo, pero suma una migración y cambios en la base a una spec de la app.
 - **Sí:** variables cargadas a mano en Vercel. La integración del Marketplace crea un proyecto de Supabase nuevo, y el de la spec 08 ya existe.
@@ -238,15 +252,15 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 - **Sí:** tocar un resultado lleva a Agregar producto, no a un detalle propio del catálogo. La categoría es obligatoria y manual, y sin producto propio no hay dónde cargar precios ni agregar al carrito. Ver precios SEPA de un producto queda para la spec 12.
 - **Sí:** `/upload?tab=producto&ean=…` en esta spec y no en la 11. Buscar ya lo necesita; la spec 11 lo reutiliza.
 - **Sí:** marca y presentación se copian al vincular y no se actualizan solas. El producto propio es del usuario; el catálogo cambia todos los días.
+- **Sí:** tratar `S/D`, `SIN MARCA`, `GENERICO` y `.` como producto sin marca. Copiarlos llenaría el detalle de líneas como "S/D · 500 g" y ocuparía el campo Marca con un dato que no sirve.
 
 ## Riesgos
 
 | Riesgo | Mitigación |
 |---|---|
 | Supabase caído o proyecto pausado | La UI degrada a mensaje; nada más depende de Supabase. La carga diaria de la spec 09 mantiene activo el proyecto |
-| Búsqueda lenta | Índice trigram (1,8 ms medido con regex); límite de 20 resultados |
-| Una palabra de 1 o 2 letras no aprovecha el índice trigram | Con ~75 mil filas un recorrido completo sigue siendo rápido; se mide en el paso 9 |
-| Texto del usuario con caracteres especiales de regex | `accentPattern` los escapa; criterio de aceptación específico |
+| Búsqueda lenta | El `or` con `marca` no usa índice: con ~75 mil filas el recorrido tarda ~90 ms (medido). Si el catálogo crece mucho, sumar un índice trigram en `marca` en otra spec |
+| Texto del usuario con caracteres especiales de regex o del filtro `or` | `accentPattern` y `wordFilter` los escapan; criterio de aceptación específico |
 | Una consulta por cada tecla en Buscar | Espera de 300 ms y mínimo de 3 caracteres; se descarta la respuesta de una consulta vieja si llega después de la nueva |
 | Descripciones poco claras o cortadas | Se muestran marca y presentación; el nombre es editable |
 | Un EAN vinculado deja de estar en el catálogo (el ETL borra productos sin precio) | El producto propio conserva sus datos; `getSepaProduct` devuelve `null` y `/upload` abre con solo el EAN |

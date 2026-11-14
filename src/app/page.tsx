@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import NumberInput from '@/components/NumberInput';
+import SepaResults from '@/components/SepaResults';
+import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Product } from '@/lib/models';
-import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
+import { isSearchableQuery, sepaEnabled } from '@/lib/sepa';
+import { filterProducts, getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
 export default function SearchPage() {
   const products = useStore(s => s.products);
@@ -17,10 +20,13 @@ export default function SearchPage() {
   const removeFromCart = useStore(s => s.removeFromCart);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const query = searchQuery.trim().toLowerCase();
-  const filteredProducts = query
-    ? products.filter(p => p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query))
-    : products;
+  const filteredProducts = filterProducts(products, searchQuery);
+
+  // Catálogo: aparte del filtro propio, que sigue siendo instantáneo. Sin los productos que ya tienen un propio
+  const showCatalog = sepaEnabled && isSearchableQuery(searchQuery);
+  const sepaSearch = useSepaSearch(searchQuery);
+  const ownEans = new Set(products.map(p => p.ean));
+  const catalogSearch = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
 
   function changeQuantity(itemId: string, qty: number) {
     if (qty > 0) updateQuantity(itemId, qty);
@@ -49,7 +55,7 @@ export default function SearchPage() {
           onChange={e => setSearchQuery(e.target.value)}
           type="text"
           placeholder="Busca un producto..."
-          aria-label="Buscar producto por nombre o categoría"
+          aria-label="Buscar producto por nombre, categoría o código de barras"
           className="input-field w-full"
         />
       </div>
@@ -148,9 +154,29 @@ export default function SearchPage() {
       </div>
 
       {filteredProducts.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">No se encontraron productos</p>
+        <div className={`text-center ${showCatalog ? 'py-6' : 'py-12'}`}>
+          <p className="text-gray-500 text-lg">
+            {showCatalog ? 'No tenés productos con ese nombre' : 'No se encontraron productos'}
+          </p>
         </div>
+      )}
+
+      {showCatalog && (
+        <section aria-labelledby="catalog-title" className="mt-8">
+          <h2 id="catalog-title" className="text-xl font-bold">En Precios Claros</h2>
+          <SepaResults
+            search={catalogSearch}
+            renderItem={(product, info) => (
+              <Link
+                href={`/upload?tab=producto&ean=${product.ean}`}
+                aria-label={`Agregar ${product.description}`}
+                className="list-row">
+                {info}
+                <span aria-hidden="true" className="shrink-0 text-sm font-semibold text-primary-700">Agregar</span>
+              </Link>
+            )}
+          />
+        </section>
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CartItem, Purchase } from './models';
+import { CartItem, Product, Purchase } from './models';
 import { CALCULATOR_KEY, CART_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
-import { getCartTotal, getLastPurchasedPrice, getPriceStats, useStore } from './store';
+import { filterProducts, getCartTotal, getLastPurchasedPrice, getPriceStats, useStore } from './store';
 
 // localStorage en memoria para el entorno de Node
 class MemoryStorage {
@@ -62,6 +62,38 @@ describe('hydrate', () => {
   it('no guarda nada antes de hidratar', () => {
     useStore.getState().addProduct({ id: 'x', name: 'X', category: 'Y' });
     expect(storage.getItem(PRODUCTS_KEY)).toBeNull();
+  });
+});
+
+describe('updateProduct', () => {
+  const linked: Product = {
+    id: 'p1', name: 'Yerba', category: 'Almacen',
+    ean: '7793704000508', brand: 'Playadito', size: 500, sizeUnit: 'g',
+  };
+
+  beforeEach(() => {
+    storage.setItem(PRODUCTS_KEY, JSON.stringify([linked, { id: 'p2', name: 'Arroz', category: 'Almacen' }]));
+    useStore.getState().hydrate();
+  });
+
+  it('cambia solo los campos indicados sin mutar el producto anterior', () => {
+    const before = useStore.getState().products[0];
+    useStore.getState().updateProduct('p1', { brand: 'Otra marca' });
+    expect(useStore.getState().products[0]).toEqual({ ...linked, brand: 'Otra marca' });
+    expect(before.brand).toBe('Playadito');
+  });
+
+  it('no toca los demás productos', () => {
+    const other = useStore.getState().products[1];
+    useStore.getState().updateProduct('p1', { brand: 'Otra marca' });
+    expect(useStore.getState().products[1]).toBe(other);
+  });
+
+  it('con ean undefined quita el vínculo del JSON guardado y conserva marca y presentación', () => {
+    useStore.getState().updateProduct('p1', { ean: undefined });
+    expect(saved<Product[]>(PRODUCTS_KEY)[0]).toEqual({
+      id: 'p1', name: 'Yerba', category: 'Almacen', brand: 'Playadito', size: 500, sizeUnit: 'g',
+    });
   });
 });
 
@@ -147,5 +179,48 @@ describe('compras y precios', () => {
     useStore.getState().updatePrice('1', 999);
     expect(useStore.getState().prices.find(p => p.id === '1')!.amount).toBe(999);
     expect(before.amount).toBe(185);
+  });
+});
+
+describe('filterProducts', () => {
+  const products: Product[] = [
+    { id: '1', name: 'Yerba Playadito', category: 'Almacen', ean: '7793704000508' },
+    { id: '2', name: 'Galletitas', category: 'Almacen', ean: '0000096385074' },
+    { id: '3', name: 'Leche 1L', category: 'Lacteos' },
+    { id: '4', name: 'Agua 7793', category: 'Bebidas' },
+  ];
+  const ids = (query: string) => filterProducts(products, query).map(p => p.id);
+
+  it('sin texto devuelve todos', () => {
+    expect(ids('')).toEqual(['1', '2', '3', '4']);
+    expect(ids('   ')).toEqual(['1', '2', '3', '4']);
+  });
+
+  it('filtra por nombre o categoría sin distinguir mayúsculas', () => {
+    expect(ids('YERBA')).toEqual(['1']);
+    expect(ids('lacteos')).toEqual(['3']);
+  });
+
+  it('con solo dígitos encuentra los EAN que los contienen', () => {
+    expect(ids('7793704')).toEqual(['1']);
+    expect(ids('7793704000508')).toEqual(['1']);
+    expect(ids('000508')).toEqual(['1']);
+  });
+
+  it('ignora los espacios al buscar por EAN', () => {
+    expect(ids('7793704 000508')).toEqual(['1']);
+  });
+
+  it('suma los EAN al filtro de nombre de siempre', () => {
+    expect(ids('7793')).toEqual(['1', '4']);
+  });
+
+  it('un GTIN válido en otro formato encuentra el GTIN-13 guardado', () => {
+    expect(ids('96385074')).toEqual(['2']);
+    expect(ids('07793704000508')).toEqual(['1']);
+  });
+
+  it('un texto con letras no busca por EAN', () => {
+    expect(ids('7793704a')).toEqual([]);
   });
 });

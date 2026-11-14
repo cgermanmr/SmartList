@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toGtin13 } from './gtin';
 import { uniqueId } from './ids';
 import { Product, Price, CartItem, Purchase, CalculatorState } from './models';
 import {
@@ -19,6 +20,8 @@ export interface AppState {
 
   hydrate: () => void;
   addProduct: (product: Product) => void;
+  /** Copia el producto con los cambios; `ean: undefined` quita el vínculo (JSON.stringify omite la clave) */
+  updateProduct: (id: string, changes: Partial<Omit<Product, 'id'>>) => void;
   addPrice: (price: Price) => void;
   updatePrice: (priceId: string, newAmount: number) => void;
   addToCart: (item: CartItem) => void;
@@ -54,6 +57,10 @@ export const useStore = create<AppState>()((set, get) => ({
 
   // ── Productos ─────────────────────────────────────────────
   addProduct: product => set(s => ({ products: [...s.products, product] })),
+
+  updateProduct: (id, changes) => set(s => ({
+    products: s.products.map(p => p.id === id ? { ...p, ...changes } : p),
+  })),
 
   // ── Precios ───────────────────────────────────────────────
   addPrice: price => set(s => ({ prices: [...s.prices, price] })),
@@ -131,6 +138,25 @@ useStore.subscribe((state, prev) => {
 });
 
 // ── Consultas ─────────────────────────────────────────────
+
+/**
+ * Búsqueda de productos propios: nombre o categoría contienen el texto (sin distinguir mayúsculas). Si el texto
+ * sin espacios son solo dígitos, también los productos cuyo EAN los contiene o, si es un GTIN válido, coincide
+ * con su GTIN-13 (un GTIN-14 que empieza con 0 encuentra el EAN-13 guardado).
+ */
+export function filterProducts(products: Product[], query: string): Product[] {
+  const text = query.trim().toLowerCase();
+  if (!text) return products;
+  const digits = text.replace(/\s/g, '');
+  const byEan = /^[0-9]+$/.test(digits);
+  const gtin = byEan ? toGtin13(digits) : null;
+  return products.filter(p =>
+    p.name.toLowerCase().includes(text) ||
+    p.category.toLowerCase().includes(text) ||
+    (byEan && p.ean !== undefined && (p.ean.includes(digits) || p.ean === gtin)),
+  );
+}
+
 export function getPricesForProduct(prices: Price[], productId: string): Price[] {
   return prices
     .filter(p => p.productId === productId)

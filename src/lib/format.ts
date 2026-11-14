@@ -18,6 +18,11 @@ export function formatMoney(value: number): string {
   return formatNumber(value, 2);
 }
 
+/** Presentación de un producto: "500 g", "1.000 ml", "1,5 l" */
+export function formatSize(size: number, unit: string): string {
+  return `${formatNumber(size, 0, 3)} ${unit}`;
+}
+
 /** Variación porcentual con signo y 1 decimal: "+5,3%" */
 export function formatPctChange(current: number, previous: number): string {
   const pct = ((current - previous) / previous) * 100;

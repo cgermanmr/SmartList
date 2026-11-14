@@ -15,8 +15,10 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 
 - UI completamente en **español** (números y fechas en `es-AR`: `1.234,56`, `28/10/2026 16:05`; moneda `$`)
 - Fase actual: **Fase 1 — Frontend Next.js con localStorage (sin backend)**, publicado en Vercel. Aparte, una base
-  Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions, que la
-  app todavía no consulta ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md))
+  Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions
+  ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md)). La app consulta
+  su catálogo de productos para cargar y vincular productos por código de barras
+  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)); los datos propios siguen en localStorage
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -33,6 +35,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | TypeScript | ^5 | Lenguaje (strict + `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`) |
 | Tailwind CSS | ^4 | Estilos (utility-first, mobile-first; loader `@tailwindcss/turbopack`, sin `tailwind.config.js`) |
 | Zustand | ^5 | Estado global |
+| @supabase/supabase-js | ^2.119 | Lectura del catálogo SEPA desde el navegador (clave publishable, sin sesión) |
 | Vitest | ^5 | Tests de la lógica pura |
 | ESLint | ^9 | Lint (`eslint-config-next`: core-web-vitals + typescript + reglas del React Compiler) |
 | Node.js | ≥ 24 | Runtime (local, CI y Vercel); los scripts del ETL corren como `.ts` sin compilar |
@@ -69,8 +72,9 @@ src/
 │   ├── layout.tsx              # Header (CartSummary), NavBar, <StoreHydrator>{children}, footer; metadata y viewport
 │   ├── globals.css             # Tailwind v4 + @theme (paleta primary) + @layer components
 │   ├── page.tsx                # Buscar
-│   ├── upload/page.tsx         # Tabs: cargar precio / agregar producto
-│   ├── product/[id]/           # page.tsx (Suspense) + ProductDetail.tsx (useParams)
+│   ├── upload/                 # page.tsx (Suspense) + UploadForm.tsx (useSearchParams): tabs cargar precio /
+│   │                           #   agregar producto; ?tab=producto&ean=… abre agregar producto completado
+│   ├── product/[id]/           # page.tsx (Suspense) + ProductDetail.tsx (useParams); vincular con el catálogo
 │   ├── cart/page.tsx           # Carrito y checkout con medio de pago
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
@@ -80,7 +84,12 @@ src/
 │   ├── CartSummary.tsx         # "Carrito: N | Total: $X" del header
 │   ├── StoreHydrator.tsx       # Carga localStorage en el cliente antes de mostrar las páginas
 │   ├── NumberInput.tsx         # Input numérico sobre un valor del store (conserva el texto mientras se edita)
-│   └── PriceChart.tsx          # Gráfico de tendencia en SVG propio
+│   ├── PriceChart.tsx          # Gráfico de tendencia en SVG propio
+│   ├── useSepaSearch.ts        # Hook: consulta al catálogo con espera de 300 ms; estado idle/loading/done/error
+│   ├── SepaResults.tsx         # Mensajes y lista de resultados del catálogo (cada fila la arma quien lo usa)
+│   ├── SepaSearch.tsx          # Buscador "Buscar en Precios Claros" que devuelve el producto elegido
+│   ├── SepaLinkDialog.tsx      # Modal <dialog> de "Vincular con Precios Claros" / "Cambiar vínculo"
+│   └── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
@@ -89,6 +98,9 @@ src/
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
+    ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
+    ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y funciones puras
+    ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
 
@@ -97,12 +109,14 @@ src/
 ## Arquitectura y Patrones
 
 - **App Router** — una carpeta por ruta con `page.tsx`. Las páginas son Client Components (`'use client'`) porque
-  todos los datos viven en `localStorage`.
+  todos los datos propios viven en `localStorage`.
 - **Render solo en el cliente** — `StoreHydrator` (en el layout) llama a `hydrate()` en un `useEffect` y muestra
   "Cargando…" hasta entonces. El servidor solo prerenderiza el shell (header, nav, footer).
 - **Cache Components** — Next oculta las páginas con `<Activity>` en vez de desmontarlas (hasta 3 rutas): el estado
   local de una página (pestaña, formulario, paso de pago) se conserva al volver. Los hooks de URL (`useParams`,
-  `usePathname`) en rutas dinámicas necesitan un `<Suspense>` arriba, o el build falla.
+  `usePathname`) en rutas dinámicas, y `useSearchParams` en cualquier ruta, necesitan un `<Suspense>` arriba, o el
+  build falla. Como la página no se desmonta, `UploadForm` aplica `?tab=producto&ean=…` cuando cambia la URL (ajuste
+  de estado durante el render), no con una `key` que borraría lo escrito.
   `Date.now()` / `Math.random()` no pueden ejecutarse durante el prerender: generarlos en handlers o en funciones
   que se llamen en el cliente (`defaultPrices()`, `newId()`).
 - **Validación de navegación instantánea** — `experimental.instantInsights.validationLevel: 'manual-warning'` en
@@ -110,13 +124,23 @@ src/
 - **Estado (Zustand)** — un único `useStore` en `src/lib/store.ts`. Las páginas leen con selectores
   (`useStore(s => s.cart)`) y llaman acciones (`useStore(s => s.addToCart)`). Las consultas derivadas son funciones
   puras que reciben la colección: `getPricesForProduct(prices, id)`, `getPriceStats(prices, id)`,
-  `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`. Fuera de React: `useStore.getState()`.
+  `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`. Fuera de React:
+  `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
 - **Punto de integración con backend** — las acciones del store; cuando llegue Supabase, ahí van las llamadas.
+- **Catálogo SEPA (solo lectura)** — `lib/supabase.ts` crea el cliente con `NEXT_PUBLIC_SUPABASE_URL` y
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave publishable `sb_publishable_…`), sin sesión. Si falta alguna, `supabase` es
+  `null`, `sepaEnabled` es `false` y la UI no muestra nada del catálogo (el resto funciona igual). `lib/sepa.ts`
+  consulta `sepa_productos`: por texto, cada palabra en la descripción o la marca sin importar los acentos
+  (`imatch` con `accentPattern`), o por EAN; hasta 20 resultados, primero los que están en más cadenas. Las
+  consultas llevan `.retry(false)`: sin conexión el error ("No se pudo consultar Precios Claros") sale enseguida
+- **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
+  (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
-- **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial.
+- **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
+  `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco).
 
 ### Persistencia (localStorage)
 
@@ -128,8 +152,10 @@ src/
 | `preciolocal_purchases` | `Purchase[]` (más reciente primero) | `[]` |
 | `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`defaultCalculator()`) |
 
-El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Las claves conservan el prefijo
-`preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien ya usa la app).
+El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Los campos de `Product` de la
+spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo.
+Las claves conservan el prefijo `preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien
+ya usa la app).
 `loadFromStorage<T>` / `saveToStorage<T>` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
 `preciolocal_calculator` además se valida al cargar (`loadCalculator`): si la magnitud, el largo (2–6) o la forma de
 alguna presentación no es válida, se usa el estado inicial.
@@ -140,7 +166,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | Path | Archivo | Nav | Función |
 |---|---|---|---|
 | `/` | `app/page.tsx` | 🔍 Buscar | Búsqueda de productos |
-| `/upload` | `app/upload/page.tsx` | 📸 Cargar Precio | Cargar precio o producto nuevo |
+| `/upload` | `app/upload/page.tsx` | 📸 Cargar Precio | Cargar precio o producto nuevo; `?tab=producto&ean=…` |
 | `/cart` | `app/cart/page.tsx` | 🛒 Mi Carrito | Carrito y checkout |
 | `/purchases` | `app/purchases/page.tsx` | 📋 Historial | Historial de compras |
 | `/calculadora` | `app/calculadora/page.tsx` | 🧮 Calculadora | Comparar presentaciones por precio unitario |
@@ -157,6 +183,10 @@ interface Product {
   name: string;
   category: string;
   image?: string;
+  ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
+  brand?: string;
+  size?: number;      // presentación: 500
+  sizeUnit?: Unit;    // va junto con size: los dos o ninguno
 }
 
 interface Price {
@@ -223,17 +253,33 @@ interface CalculatorState {
 ## Funcionalidades (Fase 1)
 
 ### Búsqueda (`/`)
-- Filtro en tiempo real por nombre o categoría (case-insensitive)
+- Filtro en tiempo real por nombre o categoría (case-insensitive) y por código de barras (`filterProducts`): si el
+  texto sin espacios son solo dígitos, también los productos cuyo EAN los contiene; un GTIN válido en otro formato
+  (EAN-8, UPC-A, GTIN-14 con 0) encuentra el GTIN-13 guardado
+- Sección **En Precios Claros** debajo de los productos propios (con al menos 3 caracteres y Supabase configurado):
+  hasta 20 resultados del catálogo sin los que ya tienen un producto propio; cada uno es un link "Agregar" a
+  `/upload?tab=producto&ean=…`. Sin propios que coincidan, el mensaje es "No tenés productos con ese nombre"
 - Muestra último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
 - Agregar al carrito (si no hay precio registrado usa `100` como fallback) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
 
 ### Cargar (`/upload`)
 - Tab **precio**: producto, monto, barrio (requeridos) y tienda (opcional)
-- Tab **producto**: nombre y categoría (requeridos)
+- Tab **producto**: nombre y categoría (requeridos); código de barras, marca y presentación (número + unidad), opcionales
+- Buscador **Buscar en Precios Claros** (espera de 300 ms, "Buscando…", "Sin resultados", error): al elegir un
+  resultado completa nombre sugerido (descripción en formato título sin la marca repetida), marca, presentación y
+  EAN, todo editable; la categoría es manual y el foco pasa a ella
+- Código de barras inválido → "Código de barras inválido"; ya usado por otro producto → "Ya tenés este producto"
+  con link; en ambos casos no guarda
+- `?tab=producto&ean=…` abre la pestaña producto completada con `getSepaProduct`; si el EAN no está en el catálogo,
+  solo con el EAN (vacía si no es válido). Al guardar, la URL queda en `?tab=producto`
 - Mensajes de éxito/error que se ocultan a los 3 s
 
 ### Detalle de producto (`/product/[id]`)
+- Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista)
+- Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN, **Cambiar vínculo** y **Quitar vínculo**.
+  Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
+  pide confirmación y borra solo el EAN. Ninguno cambia el nombre ni la categoría (`sepaLinkChanges`)
 - Estadísticas: actual, mínimo, máximo, promedio (`getPriceStats`)
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
@@ -301,6 +347,10 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
+- **No aparece nada de Precios Claros** — faltan `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Se
+  copian al código en el build: después de cargarlas en `.env.local` o en Vercel hay que volver a compilar o desplegar
+- **"No se pudo consultar Precios Claros"** — sin conexión, o Supabase no responde (proyecto pausado, clave
+  revocada): revisar la URL y la clave en *Project Settings → API*
 - **`sepa:etl` da `ENOTFOUND db.<ref>.supabase.co`** — la conexión directa es solo IPv6: usar la cadena del *Session pooler*
 - **`sepa:etl` da `SELF_SIGNED_CERT_IN_CHAIN`** — falta o cambió `supabase/prod-ca-2021.crt` (Project Settings → Database → SSL Configuration)
 - **`sepa:etl` termina con "Más de 3 días sin precios nuevos"** — no hubo carga `ok` reciente: revisar las últimas
@@ -316,6 +366,8 @@ Precios de referencia de las grandes cadenas, de [Precios Claros (SEPA)](docs/fe
 completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md) (base y carga) y la
 [SPEC 09](specs/09-actualizacion-diaria-sepa.md) (carga diaria).
 
+- **Uso desde la app:** solo lectura de `sepa_productos` con la clave publishable
+  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)); `sepa_precios` lo va a usar el precio de referencia (spec 12)
 - **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
   consultar e inspeccionar, no para aplicar migraciones
 - **Tablas** (`public`, RLS con lectura pública salvo `sepa_cargas`):
@@ -363,7 +415,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
   envuelven a un componente cliente colocado al lado (ver `product/[id]/`)
 - Formularios controlados con `useState`; inputs con `id` + `<label htmlFor>`; números del store con `NumberInput`
 - Formato siempre con `src/lib/format.ts` (nunca `toFixed` para mostrar)
-- Tailwind exclusivamente para estilos; clases reutilizables en `globals.css` (`@layer components`): `.btn-primary`, `.btn-secondary`, `.card`, `.input-field`
+- Tailwind exclusivamente para estilos; clases reutilizables en `globals.css` (`@layer components`): `.btn-primary`, `.btn-secondary`, `.card`, `.input-field`, `.list-row` (fila tocable de una lista)
 - Grids responsivos: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`
 - Comentarios de sección en el código con el estilo `// ── Título ─────`
 - Textos de UI y comentarios en español
@@ -414,16 +466,18 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
     actividad desactiva los workflows programados: reactivarlos desde *Actions*
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
-- Supabase (Fase 2): integración del Marketplace de Vercel, que carga `NEXT_PUBLIC_SUPABASE_URL` y
-  `NEXT_PUBLIC_SUPABASE_ANON_KEY`; en local, `.env.local` (ignorado por git)
+- Supabase: `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` cargadas **a mano** en Vercel
+  (*Settings → Environment Variables*), no con la integración del Marketplace, que crearía un proyecto nuevo; en
+  local, `.env.local` (ignorado por git). La clave es la **publishable** (`sb_publishable_…`), la que Supabase
+  recomienda hoy; la variable conserva el nombre `ANON_KEY`
 - Variables de entorno (plantilla en `.env.example`):
 
 | Variable | Dónde | Uso |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App (specs 10–12; hoy no se usan) |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App: lectura del catálogo SEPA (spec 10; después 11–12) |
 | `SUPABASE_DB_URL` | `.env.local` y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
 
-- El build no necesita ninguna variable de entorno
+- El build no necesita ninguna variable de entorno: sin las de Supabase, la app funciona sin el catálogo
 
 ### Instalar en el móvil
 
@@ -464,6 +518,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [ ] Service worker / modo offline
 - [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
 - [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
+- [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---
