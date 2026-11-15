@@ -347,8 +347,9 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
-- **No aparece nada de Precios Claros** — faltan `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Se
-  copian al código en el build: después de cargarlas en `.env.local` o en Vercel hay que volver a compilar o desplegar
+- **No aparece nada de Precios Claros** — faltan `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` (con
+  esos nombres exactos: `…_PUBLISHABLE_KEY` no sirve). Se copian al código en el build: después de cargarlas en
+  `.env.local` o en Vercel hay que volver a compilar o desplegar
 - **"No se pudo consultar Precios Claros"** — sin conexión, o Supabase no responde (proyecto pausado, clave
   revocada): revisar la URL y la clave en *Project Settings → API*
 - **`sepa:etl` da `ENOTFOUND db.<ref>.supabase.co`** — la conexión directa es solo IPv6: usar la cadena del *Session pooler*

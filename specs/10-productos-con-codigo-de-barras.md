@@ -1,6 +1,6 @@
 # SPEC 10 — Productos con código de barras y catálogo SEPA
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 08](08-base-sepa-supabase.md)
 > **Fecha:** 2026-11-06
 > **Objetivo:** Agregar código de barras (EAN), marca y presentación a `Product`, conectar la app a Supabase solo para leer, y permitir crear o vincular productos buscándolos en el catálogo SEPA.
@@ -204,29 +204,31 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings; el build pasa sin variables de entorno.
-- [ ] Sin variables de Supabase la app funciona como antes y no muestra el buscador SEPA ni los botones de vínculo.
-- [ ] Buscar "yerba playadito" en Agregar producto lista resultados en menos de 2 s; al tocar uno se completan nombre, marca, presentación y EAN.
-- [ ] "azúcar" y "azucar" devuelven los mismos resultados en el catálogo.
-- [ ] "yerba playadito" encuentra el EAN `7793704000911`, que tiene "YERBA" en la descripción y "PLAYADITO" solo en la marca.
-- [ ] Un texto con caracteres especiales (`(`, `[`, `*`, `\`) no rompe la búsqueda: devuelve resultados o "Sin resultados".
-- [ ] Se guarda el producto con categoría elegida y aparece en Buscar con su EAN.
-- [ ] Un EAN inválido (`7793704000912`) muestra "Código de barras inválido" y no guarda.
-- [ ] Un EAN ya usado por otro producto propio muestra "Ya tenés este producto" con link, al agregar, vincular y cambiar el vínculo.
-- [ ] En el detalle de un producto sin EAN, "Vincular con Precios Claros" asigna el EAN sin cambiar el nombre.
-- [ ] En el detalle de un producto con EAN, "Cambiar vínculo" asigna el EAN nuevo con su marca y presentación, sin cambiar el nombre.
-- [ ] "Quitar vínculo" pide confirmación y borra solo el EAN; marca y presentación quedan.
-- [ ] Sin conexión, el buscador muestra "No se pudo consultar Precios Claros" y el resto del formulario funciona.
-- [ ] En Buscar, `7793704` encuentra los productos propios cuyo EAN contiene esos dígitos.
-- [ ] En Buscar, "yerba playadito" sin productos propios que coincidan muestra resultados en "En Precios Claros" en menos de 2 s.
-- [ ] Tocar un resultado abre Agregar producto con nombre, marca, presentación y EAN completos; falta solo la categoría.
-- [ ] Un producto propio con EAN no aparece repetido en "En Precios Claros".
-- [ ] Con 1 o 2 letras la sección del catálogo no aparece y no se hace ninguna consulta (pestaña Network).
-- [ ] Sin conexión, Buscar filtra los productos propios igual que antes y la sección muestra "No se pudo consultar Precios Claros".
-- [ ] `/upload?tab=producto&ean=7793704000508` abre la pestaña producto con los datos del catálogo.
-- [ ] En una URL de preview de Vercel y en producción, la búsqueda en el catálogo devuelve resultados.
-- [ ] Los productos guardados antes de esta spec se ven igual y se pueden vincular.
-- [ ] En 375 px no hay scroll horizontal en Buscar, Cargar ni el detalle (con los botones de vínculo y el modal).
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings; el build pasa sin variables de entorno.
+- [x] Sin variables de Supabase la app funciona como antes y no muestra el buscador SEPA ni los botones de vínculo.
+- [x] Buscar "yerba playadito" en Agregar producto lista resultados en menos de 2 s; al tocar uno se completan nombre, marca, presentación y EAN. Medido el
+  14 y 15/11/2026: ~0,85 s con la espera de 300 ms; la primera consulta con la tabla fría, 3,4 a 3,9 s (ver Riesgos).
+- [x] "azúcar" y "azucar" devuelven los mismos resultados en el catálogo.
+- [x] "yerba playadito" encuentra el EAN `7793704000911`, que tiene "YERBA" en la descripción y "PLAYADITO" solo en la marca.
+- [x] Un texto con caracteres especiales (`(`, `[`, `*`, `\`) no rompe la búsqueda: devuelve resultados o "Sin resultados".
+- [x] Se guarda el producto con categoría elegida y aparece en Buscar con su EAN.
+- [x] Un EAN inválido (`7793704000912`) muestra "Código de barras inválido" y no guarda.
+- [x] Un EAN ya usado por otro producto propio muestra "Ya tenés este producto" con link, al agregar, vincular y cambiar el vínculo.
+- [x] En el detalle de un producto sin EAN, "Vincular con Precios Claros" asigna el EAN sin cambiar el nombre.
+- [x] En el detalle de un producto con EAN, "Cambiar vínculo" asigna el EAN nuevo con su marca y presentación, sin cambiar el nombre.
+- [x] "Quitar vínculo" pide confirmación y borra solo el EAN; marca y presentación quedan.
+- [x] Sin conexión, el buscador muestra "No se pudo consultar Precios Claros" y el resto del formulario funciona.
+- [x] En Buscar, `7793704` encuentra los productos propios cuyo EAN contiene esos dígitos.
+- [x] En Buscar, "yerba playadito" sin productos propios que coincidan muestra resultados en "En Precios Claros" en menos de 2 s.
+- [x] Tocar un resultado abre Agregar producto con nombre, marca, presentación y EAN completos; falta solo la categoría.
+- [x] Un producto propio con EAN no aparece repetido en "En Precios Claros".
+- [x] Con 1 o 2 letras la sección del catálogo no aparece y no se hace ninguna consulta (pestaña Network).
+- [x] Sin conexión, Buscar filtra los productos propios igual que antes y la sección muestra "No se pudo consultar Precios Claros".
+- [x] `/upload?tab=producto&ean=7793704000508` abre la pestaña producto con los datos del catálogo.
+- [ ] En una URL de preview de Vercel y en producción, la búsqueda en el catálogo devuelve resultados. Preview:
+  verificado el 15/11/2026; producción: se verifica después del merge a `main`.
+- [x] Los productos guardados antes de esta spec se ven igual y se pueden vincular.
+- [x] En 375 px no hay scroll horizontal en Buscar, Cargar ni el detalle (con los botones de vínculo y el modal).
 
 ## Decisiones
 
@@ -237,7 +239,7 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 - **No:** guardar el catálogo SEPA en `localStorage`. Son decenas de MB y se desactualiza a diario.
 - **Sí:** nombre sugerido editable. Las descripciones del SEPA vienen en mayúsculas, abreviadas y a veces cortadas a 20 caracteres ("DULCE D LECHE REPOST").
 - **Sí:** ignorar acentos con una expresión regular armada en la app (`accentPattern` + `~*`). Encuentra las dos formas y no necesita migración.
-- **Sí:** buscar también en la marca. Muchas descripciones no la repiten (la yerba Playadito más difundida dice solo "YERBA"). Sin índice en `marca` la consulta recorre la tabla, pero ~90 ms alcanzan de sobra.
+- **Sí:** buscar también en la marca. Muchas descripciones no la repiten (la yerba Playadito más difundida dice solo "YERBA"). Sin índice en `marca` la consulta recorre la tabla: ~90 ms con la tabla en memoria, ~3 s la primera vez (ver Riesgos).
 - **Sí:** sin reintentos automáticos en las consultas al catálogo (`.retry(false)`). Con ellos, sin conexión se veía "Buscando…" unos 7 s antes del error (medido el 06/11/2026). A cambio, un corte breve no se recupera solo: alcanza con seguir escribiendo.
 - **No:** sacar las tildes del texto antes de consultar. Es más simple, pero pierde los ~1.800 productos que tienen acento en la descripción.
 - **No:** `unaccent` con una función inmutable y un índice nuevo. Es más prolijo, pero suma una migración y cambios en la base a una spec de la app.
@@ -259,7 +261,7 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 | Riesgo | Mitigación |
 |---|---|
 | Supabase caído o proyecto pausado | La UI degrada a mensaje; nada más depende de Supabase. La carga diaria de la spec 09 mantiene activo el proyecto |
-| Búsqueda lenta | El `or` con `marca` no usa índice: con ~75 mil filas el recorrido tarda ~90 ms (medido). Si el catálogo crece mucho, sumar un índice trigram en `marca` en otra spec |
+| Búsqueda lenta | El `or` con `marca` no usa índice: con ~75 mil filas el recorrido tarda ~90 ms (medido). La primera consulta después de un rato sin uso tardó 2,8 a 3 s en Supabase (3,4 a 3,9 s en pantalla, 14 y 15/11/2026; hipótesis: tabla fuera de memoria, sin `EXPLAIN`). Sumar un índice trigram en `marca` en otra spec |
 | Texto del usuario con caracteres especiales de regex o del filtro `or` | `accentPattern` y `wordFilter` los escapan; criterio de aceptación específico |
 | Una consulta por cada tecla en Buscar | Espera de 300 ms y mínimo de 3 caracteres; se descarta la respuesta de una consulta vieja si llega después de la nueva |
 | Descripciones poco claras o cortadas | Se muestran marca y presentación; el nombre es editable |
