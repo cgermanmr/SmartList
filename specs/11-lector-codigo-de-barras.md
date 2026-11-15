@@ -1,6 +1,6 @@
 # SPEC 11 — Lector de códigos de barras con la cámara
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md)
 > **Fecha:** 2026-10-31
 > **Objetivo:** Leer el código de barras de un producto con la cámara del celular desde la web, para encontrarlo entre los propios, cargarle un precio o darlo de alta con los datos del catálogo SEPA.
