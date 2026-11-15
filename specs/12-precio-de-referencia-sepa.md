@@ -57,6 +57,25 @@ export function referenceSummary(prices: SepaPrice[], today: Date): ReferenceSum
 export function vsReference(price: number, reference: number): number;
 ```
 
+## Relación con las specs 13 a 17
+
+Revisado el 15/11/2026. Esta spec sigue siendo la **referencia nacional por cadena** ("¿lo que pagué es caro o
+barato?"). La pregunta "¿dónde lo consigo cerca y a cuánto?" va por otro camino:
+
+| Spec | Qué agrega | Qué comparte con esta |
+|---|---|---|
+| [13](13-precios-por-sucursal-sepa.md) | Sucursales y precio por sucursal en la base | Nada: tablas nuevas, `sepa_precios` no cambia |
+| [14](14-carrito-por-comercio.md) | Comercio por ítem y carrito agrupado | La línea de referencia del carrito va dentro de cada ítem, en cualquier grupo |
+| [15](15-precios-y-comercios-cercanos.md) | Precios y comercios cercanos en Buscar, el detalle y el carrito | `getSepaPrices`: sin ubicación, la spec 15 muestra "Desde $X en <cadena>" con esta misma consulta y su caché |
+| [16](16-mapa-y-como-llegar.md) | Mapa y ruta | — |
+| [17](17-imagenes-de-productos.md) | Imágenes | — |
+
+- **Orden:** esta spec no depende de las 13 a 17 ni al revés. Si la 15 se implementa antes, `getSepaPrices` y su
+  caché se crean ahí con la firma de esta spec y acá solo se usan.
+- **Detalle:** la tarjeta "Precio de referencia" va después de las estadísticas propias y **antes** de la tarjeta
+  "Comercios cercanos" de la spec 15. La referencia sigue siendo nacional aunque haya ubicación: no se recalcula
+  con las sucursales cercanas.
+
 ## Reglas
 
 - **Referencia = mediana de las medianas por cadena:** cada cadena cuenta una vez, sin importar cuántas
@@ -118,12 +137,12 @@ export function vsReference(price: number, reference: number): number;
 | Riesgo | Mitigación |
 |---|---|
 | Presentaciones distintas con el mismo EAN entre cadenas | El EAN identifica la presentación; si una cadena informa mal, la mediana de medianas lo amortigua |
-| La referencia nacional no refleja el barrio | Se aclara "grandes cadenas"; la cercanía queda para una spec futura |
+| La referencia nacional no refleja el barrio | Se aclara "grandes cadenas"; los precios por cercanía son la [spec 15](15-precios-y-comercios-cercanos.md) |
 | Supabase lento | La tarjeta aparece cuando llega; nada espera a la consulta |
 
 ## Lo que **no** incluye esta spec
 
-- Precios por sucursal o cercanía.
+- Precios por sucursal o cercanía (specs [13](13-precios-por-sucursal-sepa.md) y [15](15-precios-y-comercios-cercanos.md)).
 - Promociones.
 - Historial o gráfico SEPA.
 - Comparación de canasta por cadena.

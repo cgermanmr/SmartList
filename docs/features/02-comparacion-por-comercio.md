@@ -31,7 +31,9 @@ agrupa por comercio.
 ## Evolución futura
 
 - Ranking de comercios por canasta: "con tu última compra, este local te salía $X más barato".
-- Mapa de precios por barrio.
+- Mapa de precios por barrio. Para las cadenas del SEPA, los precios por sucursal cercana y el mapa del comercio
+  están en las specs [15](../../specs/15-precios-y-comercios-cercanos.md) y
+  [16](../../specs/16-mapa-y-como-llegar.md); los comercios cargados a mano no tienen coordenadas.
 - Con backend (Fase 2): precios compartidos entre vecinos, no solo los propios.
 
 ## Modelo de datos propuesto
@@ -75,5 +77,8 @@ interface Purchase {
 
 ## Preguntas abiertas
 
-- ¿El comercio se define por compra o puede variar por ítem (compra repartida en varios locales)?
+- ~~¿El comercio se define por compra o puede variar por ítem (compra repartida en varios locales)?~~ Resuelto en
+  la [spec 14](../../specs/14-carrito-por-comercio.md): varía por ítem; el carrito se agrupa por comercio y cada
+  comercio se cierra como una compra aparte. El comercio viaja dentro del ítem (`StoreRef`); el catálogo
+  normalizado de este feature sigue pendiente.
 - ¿Cuánto tiempo un precio sigue siendo "vigente" para comparar (p. ej. descartar precios de más de 60 días)?

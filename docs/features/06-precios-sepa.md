@@ -135,6 +135,14 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 | [10 — Productos con código de barras](../../specs/10-productos-con-codigo-de-barras.md) | EAN, marca y presentación en `Product`; buscador del catálogo SEPA en Agregar producto, Buscar y el detalle (vincular) |
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
 | [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en el detalle y el carrito |
+| [13 — Precios por sucursal](../../specs/13-precios-por-sucursal-sepa.md) | Sucursales con coordenadas y precio por sucursal, en arreglos por EAN × bandera |
+| [15 — Precios y comercios cercanos](../../specs/15-precios-y-comercios-cercanos.md) | Ubicación, distancia y lista de comercios en Buscar; agregar al carrito desde la lista |
+| [16 — Mapa y cómo llegar](../../specs/16-mapa-y-como-llegar.md) | Mapa con la ubicación propia, el comercio y la ruta |
+| [17 — Imágenes de productos](../../specs/17-imagenes-de-productos.md) | Imágenes por EAN desde Open Food Facts y el portal |
+
+Las specs 11 y 12 están en borrador desde el 31/10; las 13 a 17 se agregaron el 15/11/2026 (la
+[14 — Carrito por comercio](../../specs/14-carrito-por-comercio.md) pertenece al feature 02). La API del portal
+(fuente B) se volvió a probar ese día y sigue caída.
 
 Pendiente para una spec futura: historial de precios SEPA. Criterio propuesto después de medir la base en la
 spec 08 (98 MB con el agregado vigente):
@@ -213,7 +221,8 @@ Para resolver en esa spec:
 
 ## Evolución futura
 
-- Elegir sucursales cercanas (geolocalización o barrio) y comparar contra esas en vez del promedio nacional.
+- ~~Elegir sucursales cercanas (geolocalización o barrio)~~ → specs 13 y 15. Queda pendiente comparar el precio
+  propio contra las sucursales cercanas en vez de la referencia nacional.
 - Escanear el código de barras: `BarcodeDetector` en Chrome Android desde la web; cámara nativa en Fase 3.
 - Comparar la canasta de una compra entera contra cada cadena ("en Coto te salía $X").
 - Usar las promos (`promo1` / `promo2` y sus leyendas) en la calculadora de precio unitario.
