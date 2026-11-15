@@ -220,13 +220,14 @@ cambia (ya está en `.env.example` y `CLAUDE.md`).
 - [x] Sin conexión, el buscador muestra "No se pudo consultar Precios Claros" y el resto del formulario funciona.
 - [x] En Buscar, `7793704` encuentra los productos propios cuyo EAN contiene esos dígitos.
 - [x] En Buscar, "yerba playadito" sin productos propios que coincidan muestra resultados en "En Precios Claros" en menos de 2 s.
+  La primera consulta con la tabla fría tarda más (ver Riesgos).
 - [x] Tocar un resultado abre Agregar producto con nombre, marca, presentación y EAN completos; falta solo la categoría.
 - [x] Un producto propio con EAN no aparece repetido en "En Precios Claros".
 - [x] Con 1 o 2 letras la sección del catálogo no aparece y no se hace ninguna consulta (pestaña Network).
 - [x] Sin conexión, Buscar filtra los productos propios igual que antes y la sección muestra "No se pudo consultar Precios Claros".
 - [x] `/upload?tab=producto&ean=7793704000508` abre la pestaña producto con los datos del catálogo.
-- [ ] En una URL de preview de Vercel y en producción, la búsqueda en el catálogo devuelve resultados. Preview:
-  verificado el 15/11/2026; producción: se verifica después del merge a `main`.
+- [x] En una URL de preview de Vercel y en producción, la búsqueda en el catálogo devuelve resultados. Verificado
+  el 15/11/2026 en las dos.
 - [x] Los productos guardados antes de esta spec se ven igual y se pueden vincular.
 - [x] En 375 px no hay scroll horizontal en Buscar, Cargar ni el detalle (con los botones de vínculo y el modal).
 
