@@ -18,7 +18,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions
   ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md)). La app consulta
   su catálogo de productos para cargar y vincular productos por código de barras
-  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)); los datos propios siguen en localStorage
+  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
+  ([SPEC 12](specs/12-precio-de-referencia-sepa.md)); los datos propios siguen en localStorage
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -91,6 +92,9 @@ src/
 │   ├── SepaResults.tsx         # Mensajes y lista de resultados del catálogo (cada fila la arma quien lo usa)
 │   ├── SepaSearch.tsx          # Buscador "Buscar en Precios Claros" que devuelve el producto elegido
 │   ├── SepaLinkDialog.tsx      # Modal <dialog> de "Vincular con Precios Claros" / "Cambiar vínculo"
+│   ├── useSepaReferences.ts    # Hook: precio de referencia de varios EAN en una sola consulta (getSepaPrices)
+│   ├── SepaPriceTable.tsx      # Lista de precios por cadena; ReferenceLine ("Promedio $X · más barato en…") y Chevron
+│   ├── ReferencePrice.tsx      # Tarjeta "Precio de referencia" del detalle; colores de la comparación
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
 │   └── ScanButton.tsx          # Botón 📷 que abre el lector; solo si el navegador puede pedir la cámara
@@ -104,7 +108,8 @@ src/
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
     ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
-    ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y funciones puras
+    ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
+    │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras
     ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
@@ -140,6 +145,12 @@ src/
   consulta `sepa_productos`: por texto, cada palabra en la descripción o la marca sin importar los acentos
   (`imatch` con `accentPattern`), o por EAN; hasta 20 resultados, primero los que están en más cadenas. Las
   consultas llevan `.retry(false)`: sin conexión el error ("No se pudo consultar Precios Claros") sale enseguida
+- **Precio de referencia** ([SPEC 12](specs/12-precio-de-referencia-sepa.md)) — `getSepaPrices(eans)` lee
+  `sepa_precios` con el nombre de `sepa_banderas` en **una sola consulta** (`in`) para todos los EAN de la pantalla.
+  Caché de módulo por EAN durante la sesión (guarda la promesa, también los "sin precios"; si falla, se borra). El
+  precio de cada cadena es su **mediana** entre sucursales; la referencia es el **promedio** de esas medianas (cada
+  cadena cuenta una vez). `vsReference` compara con ±5 % de margen (`referenceStatus`). Las pantallas usan
+  `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía)
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -274,11 +285,16 @@ interface CalculatorState {
   texto sin espacios son solo dígitos, también los productos cuyo EAN los contiene; un GTIN válido en otro formato
   (EAN-8, UPC-A, GTIN-14 con 0) encuentra el GTIN-13 guardado
 - Sección **En Precios Claros** debajo de los productos propios (con al menos 3 caracteres y Supabase configurado):
-  hasta 20 resultados del catálogo sin los que ya tienen un producto propio; cada uno es un link "Agregar" a
-  `/upload?tab=producto&ean=…`. Sin propios que coincidan, el mensaje es "No tenés productos con ese nombre"
+  hasta 20 resultados del catálogo sin los que ya tienen un producto propio. Sin propios que coincidan, el mensaje
+  es "No tenés productos con ese nombre"
+  - Cuando llegan los resultados, una sola consulta de precios para todos; cada uno con precios suma la línea
+    "Promedio $X · más barato en <cadena> $Y" y la fila es un botón (`aria-expanded`, chevron) que despliega la
+    lista por cadena (`SepaPriceTable`) con el link "Agregar producto". Uno desplegado a la vez; escribir lo cierra
+  - Sin precios (o mientras cargan, o si falla la consulta) la fila es el link "Agregar" a `/upload?tab=producto&ean=…`
 - Botón 📷 **Leer código de barras** al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
   consulta el catálogo y ofrece "Agregar <descripción>" (o "Agregar producto" si no está o falla la consulta), que
-  navega a `/upload?tab=producto&ean=…`. Escribir en el buscador borra la oferta
+  navega a `/upload?tab=producto&ean=…`. Escribir en el buscador borra la oferta. Si el producto tiene precios, la
+  oferta suma el resumen y el botón "Ver precios por cadena", que despliega la lista
 - Muestra último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
 - Agregar al carrito (si no hay precio registrado usa `100` como fallback) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
@@ -315,6 +331,10 @@ interface CalculatorState {
   Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
   pide confirmación y borra solo el EAN. Ninguno cambia el nombre ni la categoría (`sepaLinkChanges`)
 - Estadísticas: actual, mínimo, máximo, promedio (`getPriceStats`)
+- Con EAN y precios en el catálogo, tarjeta **Precio de referencia · Precios Claros** (`ReferencePrice`): "Actualizado
+  hoy/ayer/hace N días" ("Datos del dd/mm/aaaa" con más de 7 días), promedio entre cadenas con el badge de comparación
+  contra el último precio propio (verde "X % por debajo de la referencia", azul "En línea con la referencia", rojo
+  "X % por encima…"; ±5 %), cadena más barata, rango y la lista por cadena. Sin EAN no consulta
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
 - Agregar al carrito con el precio actual
@@ -322,6 +342,8 @@ interface CalculatorState {
 ### Carrito (`/cart`)
 - Editar cantidad y precio de cada ítem; eliminar; vaciar (con `confirm`)
 - Badge comparando contra el precio de la **última compra** (`getLastPurchasedPrice`): verde más barato, rojo más caro, azul igual
+- Ítems con EAN: línea "Ref. $X · 8 % arriba" (o "abajo", "en línea") con los mismos colores, comparando el precio del
+  ítem contra la referencia SEPA; una sola consulta para todo el carrito
 - Opción "comercio único" (barrio + tienda) para toda la compra
 - Checkout en dos pasos con medio de pago: efectivo, débito, crédito 1 cuota, crédito en cuotas, transferencia/QR, cheque
 - Al confirmar: guarda un `Purchase`, **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no es comercio único) y vacía el carrito
@@ -408,8 +430,9 @@ Precios de referencia de las grandes cadenas, de [Precios Claros (SEPA)](docs/fe
 completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md) (base y carga) y la
 [SPEC 09](specs/09-actualizacion-diaria-sepa.md) (carga diaria).
 
-- **Uso desde la app:** solo lectura de `sepa_productos` con la clave publishable
-  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)); `sepa_precios` lo va a usar el precio de referencia (spec 12)
+- **Uso desde la app:** solo lectura con la clave publishable de `sepa_productos`
+  ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y de `sepa_precios` + `sepa_banderas` para el precio de
+  referencia ([SPEC 12](specs/12-precio-de-referencia-sepa.md))
 - **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
   consultar e inspeccionar, no para aplicar migraciones
 - **Tablas** (`public`, RLS con lectura pública salvo `sepa_cargas`):
@@ -516,7 +539,7 @@ Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
 
 | Variable | Dónde | Uso |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App: lectura del catálogo SEPA (spec 10; después 11–12) |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App: lectura del catálogo y los precios SEPA (specs 10 y 12) |
 | `SUPABASE_DB_URL` | `.env.local` y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
 
 - El build no necesita ninguna variable de entorno: sin las de Supabase, la app funciona sin el catálogo
@@ -562,6 +585,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
 - [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
 - [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
+- [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

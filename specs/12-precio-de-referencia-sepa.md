@@ -1,6 +1,6 @@
 # SPEC 12 — Precio de referencia SEPA en Buscar, el detalle y el carrito
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 08](08-base-sepa-supabase.md), [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 11](11-lector-codigo-de-barras.md)
 > **Fecha:** 2026-10-31 (ampliada el 2026-11-16)
 > **Objetivo:** Mostrar, para los productos con EAN, cuánto cuestan hoy en cada cadena según el SEPA: el precio promedio entre cadenas en los resultados de Buscar y del lector, la lista de cadenas con su precio al elegir un producto, y si el precio propio está por encima o por debajo de esa referencia.
@@ -156,22 +156,31 @@ o barato?" y "¿cuánto sale en cada cadena?"). La pregunta "¿dónde lo consigo
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] Con precios 4.000 / 4.200 / 5.000 / 9.000 en cuatro cadenas, el promedio es $5.550 y la más barata la de $4.000.
-- [ ] En Buscar, "yerba playadito" muestra en el resultado del catálogo "Promedio $X · más barato en <cadena> $Y".
-- [ ] Tocar ese resultado despliega todas las cadenas con su precio, ordenadas de menor a mayor, con la más barata
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] Con precios 4.000 / 4.200 / 5.000 / 9.000 en cuatro cadenas, el promedio es $5.550 y la más barata la de $4.000.
+  Test de `referenceSummary`.
+- [x] En Buscar, "yerba playadito" muestra en el resultado del catálogo "Promedio $X · más barato en <cadena> $Y".
+  Verificado en local el 16/11/2026: "Promedio $2.754,69 · más barato en Vea $2.490,00".
+- [x] Tocar ese resultado despliega todas las cadenas con su precio, ordenadas de menor a mayor, con la más barata
   marcada, y el link "Agregar producto" abre el formulario completado.
-- [ ] Una búsqueda con 20 resultados del catálogo hace una sola consulta de precios.
-- [ ] Un resultado del catálogo sin precios se ve como antes y su link "Agregar" funciona igual.
-- [ ] Leer con el lector un código del catálogo muestra el resumen y "Ver precios por cadena".
-- [ ] En el detalle de un producto vinculado se ven promedio, cadena más barata, rango, lista por cadena y fecha.
-- [ ] Con último precio propio $5.000 y promedio $5.550, se ve "9,9 % por debajo de la referencia" en verde.
-- [ ] Un producto sin EAN no muestra la tarjeta ni hace consultas.
-- [ ] En el carrito, cada ítem con EAN muestra la referencia; con 5 ítems vinculados hay una sola consulta.
-- [ ] Sin conexión o sin variables de Supabase, Buscar, el detalle y el carrito funcionan como antes, sin
+- [x] Una búsqueda con 20 resultados del catálogo hace una sola consulta de precios.
+  Una consulta con los 20 EAN; repetir la búsqueda no hace ninguna (caché).
+- [x] Un resultado del catálogo sin precios se ve como antes y su link "Agregar" funciona igual.
+  La base no tiene productos sin precios: se simuló con una respuesta vacía de `sepa_precios`.
+- [x] Leer con el lector un código del catálogo muestra el resumen y "Ver precios por cadena".
+  Verificado en local con el ingreso manual del lector; falta verlo con la cámara en el teléfono.
+- [x] En el detalle de un producto vinculado se ven promedio, cadena más barata, rango, lista por cadena y fecha.
+- [x] Con último precio propio $5.000 y promedio $5.550, se ve "9,9 % por debajo de la referencia" en verde.
+  El texto, con test de `referenceLabel`; el color, en local con precios reales ("9,2 % por debajo…").
+- [x] Un producto sin EAN no muestra la tarjeta ni hace consultas.
+- [x] En el carrito, cada ítem con EAN muestra la referencia; con 5 ítems vinculados hay una sola consulta.
+- [x] Sin conexión o sin variables de Supabase, Buscar, el detalle y el carrito funcionan como antes, sin
   mensajes de error nuevos.
-- [ ] Con datos de más de 7 días se ve "Datos del dd/mm/aaaa".
-- [ ] En 375 px la lista por cadena y el desplegado de Buscar no generan scroll horizontal.
+  Sin conexión, simulado con un error de red en `sepa_precios`; sin variables, con un build sin ellas.
+- [x] Con datos de más de 7 días se ve "Datos del dd/mm/aaaa".
+  Test de `freshnessLabel`: los datos reales eran del día anterior.
+- [x] En 375 px la lista por cadena y el desplegado de Buscar no generan scroll horizontal.
+  Medido en un iframe de 375 px en Buscar (desplegado), el detalle y el carrito.
 
 ## Decisiones
 

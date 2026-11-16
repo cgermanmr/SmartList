@@ -53,3 +53,14 @@ export function formatShortDateTime(date: Date | string): string {
 export function formatDayMonth(date: Date | string): string {
   return dayMonthFormat.format(new Date(date));
 }
+
+/** Porcentaje sin signo con hasta 1 decimal: "9,9 %", "8 %" */
+export function formatPct(value: number): string {
+  return `${formatNumber(value, 0, 1)} %`;
+}
+
+/** dd/MM/yyyy de una fecha 'YYYY-MM-DD' (sin pasar por Date: a medianoche UTC sería el día anterior en Argentina) */
+export function formatIsoDate(iso: string): string {
+  const [year, month, day] = iso.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}

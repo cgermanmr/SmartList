@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import NumberInput from '@/components/NumberInput';
+import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
+import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Price, Purchase } from '@/lib/models';
+import { referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
 import { getCartTotal, getLastPurchasedPrice, useStore } from '@/lib/store';
 
 // ── Medios de pago ─────────────────────────────────────────
@@ -43,6 +46,7 @@ function priceBadge(item: CartItem, last: number): string {
 
 export default function CartPage() {
   const cart = useStore(s => s.cart);
+  const products = useStore(s => s.products);
   const purchases = useStore(s => s.purchases);
   const removeFromCart = useStore(s => s.removeFromCart);
   const updateQuantity = useStore(s => s.updateQuantity);
@@ -60,6 +64,10 @@ export default function CartPage() {
   const [selectedPayment, setSelectedPayment] = useState('');
 
   const total = getCartTotal(cart);
+
+  // Precio de referencia de los ítems con EAN, en una sola consulta
+  const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
+  const references = useSepaReferences(cart.map(item => eanOf(item.productId)));
 
   function clear() {
     if (confirm('¿Estás seguro de que quieres vaciar el carrito?')) {
@@ -134,6 +142,9 @@ export default function CartPage() {
         {cart.map(item => {
           const last = getLastPurchasedPrice(purchases, item.productId);
           const status = priceStatus(item, last);
+          const ean = eanOf(item.productId);
+          const reference = ean ? references.get(ean) : undefined;
+          const refPct = reference ? vsReference(item.price, reference.reference) : null;
           return (
             <div key={item.id} className="card p-4">
               <div className="flex justify-between items-start mb-3">
@@ -179,6 +190,12 @@ export default function CartPage() {
                   ${formatMoney(item.subtotal)}
                 </span>
               </div>
+
+              {reference && refPct !== null && (
+                <p className={`mt-2 text-xs font-semibold ${REFERENCE_TEXT_CLASS[referenceStatus(refPct)]}`}>
+                  Ref. ${formatMoney(reference.reference)} · {referenceShortLabel(refPct)}
+                </p>
+              )}
             </div>
           );
         })}

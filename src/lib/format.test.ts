@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatMoney, formatNumber, formatPctChange, formatSize } from './format';
+import { formatDateTime, formatIsoDate, formatMoney, formatNumber, formatPct, formatPctChange, formatSize } from './format';
 
 describe('format', () => {
   it('usa separadores es-AR', () => {
@@ -11,6 +11,15 @@ describe('format', () => {
   it('variación porcentual con signo', () => {
     expect(formatPctChange(110, 100)).toBe('+10,0%');
     expect(formatPctChange(90, 100)).toBe('-10,0%');
+  });
+
+  it('porcentaje sin signo con hasta 1 decimal', () => {
+    expect(formatPct(9.909)).toBe('9,9 %');
+    expect(formatPct(8)).toBe('8 %');
+  });
+
+  it('fecha YYYY-MM-DD como dd/MM/yyyy sin correrse de día', () => {
+    expect(formatIsoDate('2026-11-05')).toBe('05/11/2026');
   });
 
   it('presentación con separadores es-AR y sin decimales de más', () => {

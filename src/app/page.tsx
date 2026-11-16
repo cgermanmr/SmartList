@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import NumberInput from '@/components/NumberInput';
 import ScanButton from '@/components/ScanButton';
+import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
+import { useSepaReferences } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
@@ -28,6 +30,8 @@ export default function SearchPage() {
   const removeFromCart = useStore(s => s.removeFromCart);
   const [searchQuery, setSearchQuery] = useState('');
   const [scan, setScan] = useState<ScanResult | null>(null);
+  /** Resultado del catálogo desplegado con sus precios por cadena (uno a la vez) */
+  const [expandedEan, setExpandedEan] = useState<string | null>(null);
 
   const filteredProducts = filterProducts(products, searchQuery);
 
@@ -36,6 +40,8 @@ export default function SearchPage() {
   const sepaSearch = useSepaSearch(searchQuery);
   const ownEans = new Set(products.map(p => p.ean));
   const catalogSearch = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
+  // Precios de los resultados visibles en una sola consulta, cuando llegan los resultados
+  const references = useSepaReferences(catalogSearch.status === 'done' ? catalogSearch.results.map(r => r.ean) : []);
 
   // ── Código leído con la cámara ─────────────────────────────
   // Propio → su detalle; si no, se busca en el catálogo para ofrecer agregarlo con los datos completos
@@ -87,6 +93,7 @@ export default function SearchPage() {
             onChange={e => {
               setSearchQuery(e.target.value);
               setScan(null);
+              setExpandedEan(null);
             }}
             type="text"
             placeholder="Busca un producto..."
@@ -95,7 +102,7 @@ export default function SearchPage() {
           />
           <ScanButton onDetected={scanned} />
         </div>
-        {scan && <ScanOffer scan={scan} />}
+        {scan && <ScanOffer key={scan.ean} scan={scan} />}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -204,15 +211,44 @@ export default function SearchPage() {
           <h2 id="catalog-title" className="text-xl font-bold">En Precios Claros</h2>
           <SepaResults
             search={catalogSearch}
-            renderItem={(product, info) => (
-              <Link
-                href={`/upload?tab=producto&ean=${product.ean}`}
-                aria-label={`Agregar ${product.description}`}
-                className="list-row">
-                {info}
-                <span aria-hidden="true" className="shrink-0 text-sm font-semibold text-primary-700">Agregar</span>
-              </Link>
-            )}
+            renderDetails={product => {
+              const summary = references.get(product.ean);
+              return summary && <ReferenceLine summary={summary} />;
+            }}
+            renderItem={(product, info) => {
+              const href = `/upload?tab=producto&ean=${product.ean}`;
+              const summary = references.get(product.ean);
+              // Sin precios (o mientras cargan), la fila es el link "Agregar" de siempre
+              if (!summary) {
+                return (
+                  <Link href={href} aria-label={`Agregar ${product.description}`} className="list-row">
+                    {info}
+                    <span aria-hidden="true" className="shrink-0 text-sm font-semibold text-primary-700">Agregar</span>
+                  </Link>
+                );
+              }
+              const open = expandedEan === product.ean;
+              const panelId = `cadenas-${product.ean}`;
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedEan(open ? null : product.ean)}
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    className="list-row">
+                    {info}
+                    <Chevron open={open} />
+                  </button>
+                  {open && (
+                    <div id={panelId} className="border-t border-gray-200 bg-gray-50 px-3 py-3">
+                      <SepaPriceTable summary={summary} />
+                      <Link href={href} className="btn-primary mt-3 block text-center">Agregar producto</Link>
+                    </div>
+                  )}
+                </>
+              );
+            }}
           />
         </section>
       )}
@@ -224,6 +260,10 @@ export default function SearchPage() {
 
 function ScanOffer({ scan }: { scan: ScanResult }) {
   const href = `/upload?tab=producto&ean=${scan.ean}`;
+  const references = useSepaReferences(scan.status === 'found' ? [scan.ean] : []);
+  const summary = references.get(scan.ean);
+  const [pricesOpen, setPricesOpen] = useState(false);
+  const panelId = `cadenas-lector-${scan.ean}`;
 
   if (scan.status === 'loading') {
     return <p role="status" className="mt-3 text-sm text-gray-600">Buscando el código {scan.ean}…</p>;
@@ -236,11 +276,30 @@ function ScanOffer({ scan }: { scan: ScanResult }) {
       : `No tenés un producto con el código ${scan.ean}.`;
 
   return (
-    <div role="status" className="mt-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 sm:flex-row sm:items-center">
-      <p className="min-w-0 flex-1 text-sm text-gray-700">{text}</p>
-      <Link href={href} className="btn-primary shrink-0 text-center">
-        {scan.status === 'found' ? `Agregar ${scan.product.description}` : 'Agregar producto'}
-      </Link>
+    <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
+      <div role="status" className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <p className="min-w-0 flex-1 text-sm text-gray-700">{text}</p>
+        <Link href={href} className="btn-primary shrink-0 text-center">
+          {scan.status === 'found' ? `Agregar ${scan.product.description}` : 'Agregar producto'}
+        </Link>
+      </div>
+
+      {/* Precios por cadena: fuera de la región status para no leer la lista entera al desplegarla */}
+      {summary && (
+        <div className="mt-3 border-t border-primary-200 pt-3">
+          <ReferenceLine summary={summary} />
+          <button
+            type="button"
+            onClick={() => setPricesOpen(open => !open)}
+            aria-expanded={pricesOpen}
+            aria-controls={panelId}
+            className="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+            Ver precios por cadena
+            <Chevron open={pricesOpen} />
+          </button>
+          {pricesOpen && <SepaPriceTable id={panelId} summary={summary} />}
+        </div>
+      )}
     </div>
   );
 }

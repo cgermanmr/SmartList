@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import PriceChart from '@/components/PriceChart';
+import ReferencePrice from '@/components/ReferencePrice';
 import SepaLinkDialog from '@/components/SepaLinkDialog';
 import { formatMoney, formatShortDateTime, formatSize } from '@/lib/format';
 import { newId } from '@/lib/ids';
@@ -129,6 +130,9 @@ export default function ProductDetail() {
           </div>
         )}
       </div>
+
+      {/* Referencia nacional de Precios Claros: solo con EAN y precios en el catálogo */}
+      <ReferencePrice ean={product.ean} ownPrice={stats?.current ?? null} />
 
       {/* Gráfico de evolución de precios (solo si hay más de 3 registros) */}
       {prices.length > 3 && (

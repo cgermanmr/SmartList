@@ -1,7 +1,7 @@
 # 06 — Precios de referencia de Precios Claros (SEPA)
 
-- **Estado:** En curso (spec 08: base y carga; spec 09: carga diaria en GitHub Actions; spec 10: productos con
-  código de barras y catálogo en la app)
+- **Estado:** Hecho (specs 08–12: base, carga diaria, productos con código de barras, lector y precio de
+  referencia). Lo pendiente pasó al [feature 07](07-precios-cercanos-sepa.md) el 16/11/2026
 - **Fase:** 1–2 (ETL propio + Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Relevamiento hecho el 31/10/2026 descargando el ZIP del día y probando la API del portal. Los números de
@@ -22,7 +22,8 @@ precios.
 - `Product` tiene `ean` (GTIN-13), `brand`, `size` y `sizeUnit` opcionales (spec 10). Se cargan a mano o desde el
   buscador "Buscar en Precios Claros" (Agregar producto, Buscar y el detalle, donde se vincula un producto ya
   cargado); marca y presentación se copian al vincular y no se actualizan solas.
-- La app consulta solo `sepa_productos`, con la clave publishable; todavía no muestra precios SEPA (spec 12).
+- La app muestra el precio de referencia por cadena (promedio de las medianas, la más barata y la lista) en Buscar,
+  el lector, el detalle y el carrito, comparado con el precio propio (spec 12).
 - Los datos propios siguen en `localStorage` (Fase 1).
 
 ## Fuentes disponibles
@@ -134,62 +135,15 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 | [09 — Actualización diaria](../../specs/09-actualizacion-diaria-sepa.md) | GitHub Actions a las 15:30 y 21:30, con chequeo previo, reintentos, bloqueo y aviso a los 3 días sin precios nuevos |
 | [10 — Productos con código de barras](../../specs/10-productos-con-codigo-de-barras.md) | EAN, marca y presentación en `Product`; buscador del catálogo SEPA en Agregar producto, Buscar y el detalle (vincular) |
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
-| [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en el detalle y el carrito |
-| [13 — Precios por sucursal](../../specs/13-precios-por-sucursal-sepa.md) | Sucursales con coordenadas y precio por sucursal, en arreglos por EAN × bandera |
-| [15 — Precios y comercios cercanos](../../specs/15-precios-y-comercios-cercanos.md) | Ubicación, distancia y lista de comercios en Buscar; agregar al carrito desde la lista |
-| [16 — Mapa y cómo llegar](../../specs/16-mapa-y-como-llegar.md) | Mapa con la ubicación propia, el comercio y la ruta |
-| [17 — Imágenes de productos](../../specs/17-imagenes-de-productos.md) | Imágenes por EAN desde Open Food Facts y el portal |
+| [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en Buscar, el lector, el detalle y el carrito |
 
-Las specs 11 y 12 están en borrador desde el 31/10; las 13 a 17 se agregaron el 15/11/2026 (la
-[14 — Carrito por comercio](../../specs/14-carrito-por-comercio.md) pertenece al feature 02). La API del portal
-(fuente B) se volvió a probar ese día y sigue caída.
+Las specs 13, 15, 16 y 17 (sucursales, comercios cercanos, mapa e imágenes) pasaron al
+[feature 07](07-precios-cercanos-sepa.md) el 16/11/2026; la
+[14 — Carrito por comercio](../../specs/14-carrito-por-comercio.md) pertenece al feature 02. La API del portal
+(fuente B) se volvió a probar el 15/11/2026 y sigue caída.
 
-Pendiente para una spec futura: historial de precios SEPA. Criterio propuesto después de medir la base en la
-spec 08 (98 MB con el agregado vigente):
-
-- **Precios SEPA: el precio actual y los 2 anteriores de cada EAN × bandera**, cada uno con su vigencia
-  (`desde`, `hasta`). Un producto cuyo precio cambia una vez por mes conserva unos 3 meses; uno que cambia 3 veces
-  por semana, solo la última semana.
-- **Carga por diferencia:** el ZIP se sigue leyendo entero (el SEPA no publica cambios), pero en la base solo se
-  agrega una versión cuando el precio cambió o el producto es nuevo. Si no cambió, solo se extiende su vigencia.
-- **Compras del usuario: completas, sin límite.** Son los precios que pagó, ocupan poco y se pueden comparar contra
-  el SEPA en cualquier fecha de su historial.
-
-La comparación de las compras con precios SEPA depende de que estén en Supabase (Fase 2) y tengan EAN (spec 10).
-
-### Medición: cuánto cambian los precios (30/10 → 02/11)
-
-Comparando el agregado del ZIP del viernes 30/10 con el del lunes 02/11 (3 días, fin de semana en el medio):
-
-| | Filas | % de las 225.210 que están en los dos |
-|---|---|---|
-| Cambia la mediana | 8.944 | 4,0 % (3,2 % con más de 1 % de diferencia) |
-| Cambia el mínimo, la mediana o el máximo | 17.031 | 7,6 % |
-| EAN × bandera nuevos | 7.631 | — |
-| EAN × bandera que dejan de estar | 2.944 | — |
-
-Varía mucho por cadena: Changomas, SuperChangomas e HiperChangomas (`11-*`) cambian 0,2 %; Vea, Disco y Jumbo
-(`9-*`) ~6 %; Carrefour Express y Maxi (`10-3`, `10-4`) ~10 %; La Anónima (`2-1`) 17,5 %.
-
-### Tamaño estimado
-
-Cada fila de `sepa_precios` ocupa ~220 B con su índice (52 MB / 236 mil filas); con `desde` y `hasta`, ~240 B.
-
-- **Techo:** 3 versiones por EAN × bandera son ~710 mil filas, **~170 MB**. Con el resto de la base, ~215 MB: entra
-  holgado en los 500 MB del plan gratuito, haya los cambios que haya.
-- **Ritmo:** con ~4 % de cambios cada 3 días se agregan unas 3 mil versiones por día (~0,7 MB). El techo se acerca
-  recién cuando la mayoría de los precios cambió dos veces, que con la inflación actual es cuestión de meses.
-
-Para resolver en esa spec:
-
-1. **Qué cuenta como cambio.** Solo la mediana (4 %) o cualquiera de los tres valores (7,6 %). La mediana es el
-   precio de referencia; el mínimo y el máximo se mueven cuando cambia una sola sucursal.
-2. **No reescribir todas las filas cada día.** Actualizar el `hasta` de las ~220 mil que no cambian equivale a la
-   carga completa de hoy (3 a 6 minutos). Alternativa: no guardar el `hasta` de la versión vigente y tomarlo de
-   `sepa_banderas.actualizado` (la última carga de esa cadena); solo se escribe al cerrar una versión.
-3. **Los que dejan de estar** (2.944 en 3 días): cerrar su versión con la última fecha en que aparecieron, o
-   borrarlos como hoy.
-4. **Medir de un día al siguiente** (no de viernes a lunes) antes de cerrar la spec.
+El historial de precios SEPA (criterio propuesto después de medir la base en la spec 08) también pasó al
+[feature 07](07-precios-cercanos-sepa.md).
 
 ## Recomendación
 
@@ -221,11 +175,10 @@ Para resolver en esa spec:
 
 ## Evolución futura
 
-- ~~Elegir sucursales cercanas (geolocalización o barrio)~~ → specs 13 y 15. Queda pendiente comparar el precio
-  propio contra las sucursales cercanas en vez de la referencia nacional.
-- Escanear el código de barras: `BarcodeDetector` en Chrome Android desde la web; cámara nativa en Fase 3.
-- Comparar la canasta de una compra entera contra cada cadena ("en Coto te salía $X").
-- Usar las promos (`promo1` / `promo2` y sus leyendas) en la calculadora de precio unitario.
+- ~~Escanear el código de barras~~ → spec 11 (`BarcodeDetector` nativo o ponyfill ZXing desde la web).
+- Lo demás pasó al [feature 07](07-precios-cercanos-sepa.md): sucursales y comercios cercanos (specs 13 y 15),
+  comparar el precio propio contra las sucursales cercanas, comparar la canasta contra cada cadena, promociones de
+  las cadenas e historial de precios SEPA.
 
 ## Modelo de datos propuesto
 
@@ -266,9 +219,11 @@ interface ReferencePrice {  // salida del ETL, no se guarda en localStorage salv
 
 ## Preguntas abiertas
 
-- ¿Referencia nacional, por provincia o por sucursales cercanas? Cambia el tamaño de la salida del ETL
-  (244 mil filas por bandera vs 2 millones por bandera × provincia).
-- ¿Dónde se publica la salida en Fase 1 (Vercel Blob, Supabase Storage, GitHub Release)?
+- ~~¿Referencia nacional, por provincia o por sucursales cercanas?~~ Nacional por cadena (specs 08 y 12); las
+  sucursales cercanas son el [feature 07](07-precios-cercanos-sepa.md).
+- ~~¿Dónde se publica la salida en Fase 1 (Vercel Blob, Supabase Storage, GitHub Release)?~~ En Supabase, de solo
+  lectura (spec 08).
 - ~~¿Cómo se vinculan los productos ya cargados (texto libre) con un EAN?~~ Resuelto en la spec 10: a mano, desde
   el detalle ("Vincular con Precios Claros"), buscando en el catálogo; sin sugerencias automáticas.
-- ¿Qué precio mostrar: `precio_lista` o el de la promo cuando existe?
+- ~~¿Qué precio mostrar: `precio_lista` o el de la promo cuando existe?~~ El de lista (spec 12); las promos
+  pasaron al [feature 07](07-precios-cercanos-sepa.md).
