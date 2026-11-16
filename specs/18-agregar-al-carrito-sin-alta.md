@@ -1,6 +1,6 @@
 # SPEC 18 — Agregar al carrito sin dar de alta el producto
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 12](12-precio-de-referencia-sepa.md), [SPEC 14](14-carrito-por-comercio.md)
 > **Fecha:** 2026-11-16
 > **Objetivo:** Agregar al carrito un producto de Precios Claros con un toque, sin pasar por el formulario de Agregar producto y sin pedir la categoría, que pasa a ser opcional y solo se ofrece al dar de alta a mano un producto que no existe.
