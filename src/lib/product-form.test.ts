@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Product } from './models';
-import { checkEan, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, sepaLinkChanges } from './product-form';
+import {
+  checkEan, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, productFromSepa, sepaLinkChanges,
+} from './product-form';
 import { SepaProduct } from './sepa';
 
 const sepaProduct: SepaProduct = {
@@ -78,6 +80,14 @@ describe('productFromForm', () => {
     expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'p2', name: 'Pan', category: 'Almacen' });
   });
 
+  it('sin categoría no la guarda, ni como texto vacío', () => {
+    for (const category of ['', '   ']) {
+      const product = productFromForm({ ...EMPTY_PRODUCT_FORM, name: 'Pan', category }, 'p5');
+      expect(product.category).toBeUndefined();
+      expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'p5', name: 'Pan' });
+    }
+  });
+
   it('la presentación va completa o no va: sin número válido no guarda la unidad', () => {
     for (const size of ['', '0', '-5']) {
       const product = productFromForm({ ...form, size }, 'p3');
@@ -123,5 +133,25 @@ describe('sepaLinkChanges', () => {
       expect(changed.name).toBe(product.name);
       expect(changed.category).toBe(product.category);
     }
+  });
+});
+
+describe('productFromSepa', () => {
+  it('crea el producto vinculado con nombre sugerido, marca, presentación y EAN, sin categoría', () => {
+    const product = productFromSepa(sepaProduct, 'p1');
+    expect(product).toEqual({
+      id: 'p1', name: 'Yerba Mate', ean: '7793704000911', brand: 'PLAYADITO', size: 500, sizeUnit: 'g',
+    });
+    expect(product).not.toHaveProperty('category');
+  });
+
+  it('sin marca ni presentación no agrega esas claves al JSON guardado', () => {
+    const product = productFromSepa({ ...sepaProduct, brand: null, size: null, sizeUnit: null }, 'p2');
+    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'p2', name: 'Yerba Mate Playadito', ean: '7793704000911' });
+  });
+
+  it('la presentación va completa o no va', () => {
+    expect(productFromSepa({ ...sepaProduct, sizeUnit: null }, 'p3').size).toBeUndefined();
+    expect(productFromSepa({ ...sepaProduct, size: 0 }, 'p4').sizeUnit).toBeUndefined();
   });
 });

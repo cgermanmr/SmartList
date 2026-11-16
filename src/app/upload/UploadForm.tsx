@@ -116,8 +116,8 @@ export default function UploadForm() {
 
   function submitProduct(e: FormEvent) {
     e.preventDefault();
-    if (!productForm.name.trim() || !productForm.category.trim()) {
-      showMessage('Por favor completa nombre y categoría', 'error');
+    if (!productForm.name.trim()) {
+      showMessage('Completá el nombre', 'error');
       return;
     }
 
@@ -179,7 +179,7 @@ export default function UploadForm() {
     );
   }
 
-  /** Completa el formulario con el resultado elegido; la categoría es lo único que falta */
+  /** Completa el formulario con el resultado elegido; la categoría (opcional) es lo único que falta */
   function selectSepaProduct(product: SepaProduct) {
     setProductForm(form => formFromSepa(product, form.category));
     setEanError(null);
@@ -315,7 +315,7 @@ export default function UploadForm() {
             </div>
 
             <div>
-              <label htmlFor="product-category" className="block font-semibold mb-2">Categoría *</label>
+              <label htmlFor="product-category" className="block font-semibold mb-2">Categoría (opcional)</label>
               <input
                 id="product-category"
                 ref={categoryInput}

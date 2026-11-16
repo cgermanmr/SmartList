@@ -47,6 +47,11 @@ function priceBadge(item: CartItem, last: number): string {
   return `${diff > 0 ? '▲' : '▼'} ${diff > 0 ? '+' : ''}$${formatMoney(Math.abs(diff))}`;
 }
 
+/** Ítem sin precio conocido (entró en $0 desde el catálogo): hay que completarlo antes de comprar */
+function missingPrice(item: CartItem): boolean {
+  return !(item.price > 0);
+}
+
 /** Línea gris del encabezado: dirección y barrio, lo que exista */
 function storeDetail(store?: StoreRef): string {
   return [store?.address, store?.barrio].filter(Boolean).join(', ');
@@ -99,6 +104,7 @@ export default function CartPage() {
   }
 
   function confirmCheckout(group: CartGroup) {
+    if (group.items.some(missingPrice)) return;
     const storeName = group.store ? group.store.name : looseStore.trim() || undefined;
     const knownBarrio = (group.store ? group.store.barrio?.trim() : looseBarrio.trim()) || undefined;
     // La compra lleva barrio solo si se conoce; el precio lo necesita siempre
@@ -213,6 +219,8 @@ function StoreGroup({ group, eanOf, references, onChangeStore, onCheckout, payme
   const store = group.store;
   const detail = storeDetail(store);
   const count = group.items.length;
+  const blocked = group.items.some(missingPrice);
+  const blockedId = useId();
   return (
     <section aria-labelledby={titleId} className="card overflow-hidden">
       {/* Encabezado: comercio, dónde queda y subtotal */}
@@ -249,9 +257,19 @@ function StoreGroup({ group, eanOf, references, onChangeStore, onCheckout, payme
 
       {/* Pie: comprar en este comercio */}
       <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
-        {payment ?? (
-          <div className="flex justify-end">
-            <button onClick={onCheckout} className="btn-primary w-full sm:w-auto min-h-11 truncate">
+        {/* Con un ítem en $0 no se compra, aunque el medio de pago ya estuviera abierto */}
+        {payment && !blocked ? payment : (
+          <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
+            {blocked && (
+              <p id={blockedId} className="text-sm font-medium text-amber-800 sm:mr-auto">
+                Completá los precios para comprar
+              </p>
+            )}
+            <button
+              onClick={onCheckout}
+              disabled={blocked}
+              aria-describedby={blocked ? blockedId : undefined}
+              className="btn-primary w-full sm:w-auto min-h-11 truncate disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary-700">
               {store ? `Comprar en ${store.name}` : 'Registrar compra'}
             </button>
           </div>
@@ -274,9 +292,12 @@ function CartRow({ item, reference, onChangeStore }: CartRowProps) {
   const updateQuantity = useStore(s => s.updateQuantity);
   const updateCartItemPrice = useStore(s => s.updateCartItemPrice);
 
-  const last = getLastPurchasedPrice(purchases, item.productId);
+  const missing = missingPrice(item);
+  // Sin precio no hay comparación que mostrar (sería "100 % abajo")
+  const last = missing ? null : getLastPurchasedPrice(purchases, item.productId);
   const status = priceStatus(item, last);
-  const refPct = reference ? vsReference(item.price, reference.reference) : null;
+  const refPct = reference && !missing ? vsReference(item.price, reference.reference) : null;
+  const missingId = `missing-${item.id}`;
 
   return (
     <li className="p-4">
@@ -306,8 +327,13 @@ function CartRow({ item, reference, onChangeStore }: CartRowProps) {
             onValueChange={price => updateCartItemPrice(item.id, price)}
             min="0"
             step="0.01"
-            className="input-field w-28"
+            aria-invalid={missing || undefined}
+            aria-describedby={missing ? missingId : undefined}
+            className={`input-field w-28 ${missing ? 'border-amber-500 bg-amber-50' : ''}`}
           />
+          {missing && (
+            <span id={missingId} className="text-sm font-semibold text-amber-800">Completar precio</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <label htmlFor={`qty-${item.id}`} className="text-sm text-gray-600">Cantidad</label>

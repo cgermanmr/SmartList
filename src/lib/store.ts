@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { toGtin13 } from './gtin';
 import { uniqueId } from './ids';
 import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
+import { productFromSepa } from './product-form';
+import type { SepaProduct } from './sepa';
 import {
   PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY,
   DEFAULT_PRODUCTS, defaultPrices, defaultCalculator,
@@ -26,6 +28,12 @@ export interface AppState {
   updatePrice: (priceId: string, newAmount: number) => void;
   /** Un producto, un comercio: si ya está suma 1; si el ítem nuevo trae comercio, pasa a ese comercio y precio */
   addToCart: (item: CartItem) => void;
+  /**
+   * Agrega al carrito un producto del catálogo SEPA: usa el propio con ese EAN o lo crea con productFromSepa (sin
+   * categoría). Entra sin comercio con initialCartPrice; si ya estaba, suma 1 y conserva su comercio. No registra
+   * precios. Devuelve el producto propio
+   */
+  addSepaToCart: (sepa: SepaProduct, reference?: number) => Product;
   removeFromCart: (itemId: string) => void;
   /** El checkout de un grupo saca solo sus ítems */
   removeCartItems: (itemIds: string[]) => void;
@@ -86,6 +94,21 @@ export const useStore = create<AppState>()((set, get) => ({
       }),
     };
   }),
+
+  addSepaToCart: (sepa, reference) => {
+    const ean = toGtin13(sepa.ean) ?? sepa.ean;
+    let product = get().products.find(p => p.ean === ean);
+    if (!product) {
+      const created = productFromSepa({ ...sepa, ean }, uniqueId());
+      set(s => ({ products: [...s.products, created] }));
+      product = created;
+    }
+    const price = initialCartPrice(get().prices, product.id, reference);
+    get().addToCart({
+      id: uniqueId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price,
+    });
+    return product;
+  },
 
   removeFromCart: itemId => set(s => ({ cart: s.cart.filter(i => i.id !== itemId) })),
 
@@ -170,21 +193,27 @@ useStore.subscribe((state, prev) => {
 // ── Consultas ─────────────────────────────────────────────
 
 /**
- * Búsqueda de productos propios: nombre o categoría contienen el texto (sin distinguir mayúsculas). Si el texto
- * sin espacios son solo dígitos, también los productos cuyo EAN los contiene o, si es un GTIN válido, coincide
- * con su GTIN-13 (un GTIN-14 que empieza con 0 encuentra el EAN-13 guardado).
+ * Búsqueda de productos propios: cada palabra del texto está en el nombre, la marca o la categoría, sin distinguir
+ * mayúsculas ni acentos ("playadito" encuentra todo lo de esa marca). Si el texto sin espacios son solo dígitos,
+ * también los productos cuyo EAN los contiene o, si es un GTIN válido, coincide con su GTIN-13 (un GTIN-14 que
+ * empieza con 0 encuentra el EAN-13 guardado).
  */
 export function filterProducts(products: Product[], query: string): Product[] {
-  const text = query.trim().toLowerCase();
-  if (!text) return products;
-  const digits = text.replace(/\s/g, '');
+  const words = foldText(query).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return products;
+  const digits = words.join('');
   const byEan = /^[0-9]+$/.test(digits);
   const gtin = byEan ? toGtin13(digits) : null;
-  return products.filter(p =>
-    p.name.toLowerCase().includes(text) ||
-    p.category.toLowerCase().includes(text) ||
-    (byEan && p.ean !== undefined && (p.ean.includes(digits) || p.ean === gtin)),
-  );
+  return products.filter(p => {
+    const haystack = foldText([p.name, p.brand, p.category].filter(Boolean).join(' '));
+    return words.every(word => haystack.includes(word)) ||
+      (byEan && p.ean !== undefined && (p.ean.includes(digits) || p.ean === gtin));
+  });
+}
+
+/** Minúsculas y sin acentos ni diéresis (la ñ queda como n), para comparar textos escritos de distintas formas */
+function foldText(text: string): string {
+  return text.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 }
 
 export function getPricesForProduct(prices: Price[], productId: string): Price[] {
@@ -211,6 +240,17 @@ export function getPriceStats(prices: Price[], productId: string): PriceStats | 
     max: Math.max(...amounts),
     avg: Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length),
   };
+}
+
+/**
+ * Precio inicial de un ítem del carrito: el último propio; si no hay, la referencia SEPA (spec 12) si se pasa,
+ * redondeada a centavos; si no, 0 (el carrito pide completarlo)
+ */
+export function initialCartPrice(prices: Price[], productId: string, reference?: number): number {
+  const own = getPriceStats(prices, productId)?.current;
+  if (own !== undefined) return own;
+  if (reference !== undefined && reference > 0) return Math.round(reference * 100) / 100;
+  return 0;
 }
 
 export function getCartTotal(cart: CartItem[]): number {

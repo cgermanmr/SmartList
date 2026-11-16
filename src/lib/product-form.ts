@@ -61,17 +61,34 @@ export function sepaLinkChanges(product: Product, sepa: SepaProduct): Partial<Om
   return changes;
 }
 
-/** Producto desde el formulario. `ean` ya pasó por checkEan; la presentación va completa o no va */
+/**
+ * Producto desde el formulario. `ean` ya pasó por checkEan; la presentación va completa o no va. La categoría es
+ * opcional: vacía no se guarda (ni como texto vacío)
+ */
 export function productFromForm(form: ProductForm, id: string, ean?: string): Product {
   const size = Number(form.size);
   const hasSize = size > 0;
   return {
     id,
     name: form.name.trim(),
-    category: form.category.trim(),
+    category: form.category.trim() || undefined,
     ean,
     brand: form.brand.trim() || undefined,
     size: hasSize ? size : undefined,
     sizeUnit: hasSize ? form.sizeUnit : undefined,
+  };
+}
+
+/** Producto propio a partir del catálogo: nombre sugerido (suggestedName), marca, presentación y EAN; sin categoría */
+export function productFromSepa(sepa: SepaProduct, id: string): Product {
+  const { size, sizeUnit } = sepa;
+  const hasSize = size !== null && size > 0 && sizeUnit !== null;
+  return {
+    id,
+    name: suggestedName(sepa),
+    ean: sepa.ean,
+    brand: sepa.brand?.trim() || undefined,
+    size: hasSize ? size : undefined,
+    sizeUnit: hasSize ? sizeUnit : undefined,
   };
 }

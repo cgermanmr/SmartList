@@ -125,7 +125,8 @@ y 3 km).
   2. `addToCart` con el precio de esa sucursal y `store = storeRefFromBranch(...)`. Por la regla "un producto, un
      comercio" de la spec 14, si ya estaba en el carrito pasa a ese comercio y a ese precio.
   No se registra ningún `Price`: eso pasa al confirmar la compra, como hoy.
-- **"Agregar" sin comercio** (el botón "Añadir Carrito" de la tarjeta de un producto propio) sigue como hoy.
+- **"Agregar" sin comercio** (el botón "Añadir Carrito" de la tarjeta de un producto propio y el "Agregar al
+  carrito" de la spec 18) sigue como hoy, con `initialCartPrice`.
 - **Productos propios sin EAN:** no consultan nada; se ven como hoy, con el link "Vincular con Precios Claros" en
   el detalle.
 - **Precios propios:** en la lista de comercios de un producto propio se agregan, al final y sin distancia, sus
@@ -164,7 +165,8 @@ y 3 km).
 ## Plan de implementación
 
 1. **Lógica pura + tests:** `geo.ts` (`distanceKm` contra distancias conocidas, `formatDistance`), y en `sepa.ts`
-   `nearestBranches`, `sortNearbyPrices`, `branchLocalities`, `storeRefFromBranch`; `productFromSepa`.
+   `nearestBranches`, `sortNearbyPrices`, `branchLocalities`, `storeRefFromBranch`. `productFromSepa` ya existe
+   (spec 18, en `src/lib/product-form.ts`): se reusa, no se vuelve a escribir.
 2. **Sucursales y precios:** `getSepaBranches` (paginado de a 1.000 filas, el tope por defecto de la API de
    Supabase) y `getNearbyPrices` (`supabase.rpc('sepa_precios_en_sucursales', …)`, con `.retry(false)`).
    Verificar: una búsqueda hace una sola llamada de precios (pestaña Network).

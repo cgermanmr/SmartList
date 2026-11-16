@@ -1,7 +1,7 @@
 export interface Product {
   id: string;
   name: string;
-  category: string;
+  category?: string;  // opcional: los productos creados desde el catálogo no tienen
   image?: string;
   ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
   brand?: string;

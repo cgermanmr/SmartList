@@ -92,7 +92,8 @@ src/
 │   ├── SepaResults.tsx         # Mensajes y lista de resultados del catálogo (cada fila la arma quien lo usa)
 │   ├── SepaSearch.tsx          # Buscador "Buscar en Precios Claros" que devuelve el producto elegido
 │   ├── SepaLinkDialog.tsx      # Modal <dialog> de "Vincular con Precios Claros" / "Cambiar vínculo"
-│   ├── useSepaReferences.ts    # Hook: precio de referencia de varios EAN en una sola consulta (getSepaPrices)
+│   ├── useSepaReferences.ts    # Hooks: precio de referencia de varios EAN en una sola consulta (getSepaPrices);
+│   │                           #   useSepaReferenceLookup suma isLoading(ean) para esperar antes de agregar
 │   ├── SepaPriceTable.tsx      # Lista de precios por cadena; ReferenceLine ("Promedio $X · más barato en…") y Chevron
 │   ├── ReferencePrice.tsx      # Tarjeta "Precio de referencia" del detalle; colores de la comparación
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
@@ -111,7 +112,8 @@ src/
     ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
     │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras
-    ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges
+    ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges;
+    │                           #   productFromSepa (producto propio desde el catálogo, sin categoría)
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
 
@@ -136,7 +138,8 @@ src/
   (`useStore(s => s.cart)`) y llaman acciones (`useStore(s => s.addToCart)`). Las consultas derivadas son funciones
   puras que reciben la colección: `getPricesForProduct(prices, id)`, `getPriceStats(prices, id)`,
   `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`,
-  `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`. Fuera de React: `useStore.getState()`.
+  `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`, `initialCartPrice(prices, id, reference?)`.
+  Fuera de React: `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
 - **Punto de integración con backend** — las acciones del store; cuando llegue Supabase, ahí van las llamadas.
@@ -151,7 +154,9 @@ src/
   Caché de módulo por EAN durante la sesión (guarda la promesa, también los "sin precios"; si falla, se borra). El
   precio de cada cadena es su **mediana** entre sucursales; la referencia es el **promedio** de esas medianas (cada
   cadena cuenta una vez). `vsReference` compara con ±5 % de margen (`referenceStatus`). Las pantallas usan
-  `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía)
+  `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía).
+  Las respuestas se acumulan en el hook: al cambiar los EAN, solo los nuevos quedan cargando
+  (`useSepaReferenceLookup().isLoading(ean)`)
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -184,7 +189,8 @@ src/
 
 El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Los campos de `Product` de la
 spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo. Lo
-mismo `CartItem.store` (spec 14): un carrito guardado antes queda entero en "Sin comercio".
+mismo `CartItem.store` (spec 14): un carrito guardado antes queda entero en "Sin comercio". `category` es opcional
+desde la spec 18: los productos guardados la conservan; los creados desde el catálogo no la tienen.
 Las claves conservan el prefijo `preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien
 ya usa la app).
 `loadFromStorage<T>` / `saveToStorage<T>` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
@@ -212,7 +218,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 interface Product {
   id: string;
   name: string;
-  category: string;
+  category?: string;  // opcional (spec 18): los creados desde el catálogo no tienen; vacía no se guarda
   image?: string;
   ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
   brand?: string;
@@ -294,30 +300,46 @@ interface CalculatorState {
 ## Funcionalidades (Fase 1)
 
 ### Búsqueda (`/`)
-- Filtro en tiempo real por nombre o categoría (case-insensitive) y por código de barras (`filterProducts`): si el
-  texto sin espacios son solo dígitos, también los productos cuyo EAN los contiene; un GTIN válido en otro formato
-  (EAN-8, UPC-A, GTIN-14 con 0) encuentra el GTIN-13 guardado
+- Filtro en tiempo real (`filterProducts`): cada palabra del texto tiene que estar en el nombre, la **marca** o la
+  categoría, sin distinguir mayúsculas ni acentos ("playadito" encuentra la yerba y el mate cocido de esa marca;
+  "yerba playadito", la "Yerba" de marca PLAYADITO). Si el texto sin espacios son solo dígitos, también los
+  productos cuyo EAN los contiene; un GTIN válido en otro formato (EAN-8, UPC-A, GTIN-14 con 0) encuentra el
+  GTIN-13 guardado
+- **Solo se agrega con la búsqueda terminada:** mientras se buscan los precios de un producto, su botón de agregar
+  (catálogo, lector y "Añadir Carrito" de un propio con EAN sin precio propio) dice "Buscando precio…",
+  deshabilitado (`aria-busy`); si la consulta falla, se habilita
 - Sección **En Precios Claros** debajo de los productos propios (con al menos 3 caracteres y Supabase configurado):
   hasta 20 resultados del catálogo sin los que ya tienen un producto propio. Sin propios que coincidan, el mensaje
   es "No tenés productos con ese nombre"
   - Cuando llegan los resultados, una sola consulta de precios para todos; cada uno con precios suma la línea
     "Promedio $X · más barato en <cadena> $Y" y la fila es un botón (`aria-expanded`, chevron) que despliega la
-    lista por cadena (`SepaPriceTable`) con el link "Agregar producto". Uno desplegado a la vez; escribir lo cierra
-  - Sin precios (o mientras cargan, o si falla la consulta) la fila es el link "Agregar" a `/upload?tab=producto&ean=…`
+    lista por cadena (`SepaPriceTable`) con el botón **Agregar al carrito**. Uno desplegado a la vez; escribir lo cierra
+  - Sin precios (o mientras cargan, o si falla la consulta de precios) la fila muestra los datos y, a la derecha,
+    el botón **Agregar al carrito** (`aria-label="Agregar <descripción> al carrito"`)
+  - En los dos casos, debajo, el link optativo "Editar antes de agregar" a `/upload?tab=producto&ean=…`
+- **Agregar al carrito desde el catálogo** ([SPEC 18](specs/18-agregar-al-carrito-sin-alta.md), `addSepaToCart`):
+  usa el producto propio con ese EAN o lo crea con `productFromSepa` (nombre sugerido, marca, presentación y EAN,
+  sin categoría), sin pasar por el formulario. Entra en "Sin comercio" con `initialCartPrice` (último precio
+  propio; si no, el promedio de referencia; si no, $0); si ya estaba suma 1 y conserva su comercio. No registra
+  precios. Aviso fijo abajo "✓ <nombre> en el carrito" (`role="status"`, 3 s); el producto pasa a los propios y
+  sale de la sección del catálogo
 - Botón 📷 **Leer código de barras** al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
-  consulta el catálogo y ofrece "Agregar <descripción>" (o "Agregar producto" si no está o falla la consulta), que
-  navega a `/upload?tab=producto&ean=…`. Escribir en el buscador borra la oferta. Si el producto tiene precios, la
-  oferta suma el resumen y el botón "Ver precios por cadena", que despliega la lista
-- Muestra último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
-- Agregar al carrito (si no hay precio registrado usa `100` como fallback) y ajustar cantidad / quitar desde la misma tarjeta
+  consulta el catálogo: si está, ofrece **Agregar al carrito** (igual que en la sección del catálogo, con "Editar
+  antes de agregar"); si no está o falla la consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`.
+  Escribir en el buscador borra la oferta. Si el producto tiene precios, la oferta suma el resumen y el botón "Ver
+  precios por cadena", que despliega la lista
+- Muestra categoría (si tiene), último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
+- "Añadir Carrito" con `initialCartPrice` (la referencia SEPA si tiene EAN y no tiene precio propio; nunca el `100`
+  de antes) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
 
 ### Cargar (`/upload`)
 - Tab **precio**: producto, monto, barrio (requeridos) y tienda (opcional)
-- Tab **producto**: nombre y categoría (requeridos); código de barras, marca y presentación (número + unidad), opcionales
+- Tab **producto**: nombre (requerido, "Completá el nombre"); "Categoría (opcional)", código de barras, marca y
+  presentación (número + unidad), opcionales. Sin categoría, el producto se guarda sin `category`
 - Buscador **Buscar en Precios Claros** (espera de 300 ms, "Buscando…", "Sin resultados", error): al elegir un
   resultado completa nombre sugerido (descripción en formato título sin la marca repetida), marca, presentación y
-  EAN, todo editable; la categoría es manual y el foco pasa a ella
+  EAN, todo editable; la categoría es manual (opcional) y el foco pasa a ella
 - Código de barras inválido → "Código de barras inválido"; ya usado por otro producto → "Ya tenés este producto"
   con link; en ambos casos no guarda
 - `?tab=producto&ean=…` abre la pestaña producto completada con `getSepaProduct`; si el EAN no está en el catálogo,
@@ -339,7 +361,7 @@ interface CalculatorState {
 - Ingreso manual: valida con `toGtin13` (ignora espacios); inválido → "Código de barras inválido"
 
 ### Detalle de producto (`/product/[id]`)
-- Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista)
+- Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista); "Categoría: X" solo si tiene
 - Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN, **Cambiar vínculo** y **Quitar vínculo**.
   Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
   pide confirmación y borra solo el EAN. Ninguno cambia el nombre ni la categoría (`sepaLinkChanges`)
@@ -364,6 +386,10 @@ interface CalculatorState {
   comercio" u "Otro comercio" (nombre requerido, barrio opcional). No cambia cantidad ni precio
   (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`)
 - Editar cantidad y precio de cada ítem; eliminar
+- **Ítem sin precio** (entró en $0 desde el catálogo, spec 18): campo en ámbar con "Completar precio" y sin
+  comparaciones; el botón de compra de su grupo queda deshabilitado con "Completá los precios para comprar" hasta
+  que todos sus ítems tengan precio (tampoco se confirma si el medio de pago ya estaba abierto): nunca se registra
+  un `Price` de $0
 - Badge comparando contra el precio de la **última compra** (`getLastPurchasedPrice`): verde más barato, rojo más caro, azul igual
 - Ítems con EAN: línea "Ref. $X · 8 % arriba" (o "abajo", "en línea") con los mismos colores, comparando el precio del
   ítem contra la referencia SEPA; una sola consulta para todo el carrito
@@ -630,6 +656,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
 - [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)
 - [x] Carrito agrupado por comercio con checkout por comercio (spec 14)
+- [x] Agregar al carrito desde el catálogo sin dar de alta el producto; categoría opcional (spec 18)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

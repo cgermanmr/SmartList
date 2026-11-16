@@ -86,8 +86,10 @@ export default function ProductDetail() {
 
       <div className="card p-6 mb-6">
         <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
-        {details && <p className="text-gray-600 mb-1 break-words">{details}</p>}
-        <p className="text-gray-600 mb-4">Categoría: {product.category}</p>
+        <div className="mb-4">
+          {details && <p className="text-gray-600 mb-1 break-words">{details}</p>}
+          {product.category && <p className="text-gray-600">Categoría: {product.category}</p>}
+        </div>
 
         {sepaEnabled && (
           <div ref={linkActions} className="flex flex-wrap gap-2 mb-4">

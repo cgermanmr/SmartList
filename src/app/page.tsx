@@ -2,18 +2,18 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import NumberInput from '@/components/NumberInput';
 import ScanButton from '@/components/ScanButton';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
-import { useSepaReferences } from '@/components/useSepaReferences';
+import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Product } from '@/lib/models';
-import { getSepaProduct, isSearchableQuery, SepaProduct, sepaEnabled } from '@/lib/sepa';
-import { filterProducts, getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
+import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
+import { filterProducts, getPriceStats, initialCartPrice, useStore } from '@/lib/store';
 
 /** Código leído con la cámara que no es de un producto propio */
 type ScanResult =
@@ -26,12 +26,16 @@ export default function SearchPage() {
   const prices = useStore(s => s.prices);
   const cart = useStore(s => s.cart);
   const addToCart = useStore(s => s.addToCart);
+  const addSepaToCart = useStore(s => s.addSepaToCart);
   const updateQuantity = useStore(s => s.updateQuantity);
   const removeFromCart = useStore(s => s.removeFromCart);
   const [searchQuery, setSearchQuery] = useState('');
   const [scan, setScan] = useState<ScanResult | null>(null);
   /** Resultado del catálogo desplegado con sus precios por cadena (uno a la vez) */
   const [expandedEan, setExpandedEan] = useState<string | null>(null);
+  /** Aviso "✓ <nombre> en el carrito"; se oculta a los 3 s */
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const filteredProducts = filterProducts(products, searchQuery);
 
@@ -41,7 +45,30 @@ export default function SearchPage() {
   const ownEans = new Set(products.map(p => p.ean));
   const catalogSearch = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
   // Precios de los resultados visibles en una sola consulta, cuando llegan los resultados
-  const references = useSepaReferences(catalogSearch.status === 'done' ? catalogSearch.results.map(r => r.ean) : []);
+  // Solo se agrega con la búsqueda terminada: mientras se buscan los precios de un producto, su botón espera
+  const catalogLookup = useSepaReferenceLookup(
+    catalogSearch.status === 'done' ? catalogSearch.results.map(r => r.ean) : [],
+  );
+  const references = catalogLookup.references;
+  // Referencia de los propios con EAN y sin precio propio: es su precio inicial en el carrito
+  const ownLookup = useSepaReferenceLookup(
+    filteredProducts.filter(p => p.ean && !getPriceStats(prices, p.id)).map(p => p.ean),
+  );
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  function showNotice(name: string) {
+    setNotice(`✓ ${name} en el carrito`);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3000);
+  }
+
+  // ── Agregar al carrito ─────────────────────────────────────
+  // Un producto del catálogo se crea solo (sin categoría) o se usa el propio con ese EAN; nunca pasa por el formulario
+  function addSepa(product: SepaProduct, summary: ReferenceSummary | undefined) {
+    const own = addSepaToCart(product, summary?.reference);
+    showNotice(own.name);
+  }
 
   // ── Código leído con la cámara ─────────────────────────────
   // Propio → su detalle; si no, se busca en el catálogo para ofrecer agregarlo con los datos completos
@@ -70,7 +97,8 @@ export default function SearchPage() {
   }
 
   function add(product: Product) {
-    const price = getPricesForProduct(prices, product.id)[0]?.amount || 100;
+    const reference = product.ean ? ownLookup.references.get(product.ean)?.reference : undefined;
+    const price = initialCartPrice(prices, product.id, reference);
     const item: CartItem = {
       id: newId(),
       productId: product.id,
@@ -102,7 +130,16 @@ export default function SearchPage() {
           />
           <ScanButton onDetected={scanned} />
         </div>
-        {scan && <ScanOffer key={scan.ean} scan={scan} />}
+        {scan && (
+          <ScanOffer
+            key={scan.ean}
+            scan={scan}
+            onAdd={(product, summary) => {
+              setScan(null);
+              addSepa(product, summary);
+            }}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -120,7 +157,7 @@ export default function SearchPage() {
               <div className="flex justify-between items-start mb-3">
                 <div>
                   <h3 className="font-bold text-lg">{product.name}</h3>
-                  <p className="text-sm text-gray-600">{product.category}</p>
+                  {product.category && <p className="text-sm text-gray-600">{product.category}</p>}
                 </div>
               </div>
 
@@ -188,9 +225,13 @@ export default function SearchPage() {
                   <Link href={`/product/${product.id}`} className="btn-secondary flex-1 text-center">
                     Ver Detalles
                   </Link>
-                  <button onClick={() => add(product)} className="btn-primary flex-1">
+                  <AddToCartButton
+                    name={product.name}
+                    loading={ownLookup.isLoading(product.ean)}
+                    onClick={() => add(product)}
+                    className="flex-1">
                     Añadir Carrito
-                  </button>
+                  </AddToCartButton>
                 </div>
               )}
             </div>
@@ -216,15 +257,23 @@ export default function SearchPage() {
               return summary && <ReferenceLine summary={summary} />;
             }}
             renderItem={(product, info) => {
-              const href = `/upload?tab=producto&ean=${product.ean}`;
               const summary = references.get(product.ean);
-              // Sin precios (o mientras cargan), la fila es el link "Agregar" de siempre
+              const loading = catalogLookup.isLoading(product.ean);
+              // Sin precios (o mientras cargan): datos y, a la derecha, el botón y el link al formulario
               if (!summary) {
                 return (
-                  <Link href={href} aria-label={`Agregar ${product.description}`} className="list-row">
+                  <div className="flex items-center gap-3 px-3 py-2">
                     {info}
-                    <span aria-hidden="true" className="shrink-0 text-sm font-semibold text-primary-700">Agregar</span>
-                  </Link>
+                    <div className="flex shrink-0 flex-col items-end">
+                      <AddToCartButton
+                        name={product.description}
+                        loading={loading}
+                        onClick={() => addSepa(product, undefined)}
+                        className="min-h-11 px-3 text-sm"
+                      />
+                      <EditLink ean={product.ean} />
+                    </div>
+                  </div>
                 );
               }
               const open = expandedEan === product.ean;
@@ -243,7 +292,15 @@ export default function SearchPage() {
                   {open && (
                     <div id={panelId} className="border-t border-gray-200 bg-gray-50 px-3 py-3">
                       <SepaPriceTable summary={summary} />
-                      <Link href={href} className="btn-primary mt-3 block text-center">Agregar producto</Link>
+                      <AddToCartButton
+                        name={product.description}
+                        loading={loading}
+                        onClick={() => addSepa(product, summary)}
+                        className="mt-3 min-h-11 w-full"
+                      />
+                      <div className="text-center">
+                        <EditLink ean={product.ean} />
+                      </div>
                     </div>
                   )}
                 </>
@@ -252,16 +309,66 @@ export default function SearchPage() {
           />
         </section>
       )}
+
+      {/* Aviso al agregar: fijo abajo para que se vea desde cualquier parte de la lista. La región queda montada */}
+      <div role="status" className="pointer-events-none fixed inset-x-4 bottom-14 z-10 flex justify-center">
+        {notice && (
+          <p className="max-w-sm rounded-lg bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg break-words">
+            {notice}
+          </p>
+        )}
+      </div>
     </div>
+  );
+}
+
+interface AddToCartButtonProps {
+  /** Nombre del producto para el aria-label */
+  name: string;
+  /** Se están buscando sus precios: deshabilitado con "Buscando precio…" para no agregarlo en $0 */
+  loading: boolean;
+  onClick: () => void;
+  className?: string;
+  children?: ReactNode;
+}
+
+function AddToCartButton({ name, loading, onClick, className = '', children = 'Agregar al carrito' }: AddToCartButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      aria-busy={loading || undefined}
+      aria-label={loading ? `Buscando el precio de ${name}` : `Agregar ${name} al carrito`}
+      className={`btn-primary disabled:cursor-wait disabled:opacity-60 disabled:hover:bg-primary-700 ${className}`}>
+      {loading ? 'Buscando precio…' : children}
+    </button>
+  );
+}
+
+/** Link al formulario para cambiar el nombre sugerido o ponerle categoría antes de agregarlo (optativo) */
+function EditLink({ ean }: { ean: string }) {
+  return (
+    <Link
+      href={`/upload?tab=producto&ean=${ean}`}
+      className="inline-flex min-h-11 items-center text-sm text-primary-700 underline underline-offset-2 hover:text-primary-800">
+      Editar antes de agregar
+    </Link>
   );
 }
 
 // ── Oferta para un código leído que no es propio ─────────────────────────────
 
-function ScanOffer({ scan }: { scan: ScanResult }) {
+interface ScanOfferProps {
+  scan: ScanResult;
+  /** Agrega al carrito el producto del catálogo, con su referencia si tiene precios */
+  onAdd: (product: SepaProduct, summary: ReferenceSummary | undefined) => void;
+}
+
+function ScanOffer({ scan, onAdd }: ScanOfferProps) {
   const href = `/upload?tab=producto&ean=${scan.ean}`;
-  const references = useSepaReferences(scan.status === 'found' ? [scan.ean] : []);
-  const summary = references.get(scan.ean);
+  const lookup = useSepaReferenceLookup(scan.status === 'found' ? [scan.ean] : []);
+  const summary = lookup.references.get(scan.ean);
   const [pricesOpen, setPricesOpen] = useState(false);
   const panelId = `cadenas-lector-${scan.ean}`;
 
@@ -270,7 +377,7 @@ function ScanOffer({ scan }: { scan: ScanResult }) {
   }
 
   const text = scan.status === 'found'
-    ? `No tenés este producto. Está en Precios Claros (${scan.ean}).`
+    ? `No tenés ${scan.product.description}. Está en Precios Claros (${scan.ean}).`
     : scan.status === 'error'
       ? `No tenés un producto con el código ${scan.ean} y no se pudo consultar Precios Claros.`
       : `No tenés un producto con el código ${scan.ean}.`;
@@ -278,10 +385,20 @@ function ScanOffer({ scan }: { scan: ScanResult }) {
   return (
     <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
       <div role="status" className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <p className="min-w-0 flex-1 text-sm text-gray-700">{text}</p>
-        <Link href={href} className="btn-primary shrink-0 text-center">
-          {scan.status === 'found' ? `Agregar ${scan.product.description}` : 'Agregar producto'}
-        </Link>
+        <p className="min-w-0 flex-1 text-sm text-gray-700 break-words">{text}</p>
+        {scan.status === 'found' ? (
+          <div className="flex shrink-0 flex-col items-center sm:items-end">
+            <AddToCartButton
+              name={scan.product.description}
+              loading={lookup.isLoading(scan.ean)}
+              onClick={() => onAdd(scan.product, summary)}
+              className="min-h-11 w-full sm:w-auto"
+            />
+            <EditLink ean={scan.ean} />
+          </div>
+        ) : (
+          <Link href={href} className="btn-primary shrink-0 text-center">Agregar producto</Link>
+        )}
       </div>
 
       {/* Precios por cadena: fuera de la región status para no leer la lista entera al desplegarla */}

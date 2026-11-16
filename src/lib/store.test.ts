@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CartItem, Product, Purchase, StoreRef } from './models';
+import type { SepaProduct } from './sepa';
 import { CALCULATOR_KEY, CART_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
 import {
-  filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, groupCartByStore, storeKey, useStore,
+  filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, groupCartByStore, initialCartPrice,
+  storeKey, useStore,
 } from './store';
 
 // localStorage en memoria para el entorno de Node
@@ -385,17 +387,48 @@ describe('filterProducts', () => {
     { id: '2', name: 'Galletitas', category: 'Almacen', ean: '0000096385074' },
     { id: '3', name: 'Leche 1L', category: 'Lacteos' },
     { id: '4', name: 'Agua 7793', category: 'Bebidas' },
+    { id: '5', name: 'Yerba Mate Rosamonte', ean: '7790411000013' },
+    { id: '6', name: 'Yerba', brand: 'PLAYADITO' },
+    { id: '7', name: 'Mate Cocido 25 Saquitos', brand: 'PLAYADITO' },
+    { id: '8', name: 'Té en hebras', brand: 'Taragüí', category: 'Infusiones' },
   ];
   const ids = (query: string) => filterProducts(products, query).map(p => p.id);
 
   it('sin texto devuelve todos', () => {
-    expect(ids('')).toEqual(['1', '2', '3', '4']);
-    expect(ids('   ')).toEqual(['1', '2', '3', '4']);
+    expect(ids('')).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(ids('   ')).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
   });
 
   it('filtra por nombre o categoría sin distinguir mayúsculas', () => {
-    expect(ids('YERBA')).toEqual(['1']);
+    expect(ids('YERBA')).toEqual(['1', '5', '6']);
     expect(ids('lacteos')).toEqual(['3']);
+  });
+
+  it('busca también por marca', () => {
+    expect(ids('playadito')).toEqual(['1', '6', '7']);
+  });
+
+  it('cada palabra puede estar en el nombre, la marca o la categoría', () => {
+    expect(ids('yerba playadito')).toEqual(['1', '6']);
+    expect(ids('mate playadito')).toEqual(['7']);
+    expect(ids('playadito cocido')).toEqual(['7']);
+    expect(ids('hebras infusiones')).toEqual(['8']);
+    expect(ids('yerba taragui')).toEqual([]);
+  });
+
+  it('no distingue acentos ni diéresis', () => {
+    expect(ids('taragui')).toEqual(['8']);
+    expect(ids('TÉ EN HEBRAS')).toEqual(['8']);
+    expect(ids('te taragüi')).toEqual(['8']);
+  });
+
+  it('ignora los espacios de más entre palabras', () => {
+    expect(ids('  yerba   playadito ')).toEqual(['1', '6']);
+  });
+
+  it('un producto sin categoría no falla y se encuentra por nombre', () => {
+    expect(ids('rosamonte')).toEqual(['5']);
+    expect(ids('almacen')).toEqual(['1', '2']);
   });
 
   it('con solo dígitos encuentra los EAN que los contienen', () => {
@@ -419,5 +452,94 @@ describe('filterProducts', () => {
 
   it('un texto con letras no busca por EAN', () => {
     expect(ids('7793704a')).toEqual([]);
+  });
+});
+
+describe('initialCartPrice', () => {
+  const prices = [
+    { id: 'a', productId: 'p1', amount: 100, date: new Date('2026-01-01T10:00:00Z'), barrio: 'Almagro' },
+    { id: 'b', productId: 'p1', amount: 120, date: new Date('2026-03-01T10:00:00Z'), barrio: 'Almagro' },
+  ];
+
+  it('usa el último precio propio aunque haya referencia', () => {
+    expect(initialCartPrice(prices, 'p1', 90)).toBe(120);
+    expect(initialCartPrice(prices, 'p1')).toBe(120);
+  });
+
+  it('sin precio propio usa la referencia, redondeada a centavos', () => {
+    expect(initialCartPrice(prices, 'p2', 1500)).toBe(1500);
+    expect(initialCartPrice(prices, 'p2', 1234.5678)).toBe(1234.57);
+  });
+
+  it('sin precio propio ni referencia es 0 (nunca el 100 de antes)', () => {
+    expect(initialCartPrice(prices, 'p2')).toBe(0);
+    expect(initialCartPrice([], 'p2', 0)).toBe(0);
+  });
+});
+
+describe('addSepaToCart', () => {
+  const sepa: SepaProduct = {
+    ean: '7793704000911', description: 'YERBA MATE PLAYADITO', brand: 'PLAYADITO', size: 500, sizeUnit: 'g', banderas: 16,
+  };
+
+  beforeEach(() => {
+    storage.setItem(PRODUCTS_KEY, JSON.stringify([{ id: 'p1', name: 'Arroz', category: 'Almacen' }]));
+    storage.setItem(PRICES_KEY, JSON.stringify([]));
+    useStore.getState().hydrate();
+  });
+
+  it('crea el producto vinculado sin categoría y lo agrega sin comercio con la referencia', () => {
+    const product = useStore.getState().addSepaToCart(sepa, 1500);
+    const s = useStore.getState();
+    expect(product).toMatchObject({ name: 'Yerba Mate', ean: '7793704000911', brand: 'PLAYADITO', size: 500, sizeUnit: 'g' });
+    expect(product.category).toBeUndefined();
+    expect(s.products).toHaveLength(2);
+    expect(s.cart).toHaveLength(1);
+    expect(s.cart[0]).toMatchObject({ productId: product.id, productName: 'Yerba Mate', price: 1500, quantity: 1, subtotal: 1500 });
+    expect(s.cart[0].store).toBeUndefined();
+    expect(saved<Product[]>(PRODUCTS_KEY)).toHaveLength(2);
+  });
+
+  it('no registra ningún precio', () => {
+    useStore.getState().addSepaToCart(sepa, 1500);
+    expect(useStore.getState().prices).toEqual([]);
+  });
+
+  it('sin precio conocido entra con 0', () => {
+    useStore.getState().addSepaToCart(sepa);
+    expect(useStore.getState().cart[0]).toMatchObject({ price: 0, subtotal: 0 });
+  });
+
+  it('agregarlo dos veces deja un solo producto y una sola línea con cantidad 2', () => {
+    const { addSepaToCart } = useStore.getState();
+    const first = addSepaToCart(sepa, 1500);
+    const second = useStore.getState().addSepaToCart(sepa, 1500);
+    const s = useStore.getState();
+    expect(second.id).toBe(first.id);
+    expect(s.products.filter(p => p.ean === sepa.ean)).toHaveLength(1);
+    expect(s.cart).toHaveLength(1);
+    expect(s.cart[0]).toMatchObject({ quantity: 2, subtotal: 3000 });
+  });
+
+  it('usa el producto propio con ese EAN y su último precio', () => {
+    useStore.setState({
+      products: [{ id: 'own', name: 'Yerba de casa', category: 'Almacen', ean: '7793704000911' }],
+      prices: [{ id: 'a', productId: 'own', amount: 2000, date: new Date('2026-03-01'), barrio: 'Almagro' }],
+    });
+    const product = useStore.getState().addSepaToCart(sepa, 1500);
+    const s = useStore.getState();
+    expect(product.id).toBe('own');
+    expect(s.products).toHaveLength(1);
+    expect(s.cart[0]).toMatchObject({ productId: 'own', productName: 'Yerba de casa', price: 2000 });
+  });
+
+  it('si ya estaba en el carrito con comercio, suma 1 y conserva el comercio', () => {
+    const product = useStore.getState().addSepaToCart(sepa, 1500);
+    const itemId = useStore.getState().cart[0].id;
+    useStore.getState().setCartItemStore(itemId, { name: 'Coto' }, 1400);
+    useStore.getState().addSepaToCart(sepa, 1500);
+    const cart = useStore.getState().cart;
+    expect(cart).toHaveLength(1);
+    expect(cart[0]).toMatchObject({ productId: product.id, quantity: 2, price: 1400, store: { name: 'Coto' } });
   });
 });
