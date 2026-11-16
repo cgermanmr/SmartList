@@ -1,6 +1,6 @@
 # SPEC 15 — Precios y comercios cercanos en la búsqueda
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 13](13-precios-por-sucursal-sepa.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Al buscar un producto, ver su precio en los comercios cercanos con la distancia a cada uno, y agregarlo al carrito directamente desde la lista, con el comercio y el precio elegidos.
