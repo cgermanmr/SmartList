@@ -1,17 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import NumberInput from '@/components/NumberInput';
+import ScanButton from '@/components/ScanButton';
 import SepaResults from '@/components/SepaResults';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Product } from '@/lib/models';
-import { isSearchableQuery, sepaEnabled } from '@/lib/sepa';
+import { getSepaProduct, isSearchableQuery, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { filterProducts, getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
+/** Código leído con la cámara que no es de un producto propio */
+type ScanResult =
+  | { ean: string; status: 'loading' | 'missing' | 'error' }
+  | { ean: string; status: 'found'; product: SepaProduct };
+
 export default function SearchPage() {
+  const router = useRouter();
   const products = useStore(s => s.products);
   const prices = useStore(s => s.prices);
   const cart = useStore(s => s.cart);
@@ -19,6 +27,7 @@ export default function SearchPage() {
   const updateQuantity = useStore(s => s.updateQuantity);
   const removeFromCart = useStore(s => s.removeFromCart);
   const [searchQuery, setSearchQuery] = useState('');
+  const [scan, setScan] = useState<ScanResult | null>(null);
 
   const filteredProducts = filterProducts(products, searchQuery);
 
@@ -27,6 +36,28 @@ export default function SearchPage() {
   const sepaSearch = useSepaSearch(searchQuery);
   const ownEans = new Set(products.map(p => p.ean));
   const catalogSearch = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
+
+  // ── Código leído con la cámara ─────────────────────────────
+  // Propio → su detalle; si no, se busca en el catálogo para ofrecer agregarlo con los datos completos
+  function scanned(ean: string) {
+    const own = useStore.getState().products.find(p => p.ean === ean);
+    if (own) {
+      setScan(null);
+      router.push(`/product/${own.id}`);
+      return;
+    }
+    if (!sepaEnabled) {
+      setScan({ ean, status: 'missing' });
+      return;
+    }
+    setScan({ ean, status: 'loading' });
+    // Si mientras tanto se leyó otro código, la respuesta vieja se descarta
+    getSepaProduct(ean).then(
+      product => setScan(s => s?.ean !== ean ? s
+        : product ? { ean, status: 'found', product } : { ean, status: 'missing' }),
+      () => setScan(s => s?.ean !== ean ? s : { ean, status: 'error' }),
+    );
+  }
 
   function changeQuantity(itemId: string, qty: number) {
     if (qty > 0) updateQuantity(itemId, qty);
@@ -50,14 +81,21 @@ export default function SearchPage() {
       <h1 className="text-3xl font-bold mb-6">Buscar Productos</h1>
 
       <div className="mb-6">
-        <input
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          type="text"
-          placeholder="Busca un producto..."
-          aria-label="Buscar producto por nombre, categoría o código de barras"
-          className="input-field w-full"
-        />
+        <div className="flex gap-2">
+          <input
+            value={searchQuery}
+            onChange={e => {
+              setSearchQuery(e.target.value);
+              setScan(null);
+            }}
+            type="text"
+            placeholder="Busca un producto..."
+            aria-label="Buscar producto por nombre, categoría o código de barras"
+            className="input-field min-w-0 flex-1"
+          />
+          <ScanButton onDetected={scanned} />
+        </div>
+        {scan && <ScanOffer scan={scan} />}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -178,6 +216,31 @@ export default function SearchPage() {
           />
         </section>
       )}
+    </div>
+  );
+}
+
+// ── Oferta para un código leído que no es propio ─────────────────────────────
+
+function ScanOffer({ scan }: { scan: ScanResult }) {
+  const href = `/upload?tab=producto&ean=${scan.ean}`;
+
+  if (scan.status === 'loading') {
+    return <p role="status" className="mt-3 text-sm text-gray-600">Buscando el código {scan.ean}…</p>;
+  }
+
+  const text = scan.status === 'found'
+    ? `No tenés este producto. Está en Precios Claros (${scan.ean}).`
+    : scan.status === 'error'
+      ? `No tenés un producto con el código ${scan.ean} y no se pudo consultar Precios Claros.`
+      : `No tenés un producto con el código ${scan.ean}.`;
+
+  return (
+    <div role="status" className="mt-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4 sm:flex-row sm:items-center">
+      <p className="min-w-0 flex-1 text-sm text-gray-700">{text}</p>
+      <Link href={href} className="btn-primary shrink-0 text-center">
+        {scan.status === 'found' ? `Agregar ${scan.product.description}` : 'Agregar producto'}
+      </Link>
     </div>
   );
 }

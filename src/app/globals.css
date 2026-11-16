@@ -12,6 +12,14 @@
   --color-primary-700: #0f766e;
   --color-primary-800: #115e59;
   --color-primary-900: #134e4a;
+
+  /* Línea del lector de códigos de barras: recorre el recuadro guía de arriba abajo */
+  --animate-scan: scan 1.8s ease-in-out infinite alternate;
+
+  @keyframes scan {
+    from { top: 12%; }
+    to   { top: 88%; }
+  }
 }
 
 html, body {

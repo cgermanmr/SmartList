@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useRef, useState } from 'react';
 import DuplicateProduct from '@/components/DuplicateProduct';
+import ScanButton from '@/components/ScanButton';
 import SepaSearch from '@/components/SepaSearch';
 import { toGtin13 } from '@/lib/gtin';
 import { newId } from '@/lib/ids';
@@ -37,6 +39,11 @@ export default function UploadForm() {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const categoryInput = useRef<HTMLInputElement>(null);
   const eanInput = useRef<HTMLInputElement>(null);
+  // Código leído en Cargar precio que no es de ningún producto propio
+  const [missingEan, setMissingEan] = useState<string | null>(null);
+  // Búsqueda en el catálogo de un código leído en Agregar producto; la ref descarta respuestas viejas
+  const [scanLookup, setScanLookup] = useState<{ ean: string; failed: boolean } | null>(null);
+  const pendingScan = useRef<string | null>(null);
 
   // ── /upload?tab=producto&ean=… ───────────────────────────
   // Next conserva la página montada entre navegaciones: los parámetros se aplican cuando cambian, no solo al abrir.
@@ -73,8 +80,9 @@ export default function UploadForm() {
   }, [urlEan]);
 
   const lookupFinished = lookup?.ean === urlEan;
-  const lookingUp = urlEan !== null && sepaEnabled && !lookupFinished;
-  const lookupFailed = lookupFinished && lookup.failed;
+  const scanState = scanLookup?.ean === productForm.ean ? scanLookup : null;
+  const lookingUp = (urlEan !== null && sepaEnabled && !lookupFinished) || scanState?.failed === false;
+  const lookupFailed = (lookupFinished && lookup.failed) || scanState?.failed === true;
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -127,6 +135,50 @@ export default function UploadForm() {
     if (searchParams.has('ean')) router.replace('/upload?tab=producto', { scroll: false });
   }
 
+  // ── Código leído con la cámara ─────────────────────────────
+
+  /** Cargar precio: selecciona el producto propio; si no hay, ofrece agregarlo primero */
+  function scannedForPrice(ean: string) {
+    const own = useStore.getState().products.find(p => p.ean === ean);
+    if (own) {
+      setPriceForm(form => ({ ...form, productId: own.id }));
+      setMissingEan(null);
+    } else {
+      setMissingEan(ean);
+    }
+  }
+
+  /**
+   * Agregar producto: propio → "Ya tenés este producto"; en el catálogo → completa el formulario como el
+   * buscador; si no, queda solo el EAN.
+   */
+  function scannedForProduct(ean: string) {
+    setProductForm(form => ({ ...form, ean }));
+    const check = checkEan(ean, useStore.getState().products);
+    if (check.status === 'duplicate') {
+      setEanError(check);
+      return;
+    }
+    setEanError(null);
+    if (!sepaEnabled) return;
+    pendingScan.current = ean;
+    setScanLookup({ ean, failed: false });
+    getSepaProduct(ean).then(
+      product => {
+        // Solo si no se leyó otro código ni se editó el campo mientras tanto
+        if (pendingScan.current !== ean) return;
+        pendingScan.current = null;
+        setScanLookup(null);
+        if (product) selectSepaProduct(product);
+      },
+      () => {
+        if (pendingScan.current !== ean) return;
+        pendingScan.current = null;
+        setScanLookup({ ean, failed: true });
+      },
+    );
+  }
+
   /** Completa el formulario con el resultado elegido; la categoría es lo único que falta */
   function selectSepaProduct(product: SepaProduct) {
     setProductForm(form => formFromSepa(product, form.category));
@@ -155,14 +207,40 @@ export default function UploadForm() {
           <form onSubmit={submitPrice} className="space-y-4">
             <div>
               <label htmlFor="price-product" className="block font-semibold mb-2">Producto *</label>
-              <select
-                id="price-product"
-                value={priceForm.productId}
-                onChange={e => setPriceForm({ ...priceForm, productId: e.target.value })}
-                className="input-field">
-                <option value="">Selecciona un producto</option>
-                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <div className="flex gap-2">
+                <select
+                  id="price-product"
+                  value={priceForm.productId}
+                  onChange={e => {
+                    setPriceForm({ ...priceForm, productId: e.target.value });
+                    setMissingEan(null);
+                  }}
+                  className="input-field min-w-0 flex-1">
+                  <option value="">Selecciona un producto</option>
+                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <ScanButton onDetected={scannedForPrice} />
+              </div>
+              {missingEan && (
+                <div role="status" className="mt-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
+                  <p className="text-sm text-gray-700">
+                    No tenés un producto con el código {missingEan}. Agregalo primero y después cargá su precio.
+                  </p>
+                  <Link
+                    href={`/upload?tab=producto&ean=${missingEan}`}
+                    onClick={e => {
+                      // Si la URL ya es esa (se llegó desde Buscar con este código), navegar no cambia nada
+                      if (urlEan === missingEan) {
+                        e.preventDefault();
+                        setActiveTab('product');
+                      }
+                      setMissingEan(null);
+                    }}
+                    className="btn-primary text-center">
+                    Agregar producto
+                  </Link>
+                </div>
+              )}
             </div>
 
             <div>
@@ -255,22 +333,26 @@ export default function UploadForm() {
 
             <div>
               <label htmlFor="product-ean" className="block font-semibold mb-2">Código de barras (Opcional)</label>
-              <input
-                id="product-ean"
-                ref={eanInput}
-                value={productForm.ean}
-                onChange={e => {
-                  setProductForm({ ...productForm, ean: e.target.value });
-                  setEanError(null);
-                }}
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="Ej: 7793704000911"
-                aria-invalid={eanError !== null}
-                aria-describedby={eanError ? 'product-ean-error' : undefined}
-                className="input-field"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="product-ean"
+                  ref={eanInput}
+                  value={productForm.ean}
+                  onChange={e => {
+                    setProductForm({ ...productForm, ean: e.target.value });
+                    setEanError(null);
+                    pendingScan.current = null;
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Ej: 7793704000911"
+                  aria-invalid={eanError !== null}
+                  aria-describedby={eanError ? 'product-ean-error' : undefined}
+                  className="input-field min-w-0 flex-1"
+                />
+                <ScanButton onDetected={scannedForProduct} />
+              </div>
               {eanError && (
                 <p id="product-ean-error" role="alert" className="mt-2 text-sm text-red-700">
                   {eanError.status === 'invalid' ? 'Código de barras inválido' : <DuplicateProduct product={eanError.product} />}

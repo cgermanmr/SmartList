@@ -36,6 +36,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | Tailwind CSS | ^4 | Estilos (utility-first, mobile-first; loader `@tailwindcss/turbopack`, sin `tailwind.config.js`) |
 | Zustand | ^5 | Estado global |
 | @supabase/supabase-js | ^2.119 | Lectura del catálogo SEPA desde el navegador (clave publishable, sin sesión) |
+| barcode-detector | ^3.2 | Ponyfill de `BarcodeDetector` (ZXing en WebAssembly) para el lector de códigos de barras |
 | Vitest | ^5 | Tests de la lógica pura |
 | ESLint | ^9 | Lint (`eslint-config-next`: core-web-vitals + typescript + reglas del React Compiler) |
 | Node.js | ≥ 24 | Runtime (local, CI y Vercel); los scripts del ETL corren como `.ts` sin compilar |
@@ -52,6 +53,7 @@ docs/                           # Roadmap, features futuros (features/NN-*.md) e
 specs/                          # Specs NN-*.md (una por cambio)
 .mcp.json                       # MCP de Supabase del proyecto (sin secretos)
 .env.example                    # Variables de entorno; las reales van en .env.local (ignorado)
+scripts/copy-zxing-wasm.ts      # postinstall: copia el .wasm de ZXing a public/ (no se versiona)
 scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar), con sus *.test.ts
 ├── etl.ts                      # Punto de entrada: --file, --dry-run, --force; chequeo previo, descarga con reintentos,
 │                               #   estadísticas, regla de 3 días, código de salida
@@ -89,7 +91,9 @@ src/
 │   ├── SepaResults.tsx         # Mensajes y lista de resultados del catálogo (cada fila la arma quien lo usa)
 │   ├── SepaSearch.tsx          # Buscador "Buscar en Precios Claros" que devuelve el producto elegido
 │   ├── SepaLinkDialog.tsx      # Modal <dialog> de "Vincular con Precios Claros" / "Cambiar vínculo"
-│   └── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
+│   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
+│   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
+│   └── ScanButton.tsx          # Botón 📷 que abre el lector; solo si el navegador puede pedir la cámara
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
@@ -98,6 +102,7 @@ src/
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
+    ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
     ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y funciones puras
     ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges
@@ -137,10 +142,22 @@ src/
   consultas llevan `.retry(false)`: sin conexión el error ("No se pudo consultar Precios Claros") sale enseguida
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
+- **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
+  `BarcodeDetector` nativo si soporta EAN-13, EAN-8, UPC-A y UPC-E (Chrome en Android); si no, importa el ponyfill
+  `barcode-detector/ponyfill` la primera vez que se abre el lector. Su `.wasm` se sirve desde el propio dominio
+  (`/zxing_reader.wasm?v=<versión>`, configurado con `prepareZXingModule`), nunca desde el CDN por defecto: lo copia
+  el `postinstall` desde `node_modules` y está en `.gitignore`. Se analiza un cuadro cada ~150 ms, nunca dos a la
+  vez, y un código se acepta con 2 lecturas iguales seguidas que pasen `toGtin13` (`createConfirmer`). La cámara
+  se apaga al detectar, al cerrar, al desmontar y al ocultarse la página con `<Activity>`; en ese último caso
+  también se cierra el `<dialog>` (un modal oculto dejaría inerte la página a la que se navegó). `BarcodeScanner`
+  se renderiza en `document.body` con un portal, porque los botones 📷 están dentro de `<form>`, y el envío del
+  ingreso manual hace `stopPropagation` (los eventos de React atraviesan el portal). La cámara exige **HTTPS**
+  (o `localhost`): sin él no existe `getUserMedia` y no se muestra el botón 📷
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
-  `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco).
+  `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco) y en
+  el lector de códigos de barras (`BarcodeScanner`, a pantalla completa).
 
 ### Persistencia (localStorage)
 
@@ -259,6 +276,9 @@ interface CalculatorState {
 - Sección **En Precios Claros** debajo de los productos propios (con al menos 3 caracteres y Supabase configurado):
   hasta 20 resultados del catálogo sin los que ya tienen un producto propio; cada uno es un link "Agregar" a
   `/upload?tab=producto&ean=…`. Sin propios que coincidan, el mensaje es "No tenés productos con ese nombre"
+- Botón 📷 **Leer código de barras** al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
+  consulta el catálogo y ofrece "Agregar <descripción>" (o "Agregar producto" si no está o falla la consulta), que
+  navega a `/upload?tab=producto&ean=…`. Escribir en el buscador borra la oferta
 - Muestra último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
 - Agregar al carrito (si no hay precio registrado usa `100` como fallback) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
@@ -273,7 +293,21 @@ interface CalculatorState {
   con link; en ambos casos no guarda
 - `?tab=producto&ean=…` abre la pestaña producto completada con `getSepaProduct`; si el EAN no está en el catálogo,
   solo con el EAN (vacía si no es válido). Al guardar, la URL queda en `?tab=producto`
+- Botón 📷 **Leer código de barras** en los dos tabs:
+  - **precio** (al lado del producto): un producto propio con ese EAN queda seleccionado; si no, "No tenés un
+    producto con el código …" con "Agregar producto", que lleva al tab producto con `?tab=producto&ean=…`
+  - **producto** (al lado del código de barras): propio → "Ya tenés este producto" con link; en el catálogo →
+    completa el formulario igual que el buscador; si no, completa solo el EAN y deja el resto como estaba
 - Mensajes de éxito/error que se ocultan a los 3 s
+
+### Lector de códigos de barras (`BarcodeScanner`)
+- Modal negro a pantalla completa: video de la cámara trasera (`facingMode: { ideal: 'environment' }`), recuadro guía
+  horizontal con una línea animada (`animate-scan`, solo con `motion-safe`), "Apuntá al código de barras", botón ✕
+  (`aria-label="Cerrar lector"`) y "Escribir el código"
+- "Preparando el lector…" mientras se pide el permiso y se carga el detector; al detectar vibra (80 ms)
+- Errores, siempre con el ingreso manual abierto: permiso denegado ("Sin permiso para usar la cámara…"), sin cámara
+  o sin `getUserMedia` ("Este dispositivo no tiene cámara disponible.") y falla del detector ("No se pudo iniciar el lector.")
+- Ingreso manual: valida con `toGtin13` (ignora espacios); inválido → "Código de barras inválido"
 
 ### Detalle de producto (`/product/[id]`)
 - Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista)
@@ -321,7 +355,7 @@ interface CalculatorState {
 Requisitos: Node.js ≥ 24.
 
 ```bash
-npm install        # primera vez
+npm install        # primera vez (el postinstall copia el .wasm del lector a public/)
 npm run dev        # next dev -p 4200 → http://localhost:4200
 ```
 
@@ -347,6 +381,13 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
+- **No aparece el botón 📷** — el navegador no tiene `getUserMedia`: pasa sin HTTPS (por ejemplo, abriendo la app
+  desde otro equipo por la IP local). Para probar en el celular, usar la URL de preview de Vercel
+- **"Sin permiso para usar la cámara"** — el permiso quedó bloqueado para el sitio: habilitarlo desde el candado de la
+  barra de direcciones (Chrome) o en *Configuración → Safari → Cámara* (iPhone). Chrome también lo bloquea solo
+  después de varios avisos cerrados sin responder
+- **"No se pudo iniciar el lector"** — no cargó `/zxing_reader.wasm`: falta en `public/` (correr `npm install`, que
+  ejecuta el `postinstall`) o falló la red
 - **No aparece nada de Precios Claros** — faltan `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` (con
   esos nombres exactos: `…_PUBLISHABLE_KEY` no sirve). Se copian al código en el build: después de cargarlas en
   `.env.local` o en Vercel hay que volver a compilar o desplegar
@@ -520,6 +561,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
 - [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
 - [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
+- [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

@@ -24,3 +24,6 @@ next-env.d.ts
 .vscode/
 .idea/
 .playwright-mcp/
+
+# .wasm de ZXing (lo copia el postinstall desde node_modules)
+/public/zxing_reader.wasm
