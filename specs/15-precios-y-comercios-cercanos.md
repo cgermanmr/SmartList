@@ -118,9 +118,8 @@ y 3 km).
   más cerca) y "en N comercios cerca". Si ningún comercio cercano lo tiene: "Sin precio en comercios cercanos".
 - **Lista de comercios** (al desplegar): hasta 10, ordenados por precio y después distancia; "Ver más" muestra el
   resto. El más barato lleva la marca verde "Más barato" (todos los empatados).
-- **Sin ubicación:** el resumen usa `sepa_precios` (`getSepaPrices` de la spec 12, o su consulta si la spec 12 no
-  está implementada): "Desde $X en <cadena>" con la menor mediana, y la lista muestra una fila por cadena, sin
-  distancia ni "Agregar" por sucursal. Arriba, el aviso "Activá tu ubicación para ver comercios cercanos".
+- **Sin ubicación:** quedan el resumen ("Promedio $X · más barato en <cadena> $Y") y la lista por cadena de la
+  spec 12, sin distancia ni "Agregar" por sucursal. Arriba, el aviso "Activá tu ubicación para ver comercios cercanos".
 - **Agregar al carrito** desde una fila de comercio:
   1. si no hay un producto propio con ese EAN, se crea con `productFromSepa` (queda vinculado al catálogo);
   2. `addToCart` con el precio de esa sucursal y `store = storeRefFromBranch(...)`. Por la regla "un producto, un
@@ -187,7 +186,7 @@ y 3 km).
 - [ ] El mismo producto agregado después desde otro comercio queda en una sola línea, con el comercio y el precio nuevos.
 - [ ] Con el permiso denegado se ve el mensaje y se puede elegir una localidad; las distancias dicen "aprox.".
 - [ ] Cambiar el radio de 3 a 10 km suma comercios sin volver a bajar las sucursales.
-- [ ] Sin ubicación se ve "Desde $X en <cadena>" y el aviso para activarla; no hay botón "Agregar" por sucursal.
+- [ ] Sin ubicación se ven el resumen y la lista por cadena de la spec 12 y el aviso para activarla; no hay botón "Agregar" por sucursal.
 - [ ] En la pestaña Network, ninguna consulta a Supabase lleva la latitud ni la longitud del usuario.
 - [ ] La ubicación y el radio se conservan al recargar; "Quitar" los borra.
 - [ ] Sin variables de Supabase o sin conexión, Buscar, el detalle y el carrito funcionan como antes.

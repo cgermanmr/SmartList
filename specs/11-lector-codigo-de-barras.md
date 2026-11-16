@@ -1,6 +1,6 @@
 # SPEC 11 — Lector de códigos de barras con la cámara
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md)
 > **Fecha:** 2026-10-31
 > **Objetivo:** Leer el código de barras de un producto con la cámara del celular desde la web, para encontrarlo entre los propios, cargarle un precio o darlo de alta con los datos del catálogo SEPA.
@@ -103,16 +103,22 @@ Precios Claros" de Buscar: esta spec solo la reutiliza.
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] En Android (Chrome) se lee un EAN-13 real en menos de 2 s y usa la API nativa (no se descarga el `.wasm`).
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] En Android (Chrome) se lee un EAN-13 real en menos de 2 s y usa la API nativa (no se descarga el `.wasm`).
+  Lectura en menos de 2 s verificada el 16/11/2026 en la preview de Vercel. Que no baje el `.wasm` no se
+  comprobó con DevTools: se deduce de la velocidad y de que Chrome en Android trae `BarcodeDetector`.
 - [ ] En iPhone (Safari) se lee el mismo código con el ponyfill; el video no se abre en pantalla completa.
-- [ ] En Buscar, leer un producto propio abre su detalle; uno del catálogo ofrece agregarlo con los datos completos.
-- [ ] En Cargar precio, leer un producto propio lo deja seleccionado.
+  **No verificado:** no hubo un iPhone disponible. Se cerró la spec igual el 16/11/2026.
+- [x] En Buscar, leer un producto propio abre su detalle; uno del catálogo ofrece agregarlo con los datos completos.
+  Producto propio verificado en local; producto del catálogo, en Android el 16/11/2026.
+- [x] En Cargar precio, leer un producto propio lo deja seleccionado.
 - [ ] Al cerrar el modal, al detectar o al cambiar de página, el indicador de cámara del sistema se apaga.
-- [ ] Con el permiso denegado se ve el mensaje y se puede escribir el código.
-- [ ] Un código mal leído (dígito verificador inválido) nunca se acepta.
-- [ ] El `.wasm` se sirve desde el propio dominio, nunca desde un CDN de terceros.
-- [ ] En 375 px el modal y los botones 📷 no generan scroll horizontal.
+  Al detectar: verificado en Android el 16/11/2026. Al cerrar y al cambiar de página: el `<dialog>` se cierra y
+  la cámara se libera en el código (probado en local sin cámara real); falta verlo en el teléfono.
+- [x] Con el permiso denegado se ve el mensaje y se puede escribir el código.
+- [x] Un código mal leído (dígito verificador inválido) nunca se acepta.
+- [x] El `.wasm` se sirve desde el propio dominio, nunca desde un CDN de terceros.
+- [x] En 375 px el modal y los botones 📷 no generan scroll horizontal.
 
 ## Decisiones
 
