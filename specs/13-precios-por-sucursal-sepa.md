@@ -1,6 +1,6 @@
 # SPEC 13 — Sucursales y precios por sucursal en la base SEPA
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 08](08-base-sepa-supabase.md), [SPEC 09](09-actualizacion-diaria-sepa.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Guardar en Supabase las sucursales del SEPA con su ubicación y el precio de cada producto en cada sucursal, en un formato compacto que entre en el plan gratuito, para que la app pueda mostrar precios de comercios cercanos.
@@ -155,20 +155,34 @@ grant execute on function public.sepa_precios_en_sucursales(text[], text[]) to a
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] `sepa_sucursales` tiene una fila por sucursal del archivo (2.683 el 14/11) y `count(*)` por bandera coincide con `sepa_banderas.sucursales`.
-- [ ] Toda sucursal con coordenadas está dentro del rango de Argentina; el resumen informa cuántas quedaron sin coordenadas.
-- [ ] Para todo EAN × bandera: `precios[1] = minimo`, el último `= maximo`, `cardinality(indices)` = sucursales de la bandera y la cantidad de índices mayores a 0 = `sepa_precios.sucursales`.
-- [ ] `sepa_precios_en_sucursales` devuelve, para 5 productos × 5 sucursales elegidos a mano, el mismo precio que `productos.csv`.
-- [ ] Con 30 EAN y 60 sucursales la función responde solo por los primeros 20 y 40.
-- [ ] La clave publishable puede leer las dos tablas y ejecutar la función; no puede escribir.
-- [ ] La base queda por debajo de 300 MB y la carga completa en GitHub Actions por debajo de 25 minutos.
-- [ ] Una segunda carga del mismo archivo con `--force` deja las mismas filas (sin duplicados ni posiciones corridas).
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] `sepa_sucursales` tiene una fila por sucursal del archivo (2.683 el 14/11) y `count(*)` por bandera coincide con `sepa_banderas.sucursales`.
+  Con el archivo del 15/11: 2.618 sucursales, 0 banderas con conteo distinto. La bandera `20-1` (ZIP roto ese día)
+  conserva sus precios por la regla de 14 días, pero todavía no tiene sucursales ni arreglos: se llenan cuando vuelva.
+- [x] Toda sucursal con coordenadas está dentro del rango de Argentina; el resumen informa cuántas quedaron sin coordenadas.
+  0 fuera de rango, 1 sin coordenadas.
+- [x] Para todo EAN × bandera: `precios[1] = minimo`, el último `= maximo`, `cardinality(indices)` = sucursales de la bandera y la cantidad de índices mayores a 0 = `sepa_precios.sucursales`.
+  0 inconsistencias en 237.562 arreglos (salvo la bandera `20-1`, sin arreglos todavía).
+- [x] `sepa_precios_en_sucursales` devuelve, para 5 productos × 5 sucursales elegidos a mano, el mismo precio que `productos.csv`.
+  25 de 25, con la clave publishable, en 5 sucursales de 5 cadenas distintas.
+- [x] Con 30 EAN y 60 sucursales la función responde solo por los primeros 20 y 40.
+- [x] La clave publishable puede leer las dos tablas y ejecutar la función; no puede escribir.
+  Insertar, actualizar y borrar devuelven `42501`.
+- [x] La base queda por debajo de 300 MB y la carga completa en GitHub Actions por debajo de 25 minutos.
+  175 MB; el workflow desde la rama de la spec tardó 7 min el 16/11/2026.
+- [x] Una segunda carga del mismo archivo con `--force` deja las mismas filas (sin duplicados ni posiciones corridas).
+  Mismo MD5 de las dos tablas después de cada carga y 0 `(bandera, pos)` repetidos.
 
 ## Decisiones
 
 - **Sí:** precio por sucursal y no "mediana de la cadena + sucursal más cercana". El 62 % de los pares EAN × bandera tiene más de un precio; la mediana no es el precio de ninguna sucursal en particular.
 - **Sí:** arreglos por EAN × bandera. Misma cantidad de filas que hoy y decenas de MB, contra 14 millones de filas.
+- **Sí (16/11/2026, en la implementación):** los arreglos se escriben solo si cambiaron (`is distinct from`) y se
+  borran solo los que ya no vienen. Borrarlos e insertarlos todos dejaba cada día una copia muerta del tamaño de la
+  tabla: con la segunda carga la base pasó de 177 a 247 MB. Las sucursales se siguen reemplazando enteras (1 MB),
+  así un cambio de `pos` no choca con `unique (bandera, pos)`; las dos cosas siguen en la misma transacción.
+- **Sí (16/11/2026, en la implementación):** si una sucursal informa dos veces el mismo EAN vale la primera fila, y
+  `sepa_precios.sucursales` cuenta sucursales, no filas. En el archivo real del 30/10 no hay ninguna repetida.
 - **Sí:** tabla aparte de `sepa_precios`. La consulta de referencia por cadena (spec 12) no carga con los arreglos, y si el tamaño se va de las manos se puede vaciar sin tocar lo que ya funciona.
 - **Sí:** una función con tope en lugar de leer la tabla directo. La app necesita 20 productos × 40 sucursales, no arreglos de 971 elementos por fila (DIA).
 - **Sí:** `id` de sucursal `comercio-bandera-sucursal`. Es el formato del portal y sirve como identificador estable del comercio en el carrito (spec 14).
