@@ -1,6 +1,6 @@
 # SPEC 14 — Carrito por comercio
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Que cada producto del carrito pueda tener su comercio, ver el carrito agrupado por comercio y cerrar la compra de cada comercio por separado, para salir a comprar y visitar cada local.
