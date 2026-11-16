@@ -1,6 +1,6 @@
 # SPEC 13 — Sucursales y precios por sucursal en la base SEPA
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 08](08-base-sepa-supabase.md), [SPEC 09](09-actualizacion-diaria-sepa.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Guardar en Supabase las sucursales del SEPA con su ubicación y el precio de cada producto en cada sucursal, en un formato compacto que entre en el plan gratuito, para que la app pueda mostrar precios de comercios cercanos.
@@ -151,7 +151,7 @@ grant execute on function public.sepa_precios_en_sucursales(text[], text[]) to a
 6. **Carga real** con `--force` en local. Verificar: tamaño de la base, duración total, y la función contra el
    archivo: 5 productos × 5 sucursales elegidos a mano coinciden con `productos.csv`.
 7. **Workflow.** Verificar: una ejecución de *Actions → SEPA* termina dentro de los 30 minutos de `timeout-minutes`.
-8. **Documentación.** `CLAUDE.md` (tablas, ETL, números), feature 06.
+8. **Documentación.** `CLAUDE.md` (tablas, ETL, números), feature 07.
 
 ## Criterios de aceptación
 
