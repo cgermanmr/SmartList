@@ -1,7 +1,7 @@
 # SPEC 15 — Precios y comercios cercanos en la búsqueda
 
 > **Estado:** Borrador
-> **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 13](13-precios-por-sucursal-sepa.md), [SPEC 14](14-carrito-por-comercio.md)
+> **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 13](13-precios-por-sucursal-sepa.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Al buscar un producto, ver su precio en los comercios cercanos con la distancia a cada uno, y agregarlo al carrito directamente desde la lista, con el comercio y el precio elegidos.
 
@@ -86,11 +86,10 @@ export function sortNearbyPrices(prices: NearbyPrice[]): NearbyPrice[];
 export function branchLocalities(branches: SepaBranch[]): { label: string; lat: number; lng: number; branches: number }[];
 /** StoreRef del carrito a partir de una sucursal: name = "<cadena> — <sucursal>", address, barrio, sepaId, lat, lng */
 export function storeRefFromBranch(branch: SepaBranch): StoreRef;
-
-// src/lib/product-form.ts
-/** Producto propio a partir del catálogo: nombre sugerido, marca, presentación, EAN; categoría 'Sin categoría' */
-export function productFromSepa(sepa: SepaProduct, id: string): Product;
 ```
+
+`productFromSepa` (producto propio desde el catálogo, sin categoría) y `addSepaToCart` vienen de la
+[spec 18](18-agregar-al-carrito-sin-alta.md).
 
 Estado nuevo en el store: `location: UserLocation | null` y `radiusKm`, con las acciones `setLocation` y
 `setRadius`, persistidos en la clave nueva **`preciolocal_location`** (validada al cargar; si no es válida, `null`
@@ -121,7 +120,8 @@ y 3 km).
 - **Sin ubicación:** quedan el resumen ("Promedio $X · más barato en <cadena> $Y") y la lista por cadena de la
   spec 12, sin distancia ni "Agregar" por sucursal. Arriba, el aviso "Activá tu ubicación para ver comercios cercanos".
 - **Agregar al carrito** desde una fila de comercio:
-  1. si no hay un producto propio con ese EAN, se crea con `productFromSepa` (queda vinculado al catálogo);
+  1. si no hay un producto propio con ese EAN, se crea con `productFromSepa` de la spec 18 (vinculado al catálogo,
+     sin categoría);
   2. `addToCart` con el precio de esa sucursal y `store = storeRefFromBranch(...)`. Por la regla "un producto, un
      comercio" de la spec 14, si ya estaba en el carrito pasa a ese comercio y a ese precio.
   No se registra ningún `Price`: eso pasa al confirmar la compra, como hoy.
@@ -197,7 +197,7 @@ y 3 km).
 - **Sí:** distancia calculada en el navegador. Son 2.683 sucursales (~200 KB): alcanza con bajarlas una vez y la ubicación del usuario no se manda a ningún servidor.
 - **Sí:** distancia en línea recta. Sirve para ordenar y decidir; la distancia caminando o en auto la da la ruta (spec 16).
 - **Sí:** alternativa por localidad sin geocodificador. No depende de un servicio externo ni pide escribir una dirección.
-- **Sí:** crear el producto al agregarlo al carrito, con categoría "Sin categoría". El alta con formulario sigue disponible, pero no es un paso obligatorio para comprar.
+- **Sí:** crear el producto al agregarlo al carrito, sin categoría, como en la spec 18. El alta con formulario sigue disponible, pero no es un paso obligatorio para comprar.
 - **Sí:** guardar la ubicación en `localStorage`. Evita pedirla en cada visita; se borra con "Quitar".
 - **Sí:** radio por defecto de 3 km. En CABA y el conurbano deja varias cadenas a mano sin listar media ciudad.
 - **No:** `watchPosition` (seguir la posición en vivo). Gasta batería y la lista no necesita actualizarse mientras se camina.
@@ -212,7 +212,7 @@ y 3 km).
 | Zonas sin sucursales cerca | Botón para ampliar el radio; resumen por cadena como respaldo |
 | 20 productos × 40 sucursales tarda | La lista de productos se muestra antes; los precios llegan después. Caché por sesión |
 | Geolocalización imprecisa en escritorio | Se muestra la dirección de cada comercio; alternativa por localidad |
-| Productos creados solos sin categoría | Categoría "Sin categoría"; pendiente aparte: editar nombre y categoría desde el detalle |
+| Productos creados solos sin categoría | La categoría es opcional desde la spec 18; pendiente aparte: editar nombre y categoría desde el detalle |
 
 ## Lo que **no** incluye esta spec
 

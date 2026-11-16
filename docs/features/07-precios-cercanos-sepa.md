@@ -33,10 +33,12 @@ también publica.
 | [15 — Precios y comercios cercanos](../../specs/15-precios-y-comercios-cercanos.md) | Ubicación, distancia y lista de comercios en Buscar; agregar al carrito desde la lista |
 | [16 — Mapa y cómo llegar](../../specs/16-mapa-y-como-llegar.md) | Mapa con la ubicación propia, el comercio y la ruta |
 | [17 — Imágenes de productos](../../specs/17-imagenes-de-productos.md) | Imágenes por EAN desde Open Food Facts y el portal |
+| [18 — Agregar al carrito sin dar de alta](../../specs/18-agregar-al-carrito-sin-alta.md) | Agregar un producto del catálogo al carrito con un toque, sin formulario; categoría opcional |
 
 Las specs 13 a 17 se agregaron el 15/11/2026. La
 [14 — Carrito por comercio](../../specs/14-carrito-por-comercio.md) pertenece al
-[feature 02](02-comparacion-por-comercio.md). Orden: 13 → 15 → 16; la 17 es independiente.
+[feature 02](02-comparacion-por-comercio.md). Orden: 13 → 18 → 15 → 16; la 17 es independiente. La 18 se agregó
+el 16/11/2026, separada de la 15 porque no necesita ubicación.
 
 ## Evolución futura
 

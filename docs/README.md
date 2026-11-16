@@ -23,12 +23,12 @@ necesita backend.
 | # | Feature | Fase | Estado | Depende de |
 |---|---|---|---|---|
 | 01 | [Calculadora de precio unitario](features/01-calculadora-precio-unitario.md) | 1 | Hecho | — |
-| 02 | [Comparación por comercio](features/02-comparacion-por-comercio.md) | 1 | Parcial (spec 14 en borrador: carrito por comercio) | Catálogo de comercios |
+| 02 | [Comparación por comercio](features/02-comparacion-por-comercio.md) | 1 | Parcial (spec 14: carrito por comercio) | Catálogo de comercios |
 | 03 | [Lista de compras compartida](features/03-lista-compartida.md) | 2 | Idea | Backend + auth, tiempo real |
 | 04 | [Promociones de comercios de cercanía](features/04-promociones-comercios.md) | 2–3 | Idea | 02, backend + roles, service worker |
 | 05 | [Pedidos a comercios](features/05-pedidos-a-comercios.md) | 3–4 | Idea | 03, 04 |
 | 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | Hecho (specs 08–12) | Supabase (solo lectura), ETL diario |
-| 07 | [Precios cercanos y extensiones del SEPA](features/07-precios-cercanos-sepa.md) | 1–2 | En curso (spec 13; 15–17 en borrador) | 06, geolocalización; historial: Fase 2 |
+| 07 | [Precios cercanos y extensiones del SEPA](features/07-precios-cercanos-sepa.md) | 1–2 | En curso (spec 13; 15–18 en borrador) | 06, geolocalización; historial: Fase 2 |
 
 **Estados posibles:** Idea · Analizado · En curso · Parcial · Hecho.
 
