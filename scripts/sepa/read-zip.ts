@@ -33,6 +33,19 @@ const SUCURSAL_COLUMNS = {
   idSucursal: 'id_sucursal',
 } as const;
 
+/** Datos de la sucursal (spec 13): si falta alguna columna, ese dato queda vacío y el comercio se carga igual */
+const SUCURSAL_OPTIONAL_COLUMNS = {
+  nombre: 'sucursales_nombre',
+  tipo: 'sucursales_tipo',
+  calle: 'sucursales_calle',
+  numero: 'sucursales_numero',
+  barrio: 'sucursales_barrio',
+  localidad: 'sucursales_localidad',
+  provincia: 'sucursales_provincia',
+  latitud: 'sucursales_latitud',
+  longitud: 'sucursales_longitud',
+} as const;
+
 const PRODUCTO_COLUMNS = {
   idComercio: 'id_comercio',
   idBandera: 'id_bandera',
@@ -129,7 +142,7 @@ function readComercio(archivo: string, zip: Uint8Array, fechaArchivo: string): C
       return { archivo, motivo: 'zip roto' };
     }
     const comercio = readTable(zip, entries, 'comercio.csv', COMERCIO_COLUMNS);
-    const sucursales = readTable(zip, entries, 'sucursales.csv', SUCURSAL_COLUMNS);
+    const sucursales = readTable(zip, entries, 'sucursales.csv', SUCURSAL_COLUMNS, SUCURSAL_OPTIONAL_COLUMNS);
     const aggregator = createComercioAggregator(comercio, sucursales);
 
     let footerDate: string | null = null;
@@ -142,36 +155,46 @@ function readComercio(archivo: string, zip: Uint8Array, fechaArchivo: string): C
   }
 }
 
-function readTable<K extends string>(zip: Uint8Array, entries: Map<string, ZipEntry>, name: string, columns: Record<K, string>): Record<K, string>[] {
-  const rows: Record<K, string>[] = [];
-  readCsv(zip, entries, name, columns, row => rows.push(row), () => {});
+function readTable<K extends string, O extends string = never>(
+  zip: Uint8Array,
+  entries: Map<string, ZipEntry>,
+  name: string,
+  columns: Record<K, string>,
+  optional?: Record<O, string>,
+): (Record<K, string> & Partial<Record<O, string>>)[] {
+  const rows: (Record<K, string> & Partial<Record<O, string>>)[] = [];
+  readCsv(zip, entries, name, columns, row => rows.push(row), () => {}, optional);
   return rows;
 }
 
 /**
  * Lee un CSV del ZIP interno línea por línea: valida el encabezado y entrega cada fila con las columnas pedidas.
- * `onFooter` recibe la fecha del pie "Última actualización".
+ * Las columnas `optional` que no están en el encabezado no se entregan. `onFooter` recibe la fecha del pie
+ * "Última actualización".
  */
-function readCsv<K extends string>(
+function readCsv<K extends string, O extends string = never>(
   zip: Uint8Array,
   entries: Map<string, ZipEntry>,
   name: string,
   columns: Record<K, string>,
-  onRow: (row: Record<K, string>) => void,
+  onRow: (row: Record<K, string> & Partial<Record<O, string>>) => void,
   onFooter: (date: string | null) => void,
+  optional?: Record<O, string>,
 ): void {
   const entry = entries.get(name);
   if (!entry) throw new OmitError('encabezados inválidos');
 
   const keys = Object.keys(columns) as K[];
   let indexes: number[] | null = null;
+  let optionalIndexes: [O, number][] = [];
   let width = 0;
   let partial: string | null = null;   // registro partido por saltos de línea dentro de un campo
 
   const emit = (text: string) => {
     const fields = parseLine(text, width)!;
-    const row = {} as Record<K, string>;
-    for (let i = 0; i < keys.length; i++) row[keys[i]] = fields[indexes![i]];
+    const row = {} as Record<K, string> & Partial<Record<O, string>>;
+    for (let i = 0; i < keys.length; i++) (row as Record<K, string>)[keys[i]] = fields[indexes![i]];
+    for (const [key, index] of optionalIndexes) (row as Record<O, string>)[key] = fields[index];
     onRow(row);
   };
 
@@ -180,6 +203,11 @@ function readCsv<K extends string>(
       const header = parseLine(line, 1) ?? [];
       indexes = keys.map(key => header.indexOf(columns[key]));
       if (indexes.includes(-1)) throw new OmitError('encabezados inválidos');
+      if (optional) {
+        optionalIndexes = (Object.keys(optional) as O[])
+          .map(key => [key, header.indexOf(optional[key])] as [O, number])
+          .filter(([, index]) => index !== -1);
+      }
       width = header.length;
       return;
     }

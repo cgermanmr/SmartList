@@ -21,6 +21,9 @@ describe('buildSummary', () => {
       ],
       filasLeidas: 14_303_828,
       filasPrecios: 236_439,
+      sucursales: 2_683,
+      sinCoordenadas: 1,
+      tamanos: { base: 168.4, sucursales: 1.2, preciosSucursal: 61.5 },
       segundos: { descarga: 64.4, lectura: 179.2, carga: 590, total: 836.6 },
       aviso: null,
     };
@@ -36,6 +39,8 @@ describe('buildSummary', () => {
       '2: `sepa_2_comercio-sepa-36.zip` (zip roto)<br>`sepa_1_comercio-sepa-47.zip` (desactualizado)');
     expect(row(md, 'Filas leídas')).toBe('14.303.828');
     expect(row(md, 'Filas de precios')).toBe('236.439');
+    expect(row(md, 'Sucursales')).toBe('2.683 (sin coordenadas: 1)');
+    expect(row(md, 'Tamaño')).toBe('base 168,4 MB · `sepa_sucursales` 1,2 MB · `sepa_precios_sucursal` 61,5 MB');
     expect(row(md, 'Descarga')).toBe('1 min 4 s');
     expect(row(md, 'Lectura')).toBe('2 min 59 s');
     expect(row(md, 'Carga')).toBe('9 min 50 s');
@@ -55,7 +60,7 @@ describe('buildSummary', () => {
 
     expect(row(md, 'Resultado')).toBe('💤 **sin archivo nuevo**');
     expect(row(md, 'Detalle')).toBe('el recurso no cambió desde la última carga ok (2026-11-04T18:30:05.000Z)');
-    for (const label of ['Fecha del archivo', 'Banderas cargadas', 'Omitidos', 'Filas leídas', 'Filas de precios',
+    for (const label of ['Fecha del archivo', 'Banderas cargadas', 'Omitidos', 'Filas leídas', 'Filas de precios', 'Sucursales', 'Tamaño',
       'Descarga', 'Lectura', 'Carga']) {
       expect(row(md, label), label).toBe('—');
     }

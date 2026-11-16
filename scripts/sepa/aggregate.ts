@@ -1,8 +1,18 @@
-// Agregación de los precios del SEPA por EAN × bandera (spec 08).
+// Agregación de los precios del SEPA por EAN × bandera (spec 08) y por sucursal (spec 13).
 // Se procesa un comercio por vez: la memoria queda acotada por el comercio más grande.
 
 import { isValidGtin } from '../../src/lib/gtin.ts';
-import { type SepaUnit, median, normalizeSpaces, parsePrice, presentation } from './clean.ts';
+import {
+  type SepaUnit,
+  branchAddress,
+  cleanBranchText,
+  median,
+  normalizeSpaces,
+  parseCoordinate,
+  parsePrice,
+  presentation,
+  validCoordinates,
+} from './clean.ts';
 
 // ── Tipos ─────────────────────────────────────────────
 
@@ -14,11 +24,20 @@ export interface ComercioRow {
   banderaNombre: string;
 }
 
-/** Fila de sucursales.csv */
+/** Fila de sucursales.csv; los datos de la sucursal son opcionales (un comercio que no los trae se carga igual) */
 export interface SucursalRow {
   idComercio: string;
   idBandera: string;
   idSucursal: string;
+  nombre?: string;
+  tipo?: string;
+  calle?: string;
+  numero?: string;
+  barrio?: string;
+  localidad?: string;
+  provincia?: string;
+  latitud?: string;
+  longitud?: string;
 }
 
 /** Fila de productos.csv (solo las columnas que se usan) */
@@ -57,6 +76,29 @@ export interface SepaPrecio {
   sucursales: number;
 }
 
+/** Sucursal de una bandera (spec 13) */
+export interface SepaSucursal {
+  id: string;            // '10-1-123' = comercio-bandera-sucursal
+  bandera: string;
+  pos: number;           // posición en SepaPrecioSucursal.indices (desde 1), por id_sucursal
+  nombre: string;
+  tipo: string | null;
+  direccion: string | null;
+  barrio: string | null;
+  localidad: string | null;
+  provincia: string | null;
+  lat: number | null;    // null si la coordenada no es válida
+  lng: number | null;
+}
+
+/** Precios de un EAN × bandera por sucursal (spec 13) */
+export interface SepaPrecioSucursal {
+  ean: string;
+  bandera: string;
+  precios: number[];     // precios de lista distintos, de menor a mayor
+  indices: Int16Array;   // uno por sucursal de la bandera, en el orden de pos: posición (desde 1) en precios; 0 = no informa
+}
+
 export interface SepaProducto {
   ean: string;
   descripcion: string;
@@ -75,6 +117,9 @@ interface ProductCounts {
 export interface ComercioResult {
   banderas: SepaBandera[];
   precios: SepaPrecio[];
+  sucursales: SepaSucursal[];
+  preciosSucursal: SepaPrecioSucursal[];
+  sinCoordenadas: number;   // sucursales cargadas sin coordenadas válidas
   productos: Map<string, ProductCounts>;
   filasLeidas: number;
   filasValidas: number;
@@ -103,6 +148,40 @@ function roundCents(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** '0123' → '123'; un id que no es número queda como viene (recortado) */
+function sucursalKey(idSucursal: string): string {
+  const id = idSucursal.trim();
+  return /^\d+$/.test(id) ? String(Number(id)) : id;
+}
+
+/** Orden de las sucursales para asignar pos: numérico si los dos ids son números */
+function compareSucursales(a: string, b: string): number {
+  const numeric = /^\d+$/;
+  if (numeric.test(a) && numeric.test(b)) return Number(a) - Number(b);
+  return a.localeCompare(b, 'es', { numeric: true });
+}
+
+function toSucursal(row: SucursalRow, bandera: string, id: string, pos: number): SepaSucursal {
+  const lat = parseCoordinate(row.latitud);
+  const lng = parseCoordinate(row.longitud);
+  const valid = validCoordinates(lat, lng);
+  const tipo = normalizeSpaces(row.tipo ?? '');
+  const provincia = normalizeSpaces(row.provincia ?? '');
+  return {
+    id: `${bandera}-${id}`,
+    bandera,
+    pos,
+    nombre: cleanBranchText(row.nombre) ?? `Sucursal ${id}`,
+    tipo: tipo || null,
+    direccion: branchAddress(row.calle, row.numero),
+    barrio: cleanBranchText(row.barrio),
+    localidad: cleanBranchText(row.localidad),
+    provincia: provincia || null,
+    lat: valid ? lat : null,
+    lng: valid ? lng : null,
+  };
+}
+
 /** Agrega las filas de productos.csv de un comercio, validadas contra su comercio.csv y sucursales.csv */
 export function createComercioAggregator(comercio: ComercioRow[], sucursales: SucursalRow[]): ComercioAggregator {
   const banderas = new Map<string, SepaBandera>();
@@ -119,15 +198,30 @@ export function createComercioAggregator(comercio: ComercioRow[], sucursales: Su
     });
   }
 
-  const knownSucursales = new Set<string>();
+  // Sucursales únicas de cada bandera, ordenadas por id_sucursal: su orden es pos (spec 13)
+  const rowsByBandera = new Map<string, Map<string, SucursalRow>>();
   for (const s of sucursales) {
     const id = banderaId(s.idComercio, s.idBandera);
-    knownSucursales.add(`${id}|${s.idSucursal}`);
-    const bandera = banderas.get(id);
-    if (bandera) bandera.sucursales++;
+    if (!banderas.has(id)) continue;
+    let rows = rowsByBandera.get(id);
+    if (!rows) rowsByBandera.set(id, (rows = new Map()));
+    const key = sucursalKey(s.idSucursal);
+    if (!rows.has(key)) rows.set(key, s);
+  }
+  const posBySucursal = new Map<string, number>();   // "bandera|id_sucursal" → pos
+  const sucursalesOut: SepaSucursal[] = [];
+  for (const [id, rows] of rowsByBandera) {
+    const keys = [...rows.keys()].sort(compareSucursales);
+    keys.forEach((key, i) => {
+      posBySucursal.set(`${id}|${key}`, i + 1);
+      sucursalesOut.push(toSucursal(rows.get(key)!, id, key, i + 1));
+    });
+    banderas.get(id)!.sucursales = keys.length;
   }
 
-  const prices = new Map<string, number[]>();   // "ean|bandera" → precios de lista por sucursal
+  // "ean|bandera" → precio de lista de cada sucursal, en el orden de pos (NaN = no informa). Si una sucursal informa
+  // dos veces el mismo EAN, vale la primera fila
+  const prices = new Map<string, Float64Array>();
   const productos = new Map<string, ProductCounts>();
   let filasLeidas = 0;
   let filasValidas = 0;
@@ -141,13 +235,17 @@ export function createComercioAggregator(comercio: ComercioRow[], sucursales: Su
       const price = parsePrice(row.precioLista);
       if (price === null) return;
       const bandera = banderaId(row.idComercio, row.idBandera);
-      if (!banderas.has(bandera) || !knownSucursales.has(`${bandera}|${row.idSucursal}`)) return;
+      const pos = posBySucursal.get(`${bandera}|${sucursalKey(row.idSucursal)}`);
+      if (pos === undefined) return;
 
       filasValidas++;
       const key = `${ean}|${bandera}`;
-      const list = prices.get(key);
-      if (list) list.push(price);
-      else prices.set(key, [price]);
+      let list = prices.get(key);
+      if (!list) {
+        list = new Float64Array(banderas.get(bandera)!.sucursales).fill(Number.NaN);
+        prices.set(key, list);
+      }
+      if (Number.isNaN(list[pos - 1])) list[pos - 1] = price;
 
       let counts = productos.get(ean);
       if (!counts) {
@@ -164,21 +262,35 @@ export function createComercioAggregator(comercio: ComercioRow[], sucursales: Su
 
     finish() {
       const precios: SepaPrecio[] = [];
+      const preciosSucursal: SepaPrecioSucursal[] = [];
       const conPrecios = new Set<string>();
-      for (const [key, values] of prices) {
+      for (const [key, bySucursal] of prices) {
         const [ean, bandera] = key.split('|');
-        let minimo = values[0];
-        let maximo = values[0];
-        for (const value of values) {
-          if (value < minimo) minimo = value;
-          if (value > maximo) maximo = value;
-        }
+        const values = Array.from(bySucursal).filter(value => !Number.isNaN(value));
+        const distinct = [...new Set(values)].sort((a, b) => a - b);
+        const minimo = distinct[0];
+        const maximo = distinct[distinct.length - 1];
         precios.push({ ean, bandera, minimo, mediana: roundCents(median(values)), maximo, sucursales: values.length });
+
+        const position = new Map(distinct.map((value, i) => [value, i + 1]));
+        const indices = new Int16Array(bySucursal.length);
+        bySucursal.forEach((value, i) => { indices[i] = Number.isNaN(value) ? 0 : position.get(value)!; });
+        preciosSucursal.push({ ean, bandera, precios: distinct, indices });
         conPrecios.add(bandera);
       }
-      // Las banderas sin ningún precio (Topsy, Bomba: sin sucursales) no se cargan
+      // Las banderas sin ningún precio (Topsy, Bomba: sin sucursales) no se cargan, ni sus sucursales
       const conDatos = [...banderas.values()].filter(b => conPrecios.has(b.id));
-      return { banderas: conDatos, precios, productos, filasLeidas, filasValidas };
+      const sucursalesConDatos = sucursalesOut.filter(s => conPrecios.has(s.bandera));
+      return {
+        banderas: conDatos,
+        precios,
+        sucursales: sucursalesConDatos,
+        preciosSucursal,
+        sinCoordenadas: sucursalesConDatos.filter(s => s.lat === null).length,
+        productos,
+        filasLeidas,
+        filasValidas,
+      };
     },
   };
 }

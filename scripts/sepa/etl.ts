@@ -14,7 +14,9 @@ import {
   type OmissionReason,
   type SepaBandera,
   type SepaPrecio,
+  type SepaPrecioSucursal,
   type SepaProducto,
+  type SepaSucursal,
   createProductAccumulator,
 } from './aggregate.ts';
 import { connect, lastOkFecha, lastOkInicio, loadSepa } from './load.ts';
@@ -34,6 +36,9 @@ export interface SepaData {
   banderas: SepaBandera[];
   precios: SepaPrecio[];
   productos: SepaProducto[];
+  sucursales: SepaSucursal[];               // spec 13
+  preciosSucursal: SepaPrecioSucursal[];
+  sinCoordenadas: number;
   omitidos: Omitido[];
   filasLeidas: number;
   filasValidas: number;
@@ -174,10 +179,13 @@ const READ_CHUNK = 1 << 20;   // 1 MB
 async function readFile(file: string): Promise<SepaData> {
   const banderas: SepaBandera[] = [];
   const precios: SepaPrecio[] = [];
+  const sucursales: SepaSucursal[] = [];
+  const preciosSucursal: SepaPrecioSucursal[] = [];
   const omitidos: Omitido[] = [];
   const productos = createProductAccumulator();
   let filasLeidas = 0;
   let filasValidas = 0;
+  let sinCoordenadas = 0;
 
   const { fechaArchivo } = await readSepaZip(createReadStream(file, { highWaterMark: READ_CHUNK }), outcome => {
     if (outcome.motivo) {
@@ -188,6 +196,9 @@ async function readFile(file: string): Promise<SepaData> {
     const result = outcome.result!;
     banderas.push(...result.banderas);
     for (const precio of result.precios) precios.push(precio);
+    for (const sucursal of result.sucursales) sucursales.push(sucursal);
+    for (const precio of result.preciosSucursal) preciosSucursal.push(precio);
+    sinCoordenadas += result.sinCoordenadas;
     productos.merge(result);
     filasLeidas += result.filasLeidas;
     filasValidas += result.filasValidas;
@@ -195,7 +206,10 @@ async function readFile(file: string): Promise<SepaData> {
       `${fmt(result.precios.length)} precios (${result.banderas.map(b => b.nombre).join(', ')})`);
   });
 
-  return { fechaArchivo, banderas, precios, productos: productos.products(), omitidos, filasLeidas, filasValidas };
+  return {
+    fechaArchivo, banderas, precios, productos: productos.products(), sucursales, preciosSucursal, sinCoordenadas,
+    omitidos, filasLeidas, filasValidas,
+  };
 }
 
 // ── Estadísticas ─────────────────────────────────────────────
@@ -228,6 +242,11 @@ function printStats(data: SepaData, seconds: number): void {
   console.log(`Filas de precios:   ${fmt(data.precios.length)} (EAN × bandera)`);
   console.log(`Productos:          ${fmt(data.productos.length)} ` +
     `(con presentación: ${pct(conPresentacion, data.productos.length)}, con marca: ${pct(conMarca, data.productos.length)})`);
+  const elementos = data.preciosSucursal.reduce((sum, p) => sum + p.indices.length, 0);
+  const distintos = data.preciosSucursal.reduce((sum, p) => sum + p.precios.length, 0);
+  console.log(`Sucursales:         ${fmt(data.sucursales.length)} (sin coordenadas: ${fmt(data.sinCoordenadas)})`);
+  console.log(`Precios x sucursal: ${fmt(data.preciosSucursal.length)} arreglos, ${fmt(elementos)} índices, ` +
+    `${fmt(distintos)} precios distintos (~${fmt(Math.round((elementos * 2 + distintos * 8) / 1024 / 1024))} MB sin comprimir)`);
   console.log(`Duración:           ${fmt(Math.round(seconds))} s · pico de memoria: ${fmt(peakMb)} MB`);
 }
 
@@ -303,6 +322,8 @@ async function main(): Promise<number> {
     run.omitidos = data.omitidos;
     run.filasLeidas = data.filasLeidas;
     run.filasPrecios = data.precios.length;
+    run.sucursales = data.sucursales.length;
+    run.sinCoordenadas = data.sinCoordenadas;
     printStats(data, seconds(start));
 
     if (!client) {
@@ -320,6 +341,11 @@ async function main(): Promise<number> {
     run.detalle = result.detalle;
     console.log(`Estado:             ${result.estado}${result.detalle ? ` — ${result.detalle}` : ''}`);
     if (result.preciosEnBase !== undefined) console.log(`sepa_precios:       ${fmt(result.preciosEnBase)} filas en la base`);
+    if (result.tamanos) {
+      run.tamanos = result.tamanos;
+      console.log(`Tamaño:             base ${fmt(result.tamanos.base)} MB · sepa_sucursales ${fmt(result.tamanos.sucursales)} MB · ` +
+        `sepa_precios_sucursal ${fmt(result.tamanos.preciosSucursal)} MB`);
+    }
     console.log(`Carga:              ${fmt(Math.round(run.segundos.carga))} s`);
     if (result.estado === 'error') return 1;
     return await finish(client);

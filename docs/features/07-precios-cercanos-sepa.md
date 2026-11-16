@@ -1,6 +1,6 @@
 # 07 — Precios cercanos y extensiones del SEPA
 
-- **Estado:** Analizado (specs 13, 15, 16 y 17 en borrador)
+- **Estado:** En curso (spec 13: sucursales y precios por sucursal en la base; specs 15, 16 y 17 en borrador)
 - **Fase:** 1–2 (Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Separado del [feature 06](06-precios-sepa.md) el 16/11/2026, al cerrarlo con la
@@ -21,6 +21,9 @@ también publica.
 - Productos con EAN, marca y presentación, y lector de códigos de barras (specs 10 y 11).
 - Precio de referencia por cadena en Buscar, el lector, el detalle y el carrito (spec 12): `getSepaPrices` con
   caché por sesión y la fila desplegable del catálogo en Buscar, que la spec 15 reutiliza.
+- Sucursales con dirección y coordenadas (`sepa_sucursales`) y precio de cada producto en cada sucursal
+  (`sepa_precios_sucursal`, arreglos por EAN × bandera), con la función `sepa_precios_en_sucursales` para pedir
+  hasta 20 productos en 40 sucursales (spec 13). Medido el 16/11/2026: 2.618 sucursales, 75 MB, base de 178 MB.
 
 ## Alcance MVP
 

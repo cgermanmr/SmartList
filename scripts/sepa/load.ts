@@ -1,4 +1,4 @@
-// Carga del SEPA en Supabase con pg, en una sola transacción (spec 08, Reglas → Carga)
+// Carga del SEPA en Supabase con pg, en una sola transacción (spec 08, Reglas → Carga; spec 13: sucursales)
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,10 +7,18 @@ import type { SepaData } from './etl.ts';
 
 export type Estado = 'ok' | 'omitida' | 'error';
 
+/** Tamaño en MB después de una carga ok (spec 13: freno de 300 MB) */
+export interface Tamanos {
+  base: number;
+  sucursales: number;          // sepa_sucursales, con índices
+  preciosSucursal: number;     // sepa_precios_sucursal, con índices y TOAST
+}
+
 export interface CargaResult {
   estado: Estado;
   detalle: string | null;
   preciosEnBase?: number;   // count(*) de sepa_precios después de una carga ok
+  tamanos?: Tamanos;
 }
 
 export interface LoadOptions {
@@ -19,6 +27,8 @@ export interface LoadOptions {
 }
 
 const BATCH = 1000;
+/** Filas de sepa_precios_sucursal por INSERT: cada una lleva un arreglo con un elemento por sucursal (DIA: 971) */
+const BATCH_ARRAYS = 200;
 /** Clave del bloqueo de sesión que impide dos cargas a la vez (spec 09): `hashtext('sepa_etl')` */
 export const LOCK_KEY = 'sepa_etl';
 export const LOCK_TAKEN = 'otra carga en curso';
@@ -75,11 +85,22 @@ export function buildInsert(table: string, columns: readonly string[], rows: rea
   return { text: `insert into ${table} (${columns.join(', ')}) values ${tuples.join(', ')}`, values };
 }
 
-async function insertBatches(client: pg.Client, table: string, columns: readonly string[], rows: readonly unknown[][]): Promise<void> {
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const { text, values } = buildInsert(table, columns, rows.slice(i, i + BATCH));
+async function insertBatches(
+  client: pg.Client,
+  table: string,
+  columns: readonly string[],
+  rows: readonly unknown[][],
+  batch = BATCH,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += batch) {
+    const { text, values } = buildInsert(table, columns, rows.slice(i, i + batch));
     await client.query(text, values);
   }
+}
+
+/** Fila de tmp_precios_sucursal: pg no convierte un Int16Array en arreglo de Postgres, un array común sí */
+export function preciosSucursalRow(p: SepaData['preciosSucursal'][number]): unknown[] {
+  return [p.ean, p.bandera, p.precios, Array.from(p.indices)];
 }
 
 // ── Reglas de fecha y freno ─────────────────────────────────────────────
@@ -147,6 +168,13 @@ async function cargar(client: pg.Client, data: SepaData): Promise<void> {
       ean text, bandera text, minimo numeric(12,2), mediana numeric(12,2), maximo numeric(12,2), sucursales integer,
       primary key (ean, bandera)
     ) on commit drop;
+    create temp table tmp_sucursales (
+      id text primary key, bandera text, pos smallint, nombre text, tipo text, direccion text, barrio text,
+      localidad text, provincia text, lat double precision, lng double precision
+    ) on commit drop;
+    create temp table tmp_precios_sucursal (
+      ean text, bandera text, precios numeric(12,2)[], indices smallint[], primary key (ean, bandera)
+    ) on commit drop;
   `);
   await insertBatches(client, 'tmp_banderas', ['id', 'comercio_id', 'bandera_id', 'nombre', 'razon_social', 'sucursales'],
     data.banderas.map(b => [b.id, b.comercioId, b.banderaId, b.nombre, b.razonSocial, b.sucursales]));
@@ -154,7 +182,12 @@ async function cargar(client: pg.Client, data: SepaData): Promise<void> {
     data.productos.map(p => [p.ean, p.descripcion, p.marca, p.cantidad, p.unidad]));
   await insertBatches(client, 'tmp_precios', ['ean', 'bandera', 'minimo', 'mediana', 'maximo', 'sucursales'],
     data.precios.map(p => [p.ean, p.bandera, p.minimo, p.mediana, p.maximo, p.sucursales]));
-  await client.query('analyze tmp_banderas; analyze tmp_productos; analyze tmp_precios;');
+  await insertBatches(client, 'tmp_sucursales',
+    ['id', 'bandera', 'pos', 'nombre', 'tipo', 'direccion', 'barrio', 'localidad', 'provincia', 'lat', 'lng'],
+    data.sucursales.map(s => [s.id, s.bandera, s.pos, s.nombre, s.tipo, s.direccion, s.barrio, s.localidad, s.provincia, s.lat, s.lng]));
+  await insertBatches(client, 'tmp_precios_sucursal', ['ean', 'bandera', 'precios', 'indices'],
+    data.preciosSucursal.map(preciosSucursalRow), BATCH_ARRAYS);
+  await client.query('analyze tmp_banderas; analyze tmp_productos; analyze tmp_precios; analyze tmp_sucursales; analyze tmp_precios_sucursal;');
 
   // 5. Banderas y productos
   await client.query(`
@@ -187,7 +220,30 @@ async function cargar(client: pg.Client, data: SepaData): Promise<void> {
       and not exists (select 1 from tmp_precios t where t.ean = p.ean and t.bandera = p.bandera)
   `);
 
-  // 7. Banderas ausentes hace más de 14 días (la cascada borra sus precios)
+  // 6b. Sucursales y precios por sucursal de las banderas cargadas (spec 13), juntos en esta transacción: ningún
+  // arreglo apunta a posiciones de otra carga. Las banderas ausentes conservan los suyos, como sus precios.
+  // Las sucursales (~2.600 filas) se reemplazan enteras: así un cambio de pos no choca con unique (bandera, pos)
+  await client.query(`delete from public.sepa_sucursales where bandera in (select id from tmp_banderas)`);
+  await client.query(`
+    insert into public.sepa_sucursales (id, bandera, pos, nombre, tipo, direccion, barrio, localidad, provincia, lat, lng, actualizado)
+    select id, bandera, pos, nombre, tipo, direccion, barrio, localidad, provincia, lat, lng, $1::date from tmp_sucursales
+  `, [fecha]);
+  // Los arreglos (~240 mil filas, decenas de MB) se escriben solo si cambiaron: reescribirlos todos dejaría cada día
+  // una copia muerta del tamaño de la tabla
+  await client.query(`
+    delete from public.sepa_precios_sucursal x
+    using tmp_banderas b
+    where x.bandera = b.id
+      and not exists (select 1 from tmp_precios_sucursal t where t.ean = x.ean and t.bandera = x.bandera)
+  `);
+  await client.query(`
+    insert into public.sepa_precios_sucursal as x (ean, bandera, precios, indices)
+    select ean, bandera, precios, indices from tmp_precios_sucursal
+    on conflict (ean, bandera) do update set precios = excluded.precios, indices = excluded.indices
+    where (x.precios, x.indices) is distinct from (excluded.precios, excluded.indices)
+  `);
+
+  // 7. Banderas ausentes hace más de 14 días (la cascada borra sus precios, sus sucursales y sus arreglos)
   await client.query(`
     delete from public.sepa_banderas
     where id not in (select id from tmp_banderas) and $1::date - actualizado > $2
@@ -250,5 +306,20 @@ async function loadLocked(client: pg.Client, data: SepaData, options: LoadOption
   }
 
   const { rows } = await client.query<{ n: number }>('select count(*)::integer as n from public.sepa_precios');
-  return { estado: 'ok', detalle: null, preciosEnBase: rows[0].n };
+  return { estado: 'ok', detalle: null, preciosEnBase: rows[0]?.n, tamanos: await tamanos(client) };
+}
+
+const MB = 1024 * 1024;
+
+/** Tamaño de la base y de las dos tablas de la spec 13, en MB */
+async function tamanos(client: pg.Client): Promise<Tamanos | undefined> {
+  const { rows } = await client.query<{ base: string; sucursales: string; precios_sucursal: string }>(`
+    select pg_database_size(current_database()) as base,
+      pg_total_relation_size('public.sepa_sucursales') as sucursales,
+      pg_total_relation_size('public.sepa_precios_sucursal') as precios_sucursal
+  `);
+  const row = rows[0];
+  if (!row) return undefined;
+  const mb = (bytes: string) => Math.round((Number(bytes) / MB) * 10) / 10;
+  return { base: mb(row.base), sucursales: mb(row.sucursales), preciosSucursal: mb(row.precios_sucursal) };
 }

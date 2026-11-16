@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { isFooter, median, normalizeSpaces, normalizeUnit, parseFooterDate, parseLine, parsePrice, presentation } from './clean.ts';
+import {
+  branchAddress, cleanBranchText, isFooter, median, normalizeSpaces, normalizeUnit, parseCoordinate, parseFooterDate,
+  parseLine, parsePrice, presentation, validCoordinates,
+} from './clean.ts';
 
 // Líneas reales de productos.csv del archivo SEPA del 30/10/2026 (17 columnas)
 const CARREFOUR = '10|1|1|7791720048313|1|MIX CROCANTE CARREFOUR CLASSIC X 40 GRS|1|UNI|CARREFOUR CLASSIC|2090.00|52250.00|40|GRM||||';
@@ -198,5 +201,81 @@ describe('median', () => {
 
   it('falla con un array vacío', () => {
     expect(() => median([])).toThrow();
+  });
+});
+
+// ── Sucursales (spec 13) ─────────────────────────────────────────────
+
+describe('cleanBranchText', () => {
+  it('formato título, sin espacios de más', () => {
+    expect(cleanBranchText('  AV  RIVADAVIA 5000 ')).toBe('Av Rivadavia 5000');
+    expect(cleanBranchText('carmen de patagones')).toBe('Carmen De Patagones');
+    expect(cleanBranchText('ORTIZ DE OCAMPO')).toBe('Ortiz De Ocampo');
+  });
+
+  it('respeta las letras con tilde y la ñ', () => {
+    expect(cleanBranchText('ÑUÑOA ÁLVAREZ')).toBe('Ñuñoa Álvarez');
+  });
+
+  it('vacío o solo espacios → null', () => {
+    expect(cleanBranchText('')).toBeNull();
+    expect(cleanBranchText('   ')).toBeNull();
+    expect(cleanBranchText(undefined)).toBeNull();
+  });
+
+  it('deja los caracteres rotos en origen como vienen', () => {
+    expect(cleanBranchText('CIUDAD AUT\uFFFDNOMA')).toBe('Ciudad Aut\uFFFDnoma');
+  });
+});
+
+describe('branchAddress', () => {
+  it('calle + número', () => {
+    expect(branchAddress('AV RIVADAVIA', ' 5000 ')).toBe('Av Rivadavia 5000');
+  });
+
+  it('sin número, solo la calle', () => {
+    expect(branchAddress('Santa fe', '')).toBe('Santa Fe');
+  });
+
+  it('sin calle → null', () => {
+    expect(branchAddress('  ', '407')).toBeNull();
+  });
+});
+
+describe('parseCoordinate', () => {
+  it('punto o coma decimal', () => {
+    expect(parseCoordinate('-34.603722')).toBe(-34.603722);
+    expect(parseCoordinate('-34,603722')).toBe(-34.603722);
+  });
+
+  it('junta los pedazos que dejan los saltos de línea de Comodín', () => {
+    expect(parseCoordinate('-34.60 3722')).toBe(-34.603722);
+    expect(parseCoordinate(' -58.381 ')).toBe(-58.381);
+  });
+
+  it('vacío o no numérico → null', () => {
+    expect(parseCoordinate('')).toBeNull();
+    expect(parseCoordinate('S/D')).toBeNull();
+    expect(parseCoordinate('-34.6.1')).toBeNull();
+  });
+});
+
+describe('validCoordinates', () => {
+  it('dentro de Argentina', () => {
+    expect(validCoordinates(-34.603722, -58.381592)).toBe(true);
+    expect(validCoordinates(-54.8, -68.3)).toBe(true);
+  });
+
+  it('0 o null no son válidas', () => {
+    expect(validCoordinates(0, 0)).toBe(false);
+    expect(validCoordinates(-34.6, 0)).toBe(false);
+    expect(validCoordinates(null, -58.4)).toBe(false);
+  });
+
+  it('fuera de rango, o latitud y longitud invertidas', () => {
+    expect(validCoordinates(34.6, -58.4)).toBe(false);
+    expect(validCoordinates(-58.4, -34.6)).toBe(false);
+    expect(validCoordinates(-20.9, -65)).toBe(false);
+    expect(validCoordinates(-30, -52.9)).toBe(false);
   });
 });

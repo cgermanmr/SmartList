@@ -59,13 +59,13 @@ scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar),
 ├── etl.ts                      # Punto de entrada: --file, --dry-run, --force; chequeo previo, descarga con reintentos,
 │                               #   estadísticas, regla de 3 días, código de salida
 ├── read-zip.ts                 # Lectura en streaming del ZIP externo, los ZIP internos y los CSV
-├── clean.ts                    # Limpieza pura de campos (EAN, precios, presentación, pie de archivo)
-├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales)
+├── clean.ts                    # Limpieza pura de campos (EAN, precios, presentación, pie de archivo, sucursales)
+├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales) y por sucursal
 ├── load.ts                     # Carga en una transacción con pg, bloqueo de sesión y registro en sepa_cargas
 └── summary.ts                  # Resumen Markdown de la ejecución para el job summary de GitHub
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
-├── migrations/                 # SQL versionado: 20261031000000_sepa.sql
+├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #0f766e, display standalone
@@ -427,12 +427,14 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 ## Base de precios SEPA (Supabase)
 
 Precios de referencia de las grandes cadenas, de [Precios Claros (SEPA)](docs/features/06-precios-sepa.md). Detalle
-completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md) (base y carga) y la
-[SPEC 09](specs/09-actualizacion-diaria-sepa.md) (carga diaria).
+completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.md) (base y carga), la
+[SPEC 09](specs/09-actualizacion-diaria-sepa.md) (carga diaria) y la [SPEC 13](specs/13-precios-por-sucursal-sepa.md)
+(sucursales y precios por sucursal).
 
 - **Uso desde la app:** solo lectura con la clave publishable de `sepa_productos`
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y de `sepa_precios` + `sepa_banderas` para el precio de
-  referencia ([SPEC 12](specs/12-precio-de-referencia-sepa.md))
+  referencia ([SPEC 12](specs/12-precio-de-referencia-sepa.md)). Las sucursales y los precios por sucursal todavía no
+  se usan en la app (spec 15)
 - **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
   consultar e inspeccionar, no para aplicar migraciones
 - **Tablas** (`public`, RLS con lectura pública salvo `sepa_cargas`):
@@ -442,8 +444,17 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_banderas` | Cadenas (`id` = `comercio-bandera`, p. ej. `10-1`), sucursales y fecha de la última carga |
 | `sepa_productos` | EAN (GTIN-13), descripción, marca, presentación normalizada, cantidad de banderas con precio |
 | `sepa_precios` | Mínimo, mediana y máximo por EAN × bandera, sucursales que lo informan |
+| `sepa_sucursales` | Sucursal (`id` = `comercio-bandera-sucursal`, p. ej. `10-1-123`): nombre, tipo, dirección, barrio, localidad, provincia (`AR-C`), `lat`/`lng` (null si no son válidas) y `pos` |
+| `sepa_precios_sucursal` | Por EAN × bandera: `precios` (distintos, de menor a mayor) e `indices` (uno por sucursal en el orden de `pos`: posición en `precios`, 0 = no informa) |
 | `sepa_cargas` | Registro de cada ejecución: estado `ok` / `omitida` / `error`, conteos, omitidos y detalle |
 
+- **Precio por sucursal** (spec 13): `sepa_precios_en_sucursales(eans, sucursales)` devuelve `ean`, `sucursal` y
+  `precio` de cada producto en cada sucursal que lo informa; ignora lo que pase de 20 EAN y 40 sucursales. Arreglos
+  por EAN × bandera en lugar de una fila por sucursal (serían 14 millones). `pos` se asigna en cada carga por
+  `id_sucursal`, y sucursales y arreglos de una bandera se escriben juntos en la misma transacción: las sucursales
+  se reemplazan enteras; los arreglos, solo si cambiaron (`is distinct from`), para no dejar cada día una copia
+  muerta del tamaño de la tabla.
+  Coordenadas válidas: latitud entre −56 y −21, longitud entre −74 y −53, distintas de 0
 - **ETL:** `npm run sepa:etl` baja el ZIP más reciente del dataset `sepa-precios` a un temporal, lo lee en streaming
   (sin cargar ningún CSV entero), limpia, agrega y carga todo en **una sola transacción**. Opciones:
   `-- --file ruta.zip` (ZIP local), `-- --dry-run` (sin base, solo estadísticas), `-- --force` (saltea las reglas de fecha
@@ -456,7 +467,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
   (el *Transaction pooler* no sostiene bloqueos de sesión)
 - **Reglas de carga:** se omite un archivo más viejo que la última carga `ok` o de una fecha ya cargada (salvo
   `--force`); el **freno de seguridad** rechaza siempre un archivo con menos del 50 % de las filas de la última carga
-  `ok`; una bandera que no viene conserva sus precios hasta 14 días
+  `ok`; una bandera que no viene conserva sus precios, sus sucursales y sus arreglos hasta 14 días
 - **Más de 3 días:** si termina sin error pero la `fecha_archivo` más reciente con carga `ok` tiene más de 3 días
   (hora argentina), o no hay ninguna, sale con código 1 para que llegue el aviso. No aplica con `--dry-run`
 - **Código de salida:** 0 con `ok`, `omitida` o "sin archivo nuevo"; 1 con `error`, descarga fallida (sin fila en
@@ -465,6 +476,10 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
   de descarga, lectura y carga, también si falla (`scripts/sepa/summary.ts`)
 - **Números (02/11/2026):** 23 banderas, 75.216 productos, 236.058 precios; base de 98 MB; lectura ~2 min y carga
   3 a 6 min. El 04/11, en local, la lectura tardó ~3 min y la carga 8,5 a 10 min (~13 min en total)
+- **Números con sucursales (16/11/2026, archivo del 15/11, en local):** 2.618 sucursales (1 sin coordenadas),
+  237.562 arreglos con 21,8 millones de índices; `sepa_precios_sucursal` 73 MB, `sepa_sucursales` 1 MB, base de
+  175 MB (freno de la spec 13: 300 MB) que no crece al repetir la carga; lectura 2 min 45 s con 820 MB de memoria y
+  carga 7 min 25 s
 - **Migraciones:** `npx supabase db push --linked` (requiere `npx supabase login` y `link` la primera vez)
 - **Carga diaria:** workflow `SEPA` de GitHub Actions (ver *Build y Despliegue*); a mano sigue funcionando
   `npm run sepa:etl`, y el bloqueo evita que pise al workflow
@@ -583,6 +598,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [ ] Service worker / modo offline
 - [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
 - [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
+- [x] Sucursales y precios por sucursal en la base SEPA (spec 13)
 - [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
 - [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
 - [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)

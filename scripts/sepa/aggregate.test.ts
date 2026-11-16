@@ -134,6 +134,111 @@ describe('createComercioAggregator', () => {
   });
 });
 
+describe('createComercioAggregator: precios por sucursal (spec 13)', () => {
+  // La bandera del ejemplo de la spec: 4 sucursales, $1.000 en la 1 y la 3, $1.200 en la 4, la 2 no informa
+  const UNA_BANDERA: ComercioRow[] = [COMERCIO[0]];
+  const CUATRO: SucursalRow[] = ['1', '2', '3', '4'].map(idSucursal => ({ idComercio: '10', idBandera: '1', idSucursal }));
+
+  it('el ejemplo de la spec: precios = {1000, 1200}, indices = {1, 0, 1, 2}', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, CUATRO);
+    agg.add(row({ idSucursal: '4', precioLista: '1200.00' }));
+    agg.add(row({ idSucursal: '1', precioLista: '1000.00' }));
+    agg.add(row({ idSucursal: '3', precioLista: '1000.00' }));
+    const result = agg.finish();
+    expect(result.preciosSucursal).toEqual([{ ean: MIX, bandera: '10-1', precios: [1000, 1200], indices: Int16Array.from([1, 0, 1, 2]) }]);
+    expect(result.precios[0]).toMatchObject({ minimo: 1000, maximo: 1200, sucursales: 3 });
+  });
+
+  it('una sucursal sin productos se guarda igual y queda en 0 en todos los arreglos', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, CUATRO);
+    agg.add(row({ idSucursal: '1', precioLista: '1000.00' }));
+    const result = agg.finish();
+    expect(result.sucursales.map(s => s.id)).toEqual(['10-1-1', '10-1-2', '10-1-3', '10-1-4']);
+    expect(result.banderas[0].sucursales).toBe(4);
+    expect(Array.from(result.preciosSucursal[0].indices)).toEqual([1, 0, 0, 0]);
+  });
+
+  it('un producto con un único precio en todas las sucursales', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, CUATRO);
+    for (const idSucursal of ['1', '2', '3', '4']) agg.add(row({ idSucursal, precioLista: '2090.00' }));
+    const [p] = agg.finish().preciosSucursal;
+    expect(p.precios).toEqual([2090]);
+    expect(Array.from(p.indices)).toEqual([1, 1, 1, 1]);
+  });
+
+  it('una sucursal que no está en sucursales.csv se descarta', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, CUATRO);
+    agg.add(row({ idSucursal: '1', precioLista: '1000.00' }));
+    agg.add(row({ idSucursal: '99', precioLista: '500.00' }));
+    const [p] = agg.finish().preciosSucursal;
+    expect(p.precios).toEqual([1000]);
+    expect(p.indices).toHaveLength(4);
+  });
+
+  it('pos ordena las sucursales por id_sucursal, numérico, sin repetidas', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, [
+      { idComercio: '10', idBandera: '1', idSucursal: '10' },
+      { idComercio: '10', idBandera: '1', idSucursal: '9' },
+      { idComercio: '10', idBandera: '1', idSucursal: '100' },
+      { idComercio: '10', idBandera: '1', idSucursal: '9' },
+    ]);
+    agg.add(row({ idSucursal: '100' }));
+    const result = agg.finish();
+    expect(result.sucursales.map(s => [s.id, s.pos])).toEqual([['10-1-9', 1], ['10-1-10', 2], ['10-1-100', 3]]);
+    expect(result.banderas[0].sucursales).toBe(3);
+    expect(Array.from(result.preciosSucursal[0].indices)).toEqual([0, 0, 1]);
+  });
+
+  it('si una sucursal informa dos veces el mismo EAN, vale la primera fila', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, CUATRO);
+    agg.add(row({ idSucursal: '1', precioLista: '1000.00' }));
+    agg.add(row({ idSucursal: '1', precioLista: '1500.00' }));
+    const result = agg.finish();
+    expect(result.preciosSucursal[0].precios).toEqual([1000]);
+    expect(result.precios[0]).toMatchObject({ minimo: 1000, maximo: 1000, sucursales: 1 });
+  });
+
+  it('las sucursales salen limpias, con coordenadas solo si son válidas', () => {
+    const agg = createComercioAggregator(UNA_BANDERA, [
+      {
+        idComercio: '10', idBandera: '1', idSucursal: '1', nombre: 'CABALLITO  CENTRO', tipo: 'Hipermercado',
+        calle: 'AV RIVADAVIA', numero: '5000', barrio: 'CABALLITO', localidad: 'CIUDAD DE BUENOS AIRES',
+        provincia: 'AR-C', latitud: '-34,6188', longitud: '-58.4370',
+      },
+      { idComercio: '10', idBandera: '1', idSucursal: '2', nombre: '', calle: '', latitud: '0', longitud: '0' },
+    ]);
+    agg.add(row({ idSucursal: '1' }));
+    const result = agg.finish();
+    expect(result.sucursales).toEqual([
+      {
+        id: '10-1-1', bandera: '10-1', pos: 1, nombre: 'Caballito Centro', tipo: 'Hipermercado',
+        direccion: 'Av Rivadavia 5000', barrio: 'Caballito', localidad: 'Ciudad De Buenos Aires', provincia: 'AR-C',
+        lat: -34.6188, lng: -58.437,
+      },
+      {
+        id: '10-1-2', bandera: '10-1', pos: 2, nombre: 'Sucursal 2', tipo: null, direccion: null, barrio: null,
+        localidad: null, provincia: null, lat: null, lng: null,
+      },
+    ]);
+    expect(result.sinCoordenadas).toBe(1);
+  });
+
+  it('las sucursales de una bandera sin precios no se devuelven', () => {
+    const agg = createComercioAggregator(COMERCIO, SUCURSALES);
+    agg.add(row({ idSucursal: '1' }));
+    expect(agg.finish().sucursales.map(s => s.id)).toEqual(['10-1-1', '10-1-2']);
+  });
+
+  it('precios[1] = mínimo, el último = máximo, y los índices mayores a 0 = sucursales', () => {
+    for (const { ean, bandera, minimo, maximo, sucursales } of toyComercio().finish().precios) {
+      const p = toyComercio().finish().preciosSucursal.find(x => x.ean === ean && x.bandera === bandera)!;
+      expect(p.precios[0]).toBe(minimo);
+      expect(p.precios[p.precios.length - 1]).toBe(maximo);
+      expect(Array.from(p.indices).filter(i => i > 0)).toHaveLength(sucursales);
+    }
+  });
+});
+
 describe('checkFreshness', () => {
   it('acepta un pie de hasta 7 días antes de la fecha del archivo', () => {
     expect(checkFreshness('2026-10-30', '2026-10-30')).toBeNull();

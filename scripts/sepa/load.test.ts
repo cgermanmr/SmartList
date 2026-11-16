@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import type { SepaData } from './etl.ts';
-import { LOCK_KEY, LOCK_TAKEN, buildInsert, checkRules, loadSepa } from './load.ts';
+import { LOCK_KEY, LOCK_TAKEN, buildInsert, checkRules, loadSepa, preciosSucursalRow } from './load.ts';
 
 describe('buildInsert', () => {
   it('arma un INSERT multi-fila con un parámetro por valor', () => {
@@ -49,7 +49,8 @@ describe('checkRules', () => {
 
 describe('loadSepa: bloqueo', () => {
   const data: SepaData = {
-    fechaArchivo: '2026-11-04', banderas: [], precios: [], productos: [], omitidos: [], filasLeidas: 0, filasValidas: 0,
+    fechaArchivo: '2026-11-04', banderas: [], precios: [], productos: [], sucursales: [], preciosSucursal: [],
+    sinCoordenadas: 0, omitidos: [], filasLeidas: 0, filasValidas: 0,
   };
   const options = { force: true, inicio: new Date('2026-11-04T18:30:00Z') };
 
@@ -93,5 +94,73 @@ describe('loadSepa: bloqueo', () => {
     const { client, queries } = fakeClient(true, /^select\s+count/);
     await expect(loadSepa(client, data, options)).rejects.toThrow('falla simulada');
     expect(queries.at(-1)?.text).toContain('pg_advisory_unlock');
+  });
+});
+
+describe('loadSepa: sucursales y precios por sucursal (spec 13)', () => {
+  const data: SepaData = {
+    fechaArchivo: '2026-11-04',
+    banderas: [{ id: '10-1', comercioId: 10, banderaId: 1, nombre: 'Carrefour', razonSocial: 'INC S.A.', sucursales: 4 }],
+    precios: [{ ean: '7791720048313', bandera: '10-1', minimo: 1000, mediana: 1000, maximo: 1200, sucursales: 3 }],
+    productos: [],
+    sucursales: [1, 2, 3, 4].map(pos => ({
+      id: `10-1-${pos}`, bandera: '10-1', pos, nombre: `Sucursal ${pos}`, tipo: null, direccion: null, barrio: null,
+      localidad: null, provincia: 'AR-C', lat: -34.6, lng: -58.4,
+    })),
+    preciosSucursal: [{ ean: '7791720048313', bandera: '10-1', precios: [1000, 1200], indices: Int16Array.from([1, 0, 1, 2]) }],
+    sinCoordenadas: 0,
+    omitidos: [],
+    filasLeidas: 3,
+    filasValidas: 3,
+  };
+
+  function recordingClient() {
+    const queries: { text: string; values?: unknown[] }[] = [];
+    const client = {
+      query: async (text: string, values?: unknown[]) => {
+        queries.push({ text, values });
+        if (text.includes('pg_try_advisory_lock')) return { rows: [{ locked: true }] };
+        if (text.includes('max_fecha')) return { rows: [{ max_fecha: null, misma_fecha: false, filas_precios: null }] };
+        if (text.includes('pg_database_size')) return { rows: [{ base: String(150 * 1024 * 1024), sucursales: '1048576', precios_sucursal: String(60 * 1024 * 1024) }] };
+        if (text.includes('count(*)')) return { rows: [{ n: 1 }] };
+        return { rows: [] };
+      },
+    };
+    return { client: client as unknown as pg.Client, queries };
+  }
+
+  it('el arreglo de índices viaja como array común (pg no convierte Int16Array)', () => {
+    expect(preciosSucursalRow(data.preciosSucursal[0])).toEqual(['7791720048313', '10-1', [1000, 1200], [1, 0, 1, 2]]);
+  });
+
+  it('reemplaza sucursales y escribe los arreglos que cambiaron, dentro de la transacción y después de los precios', async () => {
+    const { client, queries } = recordingClient();
+    const result = await loadSepa(client, data, { force: true, inicio: new Date('2026-11-04T18:30:00Z') });
+    expect(result).toMatchObject({ estado: 'ok', tamanos: { base: 150, sucursales: 1, preciosSucursal: 60 } });
+
+    const index = (pattern: RegExp) => queries.findIndex(q => pattern.test(q.text));
+    const begin = index(/^begin$/);
+    const commit = index(/^commit$/);
+    const upsertPrecios = index(/insert into public\.sepa_precios \(/);
+    const borraSucursales = index(/delete from public\.sepa_sucursales where bandera in/);
+    const insertaSucursales = index(/insert into public\.sepa_sucursales/);
+    const borraArreglos = index(/delete from public\.sepa_precios_sucursal x/);
+    const upsertArreglos = index(/insert into public\.sepa_precios_sucursal/);
+
+    expect(begin).toBeGreaterThan(-1);
+    expect(upsertPrecios).toBeGreaterThan(begin);
+    expect(borraSucursales).toBeGreaterThan(upsertPrecios);
+    expect(insertaSucursales).toBeGreaterThan(borraSucursales);
+    expect(borraArreglos).toBeGreaterThan(insertaSucursales);
+    expect(upsertArreglos).toBeGreaterThan(borraArreglos);
+    expect(commit).toBeGreaterThan(upsertArreglos);
+    // Solo los que no vienen se borran, y solo los que cambiaron se reescriben
+    expect(queries[borraArreglos].text).toMatch(/not exists/);
+    expect(queries[upsertArreglos].text).toMatch(/on conflict \(ean, bandera\) do update[\s\S]*is distinct from/);
+
+    const tmp = queries.find(q => q.text.startsWith('insert into tmp_precios_sucursal'))!;
+    expect(tmp.values).toEqual(['7791720048313', '10-1', [1000, 1200], [1, 0, 1, 2]]);
+    const tmpSucursales = queries.find(q => q.text.startsWith('insert into tmp_sucursales'))!;
+    expect(tmpSucursales.values).toHaveLength(4 * 11);
   });
 });

@@ -1,4 +1,4 @@
-// Limpieza de los CSV del SEPA: funciones puras, sin dependencias (spec 08)
+// Limpieza de los CSV del SEPA: funciones puras, sin dependencias (specs 08 y 13)
 
 export type SepaUnit = 'g' | 'ml' | 'u';
 
@@ -115,4 +115,46 @@ export function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = sorted.length >> 1;
   return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+// ── Sucursales (spec 13) ─────────────────────────────────────────────
+
+/** Rango de Argentina: latitud y longitud válidas de una sucursal */
+const LAT_RANGE = [-56, -21] as const;
+const LNG_RANGE = [-74, -53] as const;
+
+/**
+ * Texto de sucursales.csv en formato título, sin espacios de más: "AV  RIVADAVIA 5000 " → "Av Rivadavia 5000".
+ * Vacío → null. Los caracteres rotos en origen (`Aut�noma`) quedan como vienen
+ */
+export function cleanBranchText(text: string | null | undefined): string | null {
+  const clean = normalizeSpaces(text ?? '');
+  if (clean === '') return null;
+  return clean
+    .toLocaleLowerCase('es-AR')
+    .replace(/(^|[\s(/-])(\p{L})/gu, (_match, before: string, letter: string) => before + letter.toLocaleUpperCase('es-AR'));
+}
+
+/** Dirección = calle + número, ya limpios; sin calle, null */
+export function branchAddress(calle: string | null | undefined, numero: string | null | undefined): string | null {
+  const street = cleanBranchText(calle);
+  if (street === null) return null;
+  const number = normalizeSpaces(numero ?? '');
+  return number === '' ? street : `${street} ${number}`;
+}
+
+/**
+ * Coordenada del CSV ("-34.603722", "-34,603722"); null si no es un número. Se ignoran los espacios: Comodín parte
+ * la latitud y la longitud con saltos de línea, que la lectura junta con un espacio
+ */
+export function parseCoordinate(text: string | null | undefined): number | null {
+  const clean = (text ?? '').replace(/\s+/g, '').replace(',', '.');
+  if (!/^-?\d+(\.\d+)?$/.test(clean)) return null;
+  return Number(clean);
+}
+
+/** Coordenadas dentro de Argentina y distintas de 0 */
+export function validCoordinates(lat: number | null, lng: number | null): boolean {
+  if (lat === null || lng === null || lat === 0 || lng === 0) return false;
+  return lat >= LAT_RANGE[0] && lat <= LAT_RANGE[1] && lng >= LNG_RANGE[0] && lng <= LNG_RANGE[1];
 }

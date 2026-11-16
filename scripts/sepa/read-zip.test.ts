@@ -73,9 +73,11 @@ describe('readSepaZip', () => {
     expect(outcome.result!.banderas).toEqual([
       { id: '10-1', comercioId: 10, banderaId: 1, nombre: 'Hipermercado Carrefour', razonSocial: 'INC S.A.', sucursales: 2 },
     ]);
+    // 4 filas en 2 sucursales: cada sucursal cuenta una vez, con su primera fila (spec 13)
     expect(outcome.result!.precios).toEqual([
-      { ean: '7791720048313', bandera: '10-1', minimo: 2000, mediana: 2001.5, maximo: 2003, sucursales: 4 },
+      { ean: '7791720048313', bandera: '10-1', minimo: 2000, mediana: 2000.5, maximo: 2001, sucursales: 2 },
     ]);
+    expect(outcome.result!.sucursales.map(s => [s.id, s.nombre])).toEqual([['10-1-1', 'Centro'], ['10-1-2', 'Norte']]);
   });
 
   it('recorre en streaming un productos.csv más grande que un pedazo, sin perder líneas', async () => {
@@ -84,7 +86,7 @@ describe('readSepaZip', () => {
     const [outcome] = (await read(zip, 1000)).outcomes;
     expect(outcome.result!.filasLeidas).toBe(rows);
     expect(outcome.result!.filasValidas).toBe(rows);
-    expect(outcome.result!.precios[0]).toMatchObject({ minimo: 2000, maximo: 2000 + rows - 1, sucursales: rows });
+    expect(outcome.result!.precios[0]).toMatchObject({ minimo: 2000, maximo: 2001, sucursales: 2 });
   });
 
   it('un ZIP interno vacío queda omitido como zip roto y no corta la lectura', async () => {

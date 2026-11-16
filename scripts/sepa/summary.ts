@@ -1,6 +1,7 @@
-// Resumen de una ejecución del ETL en Markdown, para el job summary de GitHub Actions (spec 09)
+// Resumen de una ejecución del ETL en Markdown, para el job summary de GitHub Actions (spec 09; spec 13: sucursales)
 
 import type { Omitido } from './etl.ts';
+import type { Tamanos } from './load.ts';
 
 // ── Tipos ─────────────────────────────────────────────
 
@@ -17,6 +18,9 @@ export interface RunSummary {
   omitidos: Omitido[] | null;
   filasLeidas: number | null;
   filasPrecios: number | null;
+  sucursales: number | null;        // spec 13
+  sinCoordenadas: number | null;
+  tamanos: Tamanos | null;          // después de una carga ok
   segundos: {
     descarga: number | null;
     lectura: number | null;
@@ -30,7 +34,8 @@ export interface RunSummary {
 export function emptySummary(resultado: Resultado): RunSummary {
   return {
     resultado, detalle: null, fechaArchivo: null, lastModified: null, banderas: null, omitidos: null,
-    filasLeidas: null, filasPrecios: null, segundos: { descarga: null, lectura: null, carga: null, total: null },
+    filasLeidas: null, filasPrecios: null, sucursales: null, sinCoordenadas: null, tamanos: null,
+    segundos: { descarga: null, lectura: null, carga: null, total: null },
     aviso: null,
   };
 }
@@ -72,6 +77,17 @@ function utc(date: Date | null): string {
   return date === null ? NONE : `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 }
 
+function sucursales(run: RunSummary): string {
+  if (run.sucursales === null) return NONE;
+  return `${number(run.sucursales)} (sin coordenadas: ${number(run.sinCoordenadas)})`;
+}
+
+function tamanos(value: Tamanos | null): string {
+  if (value === null) return NONE;
+  return `base ${number(value.base)} MB · \`sepa_sucursales\` ${number(value.sucursales)} MB · ` +
+    `\`sepa_precios_sucursal\` ${number(value.preciosSucursal)} MB`;
+}
+
 function omitidos(list: Omitido[] | null): string {
   if (list === null) return NONE;
   if (list.length === 0) return '0';
@@ -91,6 +107,8 @@ export function buildSummary(run: RunSummary): string {
     ['Omitidos', omitidos(run.omitidos)],
     ['Filas leídas', number(run.filasLeidas)],
     ['Filas de precios', number(run.filasPrecios)],
+    ['Sucursales', sucursales(run)],
+    ['Tamaño', tamanos(run.tamanos)],
     ['Descarga', formatDuration(run.segundos.descarga)],
     ['Lectura', formatDuration(run.segundos.lectura)],
     ['Carga', formatDuration(run.segundos.carga)],
