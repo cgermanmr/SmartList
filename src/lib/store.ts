@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { toGtin13 } from './gtin';
 import { uniqueId } from './ids';
-import { Product, Price, CartItem, Purchase, CalculatorState } from './models';
+import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
 import {
   PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY,
   DEFAULT_PRODUCTS, defaultPrices, defaultCalculator,
@@ -24,8 +24,13 @@ export interface AppState {
   updateProduct: (id: string, changes: Partial<Omit<Product, 'id'>>) => void;
   addPrice: (price: Price) => void;
   updatePrice: (priceId: string, newAmount: number) => void;
+  /** Un producto, un comercio: si ya está suma 1; si el ítem nuevo trae comercio, pasa a ese comercio y precio */
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
+  /** El checkout de un grupo saca solo sus ítems */
+  removeCartItems: (itemIds: string[]) => void;
+  /** Cambia el comercio (undefined → "Sin comercio"); el precio solo cambia si se pasa `price` */
+  setCartItemStore: (itemId: string, store?: StoreRef, price?: number) => void;
   updateQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, price: number) => void;
   clearCart: () => void;
@@ -72,14 +77,28 @@ export const useStore = create<AppState>()((set, get) => ({
   // ── Carrito ───────────────────────────────────────────────
   addToCart: item => set(s => {
     const exists = s.cart.some(i => i.productId === item.productId);
+    if (!exists) return { cart: [...s.cart, item] };
     return {
-      cart: exists
-        ? s.cart.map(i => i.productId === item.productId ? withQuantity(i, i.quantity + 1) : i)
-        : [...s.cart, item],
+      cart: s.cart.map(i => {
+        if (i.productId !== item.productId) return i;
+        const moved = item.store ? { ...i, store: item.store, price: item.price } : i;
+        return withQuantity(moved, i.quantity + 1);
+      }),
     };
   }),
 
   removeFromCart: itemId => set(s => ({ cart: s.cart.filter(i => i.id !== itemId) })),
+
+  removeCartItems: itemIds => set(s => ({ cart: s.cart.filter(i => !itemIds.includes(i.id)) })),
+
+  setCartItemStore: (itemId, store, price) => set(s => ({
+    cart: s.cart.map(i => {
+      if (i.id !== itemId) return i;
+      // store: undefined lo saca del JSON guardado (JSON.stringify omite la clave)
+      const moved: CartItem = { ...i, store };
+      return price !== undefined && price > 0 ? { ...moved, price, subtotal: price * i.quantity } : moved;
+    }),
+  })),
 
   updateQuantity: (itemId, qty) => set(s => ({
     cart: s.cart.map(i => i.id === itemId ? withQuantity(i, qty) : i),
@@ -96,10 +115,12 @@ export const useStore = create<AppState>()((set, get) => ({
 
   loadPurchaseToCart: (purchase, merge = false) => set(s => {
     const base: CartItem[] = merge ? [...s.cart] : [];
+    const purchaseStore = purchaseStoreRef(purchase);
     for (const item of purchase.items) {
       const currentPrice = getPriceStats(s.prices, item.productId)?.current ?? item.price;
       const index = base.findIndex(i => i.productId === item.productId);
       if (index >= 0) {
+        // El ítem que ya estaba conserva su comercio
         base[index] = withQuantity(base[index], base[index].quantity + item.quantity);
       } else {
         base.push({
@@ -107,6 +128,7 @@ export const useStore = create<AppState>()((set, get) => ({
           id: uniqueId(),
           price: currentPrice,
           subtotal: currentPrice * item.quantity,
+          store: item.store ?? purchaseStore,
         });
       }
     }
@@ -124,6 +146,14 @@ export const useStore = create<AppState>()((set, get) => ({
 
 function withQuantity(item: CartItem, quantity: number): CartItem {
   return { ...item, quantity, subtotal: item.price * quantity };
+}
+
+/** Comercio de una compra guardada como texto; el barrio "Sin especificar" no es un barrio */
+function purchaseStoreRef(purchase: Purchase): StoreRef | undefined {
+  const name = purchase.store?.trim();
+  if (!name) return undefined;
+  const barrio = purchase.barrio?.trim();
+  return barrio && barrio !== NO_BARRIO ? { name, barrio } : { name };
 }
 
 // ── Persistencia ──────────────────────────────────────────
@@ -185,6 +215,53 @@ export function getPriceStats(prices: Price[], productId: string): PriceStats | 
 
 export function getCartTotal(cart: CartItem[]): number {
   return cart.reduce((sum, item) => sum + item.subtotal, 0);
+}
+
+// ── Carrito por comercio ──────────────────────────────────
+
+/** Barrio que se registra cuando no se conoce */
+export const NO_BARRIO = 'Sin especificar';
+
+function normalizeText(text: string | undefined): string {
+  return (text ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Clave del comercio: sepaId si existe; si no, nombre + barrio sin mayúsculas ni espacios de más. '' sin comercio */
+export function storeKey(store?: StoreRef): string {
+  if (!store) return '';
+  if (store.sepaId) return `sepa:${store.sepaId}`;
+  const name = normalizeText(store.name);
+  if (!name) return '';
+  return `${name}|${normalizeText(store.barrio)}`;
+}
+
+export interface CartGroup {
+  key: string;
+  store?: StoreRef;    // el del primer ítem del grupo; undefined en "Sin comercio"
+  items: CartItem[];
+  total: number;
+}
+
+/** Grupos en el orden en que se agregó el primer ítem de cada comercio; "Sin comercio" al final */
+export function groupCartByStore(cart: CartItem[]): CartGroup[] {
+  const groups = new Map<string, CartGroup>();
+  for (const item of cart) {
+    const key = storeKey(item.store);
+    const group = groups.get(key);
+    if (group) {
+      group.items.push(item);
+      group.total += item.subtotal;
+    } else {
+      groups.set(key, { key, store: key ? item.store : undefined, items: [item], total: item.subtotal });
+    }
+  }
+  const all = [...groups.values()];
+  return [...all.filter(g => g.key), ...all.filter(g => !g.key)];
+}
+
+/** Comercios distintos ya usados en el carrito (para el selector) */
+export function getCartStores(cart: CartItem[]): StoreRef[] {
+  return groupCartByStore(cart).flatMap(g => g.store ? [g.store] : []);
 }
 
 /** Devuelve el precio de la última compra completada para un producto */

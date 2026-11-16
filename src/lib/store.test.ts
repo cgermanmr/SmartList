@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CartItem, Product, Purchase } from './models';
+import { CartItem, Product, Purchase, StoreRef } from './models';
 import { CALCULATOR_KEY, CART_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
-import { filterProducts, getCartTotal, getLastPurchasedPrice, getPriceStats, useStore } from './store';
+import {
+  filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, groupCartByStore, storeKey, useStore,
+} from './store';
 
 // localStorage en memoria para el entorno de Node
 class MemoryStorage {
@@ -17,8 +19,11 @@ Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable
 
 const initialState = useStore.getState();
 
-function item(productId: string, price: number, quantity = 1): CartItem {
-  return { id: `item-${productId}`, productId, productName: `Producto ${productId}`, price, quantity, subtotal: price * quantity };
+function item(productId: string, price: number, quantity = 1, store?: StoreRef): CartItem {
+  return {
+    id: `item-${productId}`, productId, productName: `Producto ${productId}`, price, quantity, subtotal: price * quantity,
+    ...(store && { store }),
+  };
 }
 
 function saved<T>(key: string): T {
@@ -51,6 +56,17 @@ describe('hydrate', () => {
     const s = useStore.getState();
     expect(s.products.map(p => p.name)).toEqual(['Arroz']);
     expect(getPriceStats(s.prices, 'p1')).toEqual({ current: 120, previous: 100, min: 100, max: 120, avg: 110 });
+  });
+
+  it('un carrito guardado sin comercios queda entero en "Sin comercio"', () => {
+    storage.setItem(CART_KEY, JSON.stringify([
+      { id: 'a', productId: '1', productName: 'Leche', price: 100, quantity: 2, subtotal: 200 },
+      { id: 'b', productId: '2', productName: 'Pan', price: 50, quantity: 1, subtotal: 50 },
+    ]));
+    useStore.getState().hydrate();
+    const groups = groupCartByStore(useStore.getState().cart);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: '', total: 250 });
   });
 
   it('descarta una calculadora guardada inválida', () => {
@@ -129,6 +145,70 @@ describe('carrito', () => {
   it('calcula el total', () => {
     expect(getCartTotal([item('1', 100, 2), item('2', 50)])).toBe(250);
   });
+
+  it('agregar un producto que ya está sin comercio conserva el comercio y el precio del ítem', () => {
+    const { addToCart } = useStore.getState();
+    addToCart(item('1', 100, 1, { name: 'Coto' }));
+    addToCart(item('1', 80));
+    const cart = useStore.getState().cart;
+    expect(cart).toHaveLength(1);
+    expect(cart[0]).toMatchObject({ quantity: 2, price: 100, subtotal: 200, store: { name: 'Coto' } });
+  });
+
+  it('agregar un producto que ya está con comercio lo pasa a ese comercio y precio', () => {
+    const { addToCart } = useStore.getState();
+    addToCart(item('1', 100, 2));
+    addToCart(item('1', 80, 1, { name: 'Día', barrio: 'Almagro' }));
+    const cart = useStore.getState().cart;
+    expect(cart).toHaveLength(1);
+    expect(cart[0]).toMatchObject({ quantity: 3, price: 80, subtotal: 240, store: { name: 'Día', barrio: 'Almagro' } });
+  });
+
+  it('saca solo los ítems indicados', () => {
+    const s = useStore.getState();
+    s.addToCart(item('1', 100));
+    s.addToCart(item('2', 50));
+    s.addToCart(item('3', 10));
+    s.removeCartItems(['item-1', 'item-3']);
+    expect(useStore.getState().cart.map(i => i.productId)).toEqual(['2']);
+  });
+});
+
+describe('setCartItemStore', () => {
+  beforeEach(() => {
+    useStore.getState().hydrate();
+    const s = useStore.getState();
+    s.addToCart(item('1', 100, 2));
+    s.addToCart(item('2', 50));
+  });
+
+  it('cambia el comercio sin tocar cantidad ni precio y sin mutar el ítem anterior', () => {
+    const before = useStore.getState().cart[0];
+    useStore.getState().setCartItemStore('item-1', { name: 'Coto' });
+    const after = useStore.getState().cart[0];
+    expect(after).toMatchObject({ store: { name: 'Coto' }, quantity: 2, price: 100, subtotal: 200 });
+    expect(before.store).toBeUndefined();
+    expect(useStore.getState().cart[1].store).toBeUndefined();
+    expect(saved<CartItem[]>(CART_KEY)[0].store).toEqual({ name: 'Coto' });
+  });
+
+  it('con precio cambia también el precio y recalcula el subtotal', () => {
+    useStore.getState().setCartItemStore('item-1', { name: 'Coto', sepaId: '10-1-123' }, 90);
+    expect(useStore.getState().cart[0]).toMatchObject({ price: 90, quantity: 2, subtotal: 180 });
+  });
+
+  it('ignora un precio no positivo', () => {
+    useStore.getState().setCartItemStore('item-1', { name: 'Coto' }, 0);
+    expect(useStore.getState().cart[0]).toMatchObject({ price: 100, store: { name: 'Coto' } });
+  });
+
+  it('sin comercio lo vuelve a "Sin comercio" y lo saca del JSON guardado', () => {
+    const s = useStore.getState();
+    s.setCartItemStore('item-1', { name: 'Coto' });
+    s.setCartItemStore('item-1');
+    expect(useStore.getState().cart[0].store).toBeUndefined();
+    expect('store' in saved<CartItem[]>(CART_KEY)[0]).toBe(false);
+  });
 });
 
 describe('loadPurchaseToCart', () => {
@@ -158,6 +238,41 @@ describe('loadPurchaseToCart', () => {
     expect(cart).toHaveLength(2);
     expect(cart[0]).toMatchObject({ productId: '1', quantity: 3, subtotal: 555 });
   });
+
+  it('una compra sin comercio carga los ítems en "Sin comercio"', () => {
+    useStore.getState().loadPurchaseToCart(purchase);
+    expect(useStore.getState().cart.every(i => i.store === undefined)).toBe(true);
+  });
+
+  it('una compra en un comercio carga los ítems en ese comercio', () => {
+    useStore.getState().loadPurchaseToCart({ ...purchase, store: 'Coto', barrio: 'Caballito' });
+    const cart = useStore.getState().cart;
+    expect(cart.map(i => i.store)).toEqual([{ name: 'Coto', barrio: 'Caballito' }, { name: 'Coto', barrio: 'Caballito' }]);
+    expect(groupCartByStore(cart)).toHaveLength(1);
+  });
+
+  it('el barrio "Sin especificar" no se copia al comercio', () => {
+    useStore.getState().loadPurchaseToCart({ ...purchase, store: 'Coto', barrio: 'Sin especificar' });
+    expect(useStore.getState().cart[0].store).toEqual({ name: 'Coto' });
+  });
+
+  it('un ítem guardado con su comercio lo conserva', () => {
+    const withRef: Purchase = {
+      ...purchase, store: 'Coto',
+      items: [item('1', 150, 2, { name: 'Coto', sepaId: '10-1-123' })],
+    };
+    useStore.getState().loadPurchaseToCart(withRef);
+    expect(useStore.getState().cart[0].store).toEqual({ name: 'Coto', sepaId: '10-1-123' });
+  });
+
+  it('al combinar, un ítem que ya estaba conserva su comercio', () => {
+    const s = useStore.getState();
+    s.addToCart(item('1', 185, 1, { name: 'Día' }));
+    s.loadPurchaseToCart({ ...purchase, store: 'Coto' }, true);
+    const cart = useStore.getState().cart;
+    expect(cart[0]).toMatchObject({ productId: '1', quantity: 3, store: { name: 'Día' } });
+    expect(cart[1]).toMatchObject({ productId: '2', store: { name: 'Coto' } });
+  });
 });
 
 describe('compras y precios', () => {
@@ -179,6 +294,88 @@ describe('compras y precios', () => {
     useStore.getState().updatePrice('1', 999);
     expect(useStore.getState().prices.find(p => p.id === '1')!.amount).toBe(999);
     expect(before.amount).toBe(185);
+  });
+});
+
+describe('storeKey', () => {
+  it('sin comercio o sin nombre devuelve vacío', () => {
+    expect(storeKey()).toBe('');
+    expect(storeKey({ name: '   ' })).toBe('');
+  });
+
+  it('ignora mayúsculas y espacios de más en nombre y barrio', () => {
+    expect(storeKey({ name: ' coto' })).toBe(storeKey({ name: 'Coto' }));
+    expect(storeKey({ name: 'Carrefour  Market', barrio: 'caballito ' }))
+      .toBe(storeKey({ name: 'carrefour market', barrio: 'Caballito' }));
+  });
+
+  it('el barrio distingue comercios del mismo nombre', () => {
+    expect(storeKey({ name: 'Coto', barrio: 'Caballito' })).not.toBe(storeKey({ name: 'Coto' }));
+  });
+
+  it('con sepaId usa solo el id de la sucursal', () => {
+    expect(storeKey({ name: 'Coto', sepaId: '10-1-123' })).toBe(storeKey({ name: 'COTO 123', sepaId: '10-1-123' }));
+    expect(storeKey({ name: 'Coto', sepaId: '10-1-123' })).not.toBe(storeKey({ name: 'Coto' }));
+  });
+});
+
+describe('groupCartByStore', () => {
+  const coto: StoreRef = { name: 'Coto' };
+  const dia: StoreRef = { name: 'Día', barrio: 'Almagro' };
+
+  it('un carrito sin comercios es un solo grupo "Sin comercio"', () => {
+    const groups = groupCartByStore([item('1', 100), item('2', 50, 2)]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ key: '', store: undefined, total: 200 });
+    expect(groups[0].items.map(i => i.productId)).toEqual(['1', '2']);
+  });
+
+  it('agrupa en el orden del primer ítem de cada comercio, con "Sin comercio" al final', () => {
+    const groups = groupCartByStore([
+      item('1', 100),
+      item('2', 50, 1, dia),
+      item('3', 10, 3, coto),
+      item('4', 20, 1, dia),
+    ]);
+    expect(groups.map(g => g.store?.name)).toEqual(['Día', 'Coto', undefined]);
+    expect(groups.map(g => g.total)).toEqual([70, 30, 100]);
+    expect(groups[0].items.map(i => i.productId)).toEqual(['2', '4']);
+  });
+
+  it('"Coto" y " coto" quedan en el mismo grupo con el nombre del primer ítem', () => {
+    const groups = groupCartByStore([item('1', 100, 1, { name: 'Coto' }), item('2', 50, 1, { name: ' coto' })]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].store?.name).toBe('Coto');
+    expect(groups[0].total).toBe(150);
+  });
+
+  it('la suma de los grupos coincide con el total del carrito', () => {
+    const cart = [item('1', 100, 2, coto), item('2', 50, 1, dia), item('3', 33.5, 3)];
+    expect(groupCartByStore(cart).reduce((sum, g) => sum + g.total, 0)).toBe(getCartTotal(cart));
+  });
+
+  it('no muta los ítems', () => {
+    const cart = [item('1', 100, 1, coto), item('2', 50, 1, coto)];
+    const copy = structuredClone(cart);
+    groupCartByStore(cart);
+    expect(cart).toEqual(copy);
+  });
+});
+
+describe('getCartStores', () => {
+  it('devuelve los comercios distintos sin "Sin comercio"', () => {
+    const stores = getCartStores([
+      item('1', 100, 1, { name: 'Coto' }),
+      item('2', 50),
+      item('3', 10, 1, { name: 'COTO ' }),
+      item('4', 20, 1, { name: 'Día' }),
+    ]);
+    expect(stores.map(s => s.name)).toEqual(['Coto', 'Día']);
+  });
+
+  it('carrito vacío o sin comercios: lista vacía', () => {
+    expect(getCartStores([])).toEqual([]);
+    expect(getCartStores([item('1', 100)])).toEqual([]);
   });
 });
 

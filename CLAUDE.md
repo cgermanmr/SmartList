@@ -97,7 +97,8 @@ src/
 │   ├── ReferencePrice.tsx      # Tarjeta "Precio de referencia" del detalle; colores de la comparación
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
-│   └── ScanButton.tsx          # Botón 📷 que abre el lector; solo si el navegador puede pedir la cámara
+│   ├── ScanButton.tsx          # Botón 📷 que abre el lector; solo si el navegador puede pedir la cámara
+│   └── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
@@ -134,8 +135,8 @@ src/
 - **Estado (Zustand)** — un único `useStore` en `src/lib/store.ts`. Las páginas leen con selectores
   (`useStore(s => s.cart)`) y llaman acciones (`useStore(s => s.addToCart)`). Las consultas derivadas son funciones
   puras que reciben la colección: `getPricesForProduct(prices, id)`, `getPriceStats(prices, id)`,
-  `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`. Fuera de React:
-  `useStore.getState()`.
+  `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`,
+  `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`. Fuera de React: `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
 - **Punto de integración con backend** — las acciones del store; cuando llegue Supabase, ahí van las llamadas.
@@ -167,8 +168,9 @@ src/
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
-  `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco) y en
-  el lector de códigos de barras (`BarcodeScanner`, a pantalla completa).
+  `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco), en el
+  carrito (`CartStoreDialog`, se cierra también al ocultarse la página con `<Activity>`) y en el lector de códigos
+  de barras (`BarcodeScanner`, a pantalla completa).
 
 ### Persistencia (localStorage)
 
@@ -181,7 +183,8 @@ src/
 | `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`defaultCalculator()`) |
 
 El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Los campos de `Product` de la
-spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo.
+spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo. Lo
+mismo `CartItem.store` (spec 14): un carrito guardado antes queda entero en "Sin comercio".
 Las claves conservan el prefijo `preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien
 ya usa la app).
 `loadFromStorage<T>` / `saveToStorage<T>` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
@@ -226,6 +229,15 @@ interface Price {
   store?: string;
 }
 
+interface StoreRef {   // comercio de un ítem del carrito; viaja dentro del ítem, sin catálogo
+  name: string;
+  barrio?: string;
+  address?: string;
+  sepaId?: string;     // id de sepa_sucursales si viene del SEPA (spec 15)
+  lat?: number;
+  lng?: number;
+}
+
 interface CartItem {
   id: string;
   productId: string;
@@ -233,6 +245,7 @@ interface CartItem {
   price: number;
   quantity: number;
   subtotal: number;  // price * quantity, se recalcula en cada cambio
+  store?: StoreRef;  // sin store → grupo "Sin comercio"
 }
 
 interface Purchase {
@@ -240,8 +253,8 @@ interface Purchase {
   date: string;      // ISO
   items: CartItem[];
   total: number;
-  barrio?: string;
-  store?: string;
+  barrio?: string;   // solo si se conoce
+  store?: string;    // una compra por comercio
   paymentMethod?: string;
 }
 ```
@@ -340,20 +353,34 @@ interface CalculatorState {
 - Agregar al carrito con el precio actual
 
 ### Carrito (`/cart`)
-- Editar cantidad y precio de cada ítem; eliminar; vaciar (con `confirm`)
+- **Agrupado por comercio** ([SPEC 14](specs/14-carrito-por-comercio.md), `groupCartByStore`): una tarjeta por
+  comercio en el orden en que se agregó su primer ítem, "Sin comercio" al final. Encabezado con nombre (`truncate`),
+  dirección o barrio, cantidad de productos y subtotal; pie "Total: $X en N comercios" y "Vaciar carrito" (con `confirm`)
+- `storeKey` identifica el comercio: `sepaId` si existe; si no, nombre + barrio sin mayúsculas ni espacios de más
+  ("Coto" y " coto" son el mismo grupo, con el nombre del primer ítem)
+- **Un producto, un comercio**: un producto está una sola vez; `addToCart` de uno que ya está suma 1 y, si el ítem
+  nuevo trae comercio, lo pasa a ese comercio y precio
+- **Cambiar comercio** (link debajo de cada ítem, `CartStoreDialog`): comercios ya usados (`getCartStores`), "Sin
+  comercio" u "Otro comercio" (nombre requerido, barrio opcional). No cambia cantidad ni precio
+  (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`)
+- Editar cantidad y precio de cada ítem; eliminar
 - Badge comparando contra el precio de la **última compra** (`getLastPurchasedPrice`): verde más barato, rojo más caro, azul igual
 - Ítems con EAN: línea "Ref. $X · 8 % arriba" (o "abajo", "en línea") con los mismos colores, comparando el precio del
   ítem contra la referencia SEPA; una sola consulta para todo el carrito
-- Opción "comercio único" (barrio + tienda) para toda la compra
-- Checkout en dos pasos con medio de pago: efectivo, débito, crédito 1 cuota, crédito en cuotas, transferencia/QR, cheque
-- Al confirmar: guarda un `Purchase`, **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no es comercio único) y vacía el carrito
+- **Checkout por comercio**: "Comprar en <comercio>" ("Registrar compra" en "Sin comercio") abre el medio de pago de
+  ese grupo (un grupo a la vez): efectivo, débito, crédito 1 cuota, crédito en cuotas, transferencia/QR, cheque. En
+  "Sin comercio" se pueden escribir barrio y comercio, los dos opcionales
+- Al confirmar un grupo: guarda **un** `Purchase` con sus ítems (`store` = comercio, `barrio` solo si se conoce),
+  **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no se conoce) y saca del
+  carrito solo esos ítems (`removeCartItems`); los demás grupos quedan
 
 ### Historial de compras (`/purchases`)
 - Lista expandible de compras (`aria-expanded` / `aria-controls`)
 - Por ítem: variación % del precio pagado vs último precio registrado
 - "Repetir" (botón hermano del de expandir, con `aria-label` "Repetir compra del dd/MM/yyyy"): si el carrito tiene
   ítems abre un modal para **combinar o reemplazar** (`loadPurchaseToCart(purchase, merge)`); usa el precio actual
-  registrado de cada producto y navega a `/cart`
+  registrado de cada producto y navega a `/cart`. Los ítems vuelven al comercio de la compra (el `StoreRef` guardado
+  en el ítem o `{ name: store, barrio }`); al combinar, un ítem que ya estaba conserva su comercio
 
 ### Calculadora de precio unitario (`/calculadora`)
 - Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
@@ -602,6 +629,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
 - [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
 - [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)
+- [x] Carrito agrupado por comercio con checkout por comercio (spec 14)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

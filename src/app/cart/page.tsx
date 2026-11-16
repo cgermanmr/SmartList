@@ -1,15 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { ReactNode, useId, useState } from 'react';
+import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
 import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
 import { newId } from '@/lib/ids';
-import { CartItem, Price, Purchase } from '@/lib/models';
-import { referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
-import { getCartTotal, getLastPurchasedPrice, useStore } from '@/lib/store';
+import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
+import { ReferenceSummary, referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
+import {
+  CartGroup, NO_BARRIO, getCartStores, getCartTotal, getLastPurchasedPrice, groupCartByStore, useStore,
+} from '@/lib/store';
 
 // ── Medios de pago ─────────────────────────────────────────
 const PAYMENT_METHODS = [
@@ -44,26 +47,33 @@ function priceBadge(item: CartItem, last: number): string {
   return `${diff > 0 ? '▲' : '▼'} ${diff > 0 ? '+' : ''}$${formatMoney(Math.abs(diff))}`;
 }
 
+/** Línea gris del encabezado: dirección y barrio, lo que exista */
+function storeDetail(store?: StoreRef): string {
+  return [store?.address, store?.barrio].filter(Boolean).join(', ');
+}
+
 export default function CartPage() {
   const cart = useStore(s => s.cart);
   const products = useStore(s => s.products);
-  const purchases = useStore(s => s.purchases);
-  const removeFromCart = useStore(s => s.removeFromCart);
-  const updateQuantity = useStore(s => s.updateQuantity);
-  const updateCartItemPrice = useStore(s => s.updateCartItemPrice);
   const clearCart = useStore(s => s.clearCart);
+  const removeCartItems = useStore(s => s.removeCartItems);
   const addPrice = useStore(s => s.addPrice);
   const savePurchase = useStore(s => s.savePurchase);
 
-  // ── Comercio único ─────────────────────────────────────────
-  const [isSingleStore, setIsSingleStore] = useState(false);
-  const [storeBarrio, setStoreBarrio] = useState('');
-  const [storeName, setStoreName] = useState('');
-
-  const [showPaymentStep, setShowPaymentStep] = useState(false);
+  // ── Checkout por comercio: un grupo a la vez ───────────────
+  const [checkoutKey, setCheckoutKey] = useState<string | null>(null);
   const [selectedPayment, setSelectedPayment] = useState('');
+  // Solo en "Sin comercio": dónde se compró (los dos opcionales)
+  const [looseBarrio, setLooseBarrio] = useState('');
+  const [looseStore, setLooseStore] = useState('');
+
+  // Ítem al que se le está cambiando el comercio
+  const [storeItemId, setStoreItemId] = useState<string | null>(null);
 
   const total = getCartTotal(cart);
+  const groups = groupCartByStore(cart);
+  const storeCount = groups.filter(g => g.store).length;
+  const storeItem = cart.find(i => i.id === storeItemId) ?? null;
 
   // Precio de referencia de los ítems con EAN, en una sola consulta
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
@@ -71,54 +81,56 @@ export default function CartPage() {
 
   function clear() {
     if (confirm('¿Estás seguro de que quieres vaciar el carrito?')) {
-      setShowPaymentStep(false);
+      closeCheckout();
       clearCart();
     }
   }
 
-  function checkout() {
-    setShowPaymentStep(true);
+  function openCheckout(key: string) {
+    setCheckoutKey(key);
+    setSelectedPayment('');
+    setLooseBarrio('');
+    setLooseStore('');
+  }
+
+  function closeCheckout() {
+    setCheckoutKey(null);
     setSelectedPayment('');
   }
 
-  function cancelPayment() {
-    setShowPaymentStep(false);
-    setSelectedPayment('');
-  }
-
-  function confirmCheckout() {
+  function confirmCheckout(group: CartGroup) {
+    const storeName = group.store ? group.store.name : looseStore.trim() || undefined;
+    const knownBarrio = (group.store ? group.store.barrio?.trim() : looseBarrio.trim()) || undefined;
+    // La compra lleva barrio solo si se conoce; el precio lo necesita siempre
+    const barrio = knownBarrio ?? NO_BARRIO;
     const purchase: Purchase = {
       id: newId(),
       date: new Date().toISOString(),
-      items: cart.map(i => ({ ...i })),
-      total,
-      ...(isSingleStore && storeBarrio && { barrio: storeBarrio }),
-      ...(isSingleStore && storeName && { store: storeName }),
+      items: group.items.map(i => ({ ...i })),
+      total: group.total,
+      ...(knownBarrio && { barrio: knownBarrio }),
+      ...(storeName && { store: storeName }),
       paymentMethod: selectedPayment,
     };
     // Registrar precios pagados en el historial de precios
     const now = new Date();
-    const barrio = isSingleStore && storeBarrio ? storeBarrio : 'Sin especificar';
-    const store = isSingleStore && storeName ? storeName : undefined;
-    cart.forEach((item, idx) => {
+    group.items.forEach((item, idx) => {
       const price: Price = {
         id: `${newId()}-${idx}`,
         productId: item.productId,
         amount: item.price,
         date: now,
         barrio,
-        store,
+        store: storeName,
       };
       addPrice(price);
     });
 
     savePurchase(purchase);
-    alert(`Compra finalizada!\nTotal: $${formatMoney(total)}\nPago: ${selectedPayment}`);
-    setShowPaymentStep(false);
-    setIsSingleStore(false);
-    setStoreBarrio('');
-    setStoreName('');
-    clearCart();
+    alert(`Compra finalizada!${storeName ? `\nComercio: ${storeName}` : ''}\nTotal: $${formatMoney(group.total)}\nPago: ${selectedPayment}`);
+    closeCheckout();
+    // Salen solo los ítems de este comercio: los demás grupos quedan en el carrito
+    removeCartItems(group.items.map(i => i.id));
   }
 
   if (cart.length === 0) {
@@ -137,162 +149,278 @@ export default function CartPage() {
     <div>
       <h1 className="text-3xl font-bold mb-6">Mi Carrito</h1>
 
-      {/* Items del carrito */}
-      <div className="grid grid-cols-1 gap-4 mb-6">
-        {cart.map(item => {
-          const last = getLastPurchasedPrice(purchases, item.productId);
-          const status = priceStatus(item, last);
-          const ean = eanOf(item.productId);
-          const reference = ean ? references.get(ean) : undefined;
-          const refPct = reference ? vsReference(item.price, reference.reference) : null;
-          return (
-            <div key={item.id} className="card p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-bold">{item.productName}</h3>
-                  {last !== null && (
-                    <span className={`text-xs font-semibold ${STATUS_CLASS[status]}`}>
-                      {priceBadge(item, last)}
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={() => removeFromCart(item.id)}
-                  aria-label={`Quitar ${item.productName}`}
-                  className="text-red-500 hover:text-red-700 text-xl ml-2">
-                  ✕
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <label htmlFor={`price-${item.id}`} className="text-sm text-gray-600">Precio $</label>
-                  <NumberInput
-                    id={`price-${item.id}`}
-                    value={item.price}
-                    onValueChange={price => updateCartItemPrice(item.id, price)}
-                    min="0"
-                    step="0.01"
-                    className="input-field w-28"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label htmlFor={`qty-${item.id}`} className="text-sm text-gray-600">Cantidad</label>
-                  <NumberInput
-                    id={`qty-${item.id}`}
-                    value={item.quantity}
-                    onValueChange={qty => { if (qty > 0) updateQuantity(item.id, qty); }}
-                    min="1"
-                    className="input-field w-20"
-                  />
-                </div>
-                <span className="text-lg font-bold text-primary-700 ml-auto">
-                  ${formatMoney(item.subtotal)}
-                </span>
-              </div>
-
-              {reference && refPct !== null && (
-                <p className={`mt-2 text-xs font-semibold ${REFERENCE_TEXT_CLASS[referenceStatus(refPct)]}`}>
-                  Ref. ${formatMoney(reference.reference)} · {referenceShortLabel(refPct)}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Misma compra en un comercio */}
-      <div className="card p-4 mb-6">
-        <label className="flex items-center gap-3 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={isSingleStore}
-            onChange={e => setIsSingleStore(e.target.checked)}
-            className="w-4 h-4 accent-primary-600"
+      {/* Una tarjeta por comercio */}
+      <div className="grid grid-cols-1 gap-6 mb-6">
+        {groups.map(group => (
+          <StoreGroup
+            key={group.key || 'sin-comercio'}
+            group={group}
+            eanOf={eanOf}
+            references={references}
+            onChangeStore={setStoreItemId}
+            onCheckout={() => openCheckout(group.key)}
+            payment={checkoutKey === group.key ? (
+              <PaymentStep
+                group={group}
+                selectedPayment={selectedPayment}
+                onSelectPayment={setSelectedPayment}
+                looseBarrio={looseBarrio}
+                onLooseBarrio={setLooseBarrio}
+                looseStore={looseStore}
+                onLooseStore={setLooseStore}
+                onCancel={closeCheckout}
+                onConfirm={() => confirmCheckout(group)}
+              />
+            ) : null}
           />
-          <span className="font-medium">¿Compra en un mismo comercio?</span>
-        </label>
-
-        {isSingleStore && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="store-barrio" className="text-sm text-gray-600 block mb-1">Barrio</label>
-              <input
-                id="store-barrio"
-                type="text"
-                value={storeBarrio}
-                onChange={e => setStoreBarrio(e.target.value)}
-                placeholder="Ej: Caballito"
-                className="input-field w-full"
-              />
-            </div>
-            <div>
-              <label htmlFor="store-name" className="text-sm text-gray-600 block mb-1">Comercio</label>
-              <input
-                id="store-name"
-                type="text"
-                value={storeName}
-                onChange={e => setStoreName(e.target.value)}
-                placeholder="Ej: Supermercado Norte"
-                className="input-field w-full"
-              />
-            </div>
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* Total */}
+      {/* Total de todo el carrito */}
       <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
         <p className="text-3xl font-bold text-green-700">
           Total: ${formatMoney(total)}
+          {storeCount > 0 && (
+            <span className="block sm:inline text-lg font-semibold text-green-800 sm:ml-2">
+              en {storeCount} {storeCount === 1 ? 'comercio' : 'comercios'}
+            </span>
+          )}
         </p>
       </div>
 
-      {!showPaymentStep ? (
-        // Botones principales
-        <div className="flex gap-4">
-          <button onClick={clear} className="btn-secondary flex-1">
-            Limpiar Carrito
-          </button>
-          <button onClick={checkout} className="btn-primary flex-1">
-            Finalizar Compra
-          </button>
+      <button onClick={clear} className="btn-secondary w-full sm:w-auto min-h-11">
+        Vaciar carrito
+      </button>
+
+      <CartStoreDialog item={storeItem} stores={getCartStores(cart)} onClose={() => setStoreItemId(null)} />
+    </div>
+  );
+}
+
+// ── Tarjeta de un comercio ─────────────────────────────────
+interface StoreGroupProps {
+  group: CartGroup;
+  eanOf: (productId: string) => string | undefined;
+  references: Map<string, ReferenceSummary>;
+  onChangeStore: (itemId: string) => void;
+  onCheckout: () => void;
+  /** Paso de medio de pago de este grupo, si está abierto */
+  payment: ReactNode;
+}
+
+function StoreGroup({ group, eanOf, references, onChangeStore, onCheckout, payment }: StoreGroupProps) {
+  const titleId = useId();
+  const store = group.store;
+  const detail = storeDetail(store);
+  const count = group.items.length;
+  return (
+    <section aria-labelledby={titleId} className="card overflow-hidden">
+      {/* Encabezado: comercio, dónde queda y subtotal */}
+      <div className={`flex items-start gap-3 px-4 py-3 border-b ${
+        store ? 'bg-primary-50 border-primary-100' : 'bg-gray-50 border-gray-200'
+      }`}>
+        <div className="min-w-0 flex-1">
+          <h2 id={titleId} className={`text-lg font-bold truncate ${store ? 'text-primary-900' : 'text-gray-700'}`}>
+            {store ? store.name : 'Sin comercio'}
+          </h2>
+          <p className="text-sm text-gray-600 truncate">
+            {detail && `${detail} · `}{count} {count === 1 ? 'producto' : 'productos'}
+          </p>
         </div>
-      ) : (
-        // Paso: selección de medio de pago
-        <div className="card p-5">
-          <h2 className="font-bold text-lg mb-4">¿Con qué medio de pago?</h2>
+        <p className={`shrink-0 whitespace-nowrap text-lg font-bold ${store ? 'text-primary-700' : 'text-gray-800'}`}>
+          ${formatMoney(group.total)}
+        </p>
+      </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
-            {PAYMENT_METHODS.map(m => (
-              <button
-                key={m.id}
-                onClick={() => setSelectedPayment(m.label)}
-                aria-pressed={selectedPayment === m.label}
-                className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
-                  selectedPayment === m.label
-                    ? 'border-primary-600 bg-primary-50 text-primary-700'
-                    : 'border-gray-200 hover:border-primary-300 text-gray-700'
-                }`}>
-                <span className="text-2xl" aria-hidden="true">{m.icon}</span>
-                {m.label}
-              </button>
-            ))}
+      {/* Ítems */}
+      <ul className="divide-y divide-gray-100">
+        {group.items.map(item => {
+          const ean = eanOf(item.productId);
+          return (
+            <CartRow
+              key={item.id}
+              item={item}
+              reference={ean ? references.get(ean) : undefined}
+              onChangeStore={() => onChangeStore(item.id)}
+            />
+          );
+        })}
+      </ul>
+
+      {/* Pie: comprar en este comercio */}
+      <div className="border-t border-gray-200 bg-gray-50 px-4 py-3">
+        {payment ?? (
+          <div className="flex justify-end">
+            <button onClick={onCheckout} className="btn-primary w-full sm:w-auto min-h-11 truncate">
+              {store ? `Comprar en ${store.name}` : 'Registrar compra'}
+            </button>
           </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
-          <div className="flex gap-3">
-            <button onClick={cancelPayment} className="btn-secondary flex-1">
-              Volver
-            </button>
-            <button
-              onClick={confirmCheckout}
-              disabled={!selectedPayment}
-              className="btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed">
-              Confirmar Compra
-            </button>
+// ── Fila de un ítem ────────────────────────────────────────
+interface CartRowProps {
+  item: CartItem;
+  reference: ReferenceSummary | undefined;
+  onChangeStore: () => void;
+}
+
+function CartRow({ item, reference, onChangeStore }: CartRowProps) {
+  const purchases = useStore(s => s.purchases);
+  const removeFromCart = useStore(s => s.removeFromCart);
+  const updateQuantity = useStore(s => s.updateQuantity);
+  const updateCartItemPrice = useStore(s => s.updateCartItemPrice);
+
+  const last = getLastPurchasedPrice(purchases, item.productId);
+  const status = priceStatus(item, last);
+  const refPct = reference ? vsReference(item.price, reference.reference) : null;
+
+  return (
+    <li className="p-4">
+      <div className="flex justify-between items-start mb-3">
+        <div className="min-w-0">
+          <h3 className="font-bold">{item.productName}</h3>
+          {last !== null && (
+            <span className={`text-xs font-semibold ${STATUS_CLASS[status]}`}>
+              {priceBadge(item, last)}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={() => removeFromCart(item.id)}
+          aria-label={`Quitar ${item.productName}`}
+          className="text-red-500 hover:text-red-700 text-xl ml-2 shrink-0 min-w-11 min-h-11 -mt-2 -mr-2">
+          ✕
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label htmlFor={`price-${item.id}`} className="text-sm text-gray-600">Precio $</label>
+          <NumberInput
+            id={`price-${item.id}`}
+            value={item.price}
+            onValueChange={price => updateCartItemPrice(item.id, price)}
+            min="0"
+            step="0.01"
+            className="input-field w-28"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label htmlFor={`qty-${item.id}`} className="text-sm text-gray-600">Cantidad</label>
+          <NumberInput
+            id={`qty-${item.id}`}
+            value={item.quantity}
+            onValueChange={qty => { if (qty > 0) updateQuantity(item.id, qty); }}
+            min="1"
+            className="input-field w-20"
+          />
+        </div>
+        <span className="text-lg font-bold text-primary-700 ml-auto">
+          ${formatMoney(item.subtotal)}
+        </span>
+      </div>
+
+      {reference && refPct !== null && (
+        <p className={`mt-2 text-xs font-semibold ${REFERENCE_TEXT_CLASS[referenceStatus(refPct)]}`}>
+          Ref. ${formatMoney(reference.reference)} · {referenceShortLabel(refPct)}
+        </p>
+      )}
+
+      <button
+        type="button"
+        onClick={onChangeStore}
+        aria-label={`Cambiar comercio de ${item.productName}`}
+        className="mt-1 -ml-1 px-1 min-h-11 text-sm font-medium text-primary-700 hover:underline underline-offset-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+        Cambiar comercio
+      </button>
+    </li>
+  );
+}
+
+// ── Paso: medio de pago de un comercio ─────────────────────
+interface PaymentStepProps {
+  group: CartGroup;
+  selectedPayment: string;
+  onSelectPayment: (label: string) => void;
+  looseBarrio: string;
+  onLooseBarrio: (value: string) => void;
+  looseStore: string;
+  onLooseStore: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function PaymentStep({
+  group, selectedPayment, onSelectPayment, looseBarrio, onLooseBarrio, looseStore, onLooseStore, onCancel, onConfirm,
+}: PaymentStepProps) {
+  const headingId = useId();
+  return (
+    <div role="group" aria-labelledby={headingId} className="py-1">
+      {/* Sin comercio: dónde se compró, los dos opcionales */}
+      {!group.store && (
+        <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="loose-barrio" className="text-sm text-gray-600 block mb-1">
+              Barrio <span className="text-gray-400">(opcional)</span>
+            </label>
+            <input
+              id="loose-barrio"
+              type="text"
+              value={looseBarrio}
+              onChange={e => onLooseBarrio(e.target.value)}
+              placeholder="Ej: Caballito"
+              className="input-field bg-white"
+            />
+          </div>
+          <div>
+            <label htmlFor="loose-store" className="text-sm text-gray-600 block mb-1">
+              Comercio <span className="text-gray-400">(opcional)</span>
+            </label>
+            <input
+              id="loose-store"
+              type="text"
+              value={looseStore}
+              onChange={e => onLooseStore(e.target.value)}
+              placeholder="Ej: Supermercado Norte"
+              className="input-field bg-white"
+            />
           </div>
         </div>
       )}
+
+      <h3 id={headingId} className="font-bold mb-3">¿Con qué medio de pago?</h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+        {PAYMENT_METHODS.map(m => (
+          <button
+            key={m.id}
+            onClick={() => onSelectPayment(m.label)}
+            aria-pressed={selectedPayment === m.label}
+            className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
+              selectedPayment === m.label
+                ? 'border-primary-600 bg-primary-50 text-primary-700'
+                : 'border-gray-200 bg-white hover:border-primary-300 text-gray-700'
+            }`}>
+            <span className="text-2xl" aria-hidden="true">{m.icon}</span>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-3">
+        <button onClick={onCancel} className="btn-secondary flex-1 min-h-11">
+          Volver
+        </button>
+        <button
+          onClick={onConfirm}
+          disabled={!selectedPayment}
+          className="btn-primary flex-1 min-h-11 disabled:opacity-40 disabled:cursor-not-allowed">
+          Confirmar compra
+        </button>
+      </div>
     </div>
   );
 }

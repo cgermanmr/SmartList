@@ -16,8 +16,10 @@ agrupa por comercio.
   generales (`getPriceStats` en `src/lib/store.ts`), sin separar por comercio.
 - Carrito: badge contra el precio de la **última compra** (`getLastPurchasedPrice`), sin importar dónde fue.
 - Historial de compras (`/purchases`): variación del precio pagado vs el último precio registrado.
-- Checkout: si no se marca "comercio único", los precios se registran con barrio `Sin especificar` y sin
-  tienda (`src/app/cart/page.tsx`), así que esos datos no sirven para comparar comercios.
+- Carrito agrupado por comercio ([spec 14](../../specs/14-carrito-por-comercio.md)): cada ítem puede tener su
+  comercio (`CartItem.store`, un `StoreRef` dentro del ítem) y cada comercio se cierra como una compra aparte, con
+  sus precios registrados con ese comercio y su barrio (`Sin especificar` si no se conoce). Solo quedan sin tienda
+  los ítems de "Sin comercio" confirmados sin escribir dónde.
 
 ## Alcance MVP
 
@@ -26,7 +28,8 @@ agrupa por comercio.
 - **Filtro del historial** del producto por comercio (y por barrio).
 - **Historial de compras**: además de la variación general, mostrar la variación contra la última compra
   **en el mismo comercio**.
-- **Checkout**: pedir comercio para toda la compra (o por ítem) en lugar de registrar `Sin especificar`.
+- ~~**Checkout**: pedir comercio para toda la compra (o por ítem) en lugar de registrar `Sin especificar`.~~ Hecho
+  en la spec 14 (por ítem).
 
 ## Evolución futura
 

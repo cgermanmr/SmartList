@@ -9,6 +9,16 @@ export interface Product {
   sizeUnit?: Unit;    // va junto con size: los dos o ninguno
 }
 
+/** Comercio de un ítem del carrito: viaja dentro del ítem, sin catálogo de comercios */
+export interface StoreRef {
+  name: string;        // "Coto", "Carrefour Market"
+  barrio?: string;     // barrio o localidad
+  address?: string;    // "Av Rivadavia 5000"
+  sepaId?: string;     // id de sepa_sucursales ('10-1-123') si viene del SEPA (spec 15)
+  lat?: number;
+  lng?: number;
+}
+
 export interface CartItem {
   id: string;
   productId: string;
@@ -16,6 +26,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   subtotal: number;
+  store?: StoreRef;    // sin store → grupo "Sin comercio"
 }
 
 export interface Price {
