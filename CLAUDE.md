@@ -38,6 +38,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | Zustand | ^5 | Estado global |
 | @supabase/supabase-js | ^2.119 | Lectura del catálogo SEPA desde el navegador (clave publishable, sin sesión) |
 | barcode-detector | ^3.2 | Ponyfill de `BarcodeDetector` (ZXing en WebAssembly) para el lector de códigos de barras |
+| lucide-react | ^1.73 | Íconos SVG (solo entran al bundle los que se usan); no se usan emojis como ícono |
 | Vitest | ^5 | Tests de la lógica pura |
 | ESLint | ^9 | Lint (`eslint-config-next`: core-web-vitals + typescript + reglas del React Compiler) |
 | Node.js | ≥ 24 | Runtime (local, CI y Vercel); los scripts del ETL corren como `.ts` sin compilar |
@@ -68,12 +69,14 @@ supabase/
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
-├── manifest.json               # PWA: tema #0f766e, display standalone
-└── icon.svg                    # Ícono de la app y favicon
+├── manifest.json               # PWA: tema #5b2a86, display standalone
+├── icon.svg                    # Ícono de la app y favicon (changuito amarillo sobre berenjena)
+└── icon-maskable.svg           # El mismo dibujo en el 60 % central, con el fondo a sangre (purpose maskable)
 src/
 ├── app/                        # App Router: cada carpeta = ruta, page.tsx = página
-│   ├── layout.tsx              # Header (CartSummary), NavBar, <StoreHydrator>{children}, footer; metadata y viewport
-│   ├── globals.css             # Tailwind v4 + @theme (paleta primary) + @layer components
+│   ├── layout.tsx              # Header (Logo, CartSummary), NavBar, <StoreHydrator>{children}, footer (desde md);
+│   │                           #   fuentes de next/font, metadata y viewport
+│   ├── globals.css             # Tailwind v4 + @theme (primary, accent, gray, fuentes) + @layer components
 │   ├── page.tsx                # Buscar
 │   ├── upload/                 # page.tsx (Suspense) + UploadForm.tsx (useSearchParams): tabs cargar precio /
 │   │                           #   agregar producto; ?tab=producto&ean=… abre agregar producto completado
@@ -83,8 +86,11 @@ src/
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
 │   └── not-found.tsx           # Redirige a /
 ├── components/
-│   ├── NavBar.tsx              # Links con estado activo (usePathname); NavLinks sin activo como fallback
-│   ├── CartSummary.tsx         # "Carrito: N | Total: $X" del header
+│   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname;
+│   │                           #   NavLinks sin activo como fallback
+│   ├── CartBadge.tsx           # Contador del carrito sobre el ícono de su pestaña
+│   ├── CartSummary.tsx         # Total del carrito en el header, link a /cart
+│   ├── Logo.tsx                # Changuito de la marca en SVG (el mismo de icon.svg)
 │   ├── StoreHydrator.tsx       # Carga localStorage en el cliente antes de mostrar las páginas
 │   ├── NumberInput.tsx         # Input numérico sobre un valor del store (conserva el texto mientras se edita)
 │   ├── PriceChart.tsx          # Gráfico de tendencia en SVG propio
@@ -98,7 +104,7 @@ src/
 │   ├── ReferencePrice.tsx      # Tarjeta "Precio de referencia" del detalle; colores de la comparación
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
-│   ├── ScanButton.tsx          # Botón 📷 que abre el lector; solo si el navegador puede pedir la cámara
+│   ├── ScanButton.tsx          # Botón que abre el lector; solo si el navegador puede pedir la cámara
 │   └── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
@@ -167,9 +173,9 @@ src/
   vez, y un código se acepta con 2 lecturas iguales seguidas que pasen `toGtin13` (`createConfirmer`). La cámara
   se apaga al detectar, al cerrar, al desmontar y al ocultarse la página con `<Activity>`; en ese último caso
   también se cierra el `<dialog>` (un modal oculto dejaría inerte la página a la que se navegó). `BarcodeScanner`
-  se renderiza en `document.body` con un portal, porque los botones 📷 están dentro de `<form>`, y el envío del
+  se renderiza en `document.body` con un portal, porque los botones del lector están dentro de `<form>`, y el envío del
   ingreso manual hace `stopPropagation` (los eventos de React atraviesan el portal). La cámara exige **HTTPS**
-  (o `localhost`): sin él no existe `getUserMedia` y no se muestra el botón 📷
+  (o `localhost`): sin él no existe `getUserMedia` y no se muestra el botón del lector
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
@@ -202,11 +208,11 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 
 | Path | Archivo | Nav | Función |
 |---|---|---|---|
-| `/` | `app/page.tsx` | 🔍 Buscar | Búsqueda de productos |
-| `/upload` | `app/upload/page.tsx` | 📸 Cargar Precio | Cargar precio o producto nuevo; `?tab=producto&ean=…` |
-| `/cart` | `app/cart/page.tsx` | 🛒 Mi Carrito | Carrito y checkout |
-| `/purchases` | `app/purchases/page.tsx` | 📋 Historial | Historial de compras |
-| `/calculadora` | `app/calculadora/page.tsx` | 🧮 Calculadora | Comparar presentaciones por precio unitario |
+| `/` | `app/page.tsx` | Buscar | Búsqueda de productos |
+| `/upload` | `app/upload/page.tsx` | Cargar | Cargar precio o producto nuevo; `?tab=producto&ean=…` |
+| `/cart` | `app/cart/page.tsx` | Carrito | Carrito y checkout |
+| `/purchases` | `app/purchases/page.tsx` | Historial | Historial de compras |
+| `/calculadora` | `app/calculadora/page.tsx` | Calculadora | Comparar presentaciones por precio unitario |
 | `/product/[id]` | `app/product/[id]/page.tsx` | — | Detalle del producto |
 | otra | `app/not-found.tsx` | — | Redirige a `/` |
 
@@ -321,9 +327,9 @@ interface CalculatorState {
   usa el producto propio con ese EAN o lo crea con `productFromSepa` (nombre sugerido, marca, presentación y EAN,
   sin categoría), sin pasar por el formulario. Entra en "Sin comercio" con `initialCartPrice` (último precio
   propio; si no, el promedio de referencia; si no, $0); si ya estaba suma 1 y conserva su comercio. No registra
-  precios. Aviso fijo abajo "✓ <nombre> en el carrito" (`role="status"`, 3 s); el producto pasa a los propios y
+  precios. Aviso fijo abajo "<nombre> en el carrito" con un ícono de check (`role="status"`, 3 s), por encima de la barra inferior; el producto pasa a los propios y
   sale de la sección del catálogo
-- Botón 📷 **Leer código de barras** al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
+- Botón **Leer código de barras** (ícono) al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
   consulta el catálogo: si está, ofrece **Agregar al carrito** (igual que en la sección del catálogo, con "Editar
   antes de agregar"); si no está o falla la consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`.
   Escribir en el buscador borra la oferta. Si el producto tiene precios, la oferta suma el resumen y el botón "Ver
@@ -344,7 +350,7 @@ interface CalculatorState {
   con link; en ambos casos no guarda
 - `?tab=producto&ean=…` abre la pestaña producto completada con `getSepaProduct`; si el EAN no está en el catálogo,
   solo con el EAN (vacía si no es válido). Al guardar, la URL queda en `?tab=producto`
-- Botón 📷 **Leer código de barras** en los dos tabs:
+- Botón **Leer código de barras** (ícono) en los dos tabs:
   - **precio** (al lado del producto): un producto propio con ese EAN queda seleccionado; si no, "No tenés un
     producto con el código …" con "Agregar producto", que lleva al tab producto con `?tab=producto&ean=…`
   - **producto** (al lado del código de barras): propio → "Ya tenés este producto" con link; en el catálogo →
@@ -418,9 +424,17 @@ interface CalculatorState {
 - Cada cambio se guarda en `preciolocal_calculator`; "Nueva comparación" vuelve al estado inicial sin confirmar
 
 ### Layout y PWA
-- Header con contador de ítems y total del carrito
-- Nav con scroll horizontal (`overflow-x-auto`) para que los 5 ítems entren en móvil
-- `manifest.json` con `display: standalone` → instalable desde el navegador; `theme-color` en `viewport` del layout
+- **Shell** ([SPEC 19](specs/19-restyling-base-y-navegacion.md)): contenedor flex de alto `dvh`; el scroll es de `<main>`
+- **Header** compacto en `primary-700`: logo y nombre (link a `/`) y, con productos en el carrito, el total como link
+  a `/cart` (`aria-label="Carrito: N productos, total $X"`)
+- **Navegación**: en el celular, barra inferior de 5 pestañas de igual ancho (ícono sobre etiqueta de 11 px), último
+  hijo del layout (`order-last`, no `position: fixed`); desde `md` va arriba, debajo del header. La activa lleva
+  `aria-current="page"`, color `primary-700` y una píldora `primary-100` detrás del ícono; en `/product/[id]` ninguna
+- **Contador del carrito** (`CartBadge`) en amarillo sobre el ícono de su pestaña; "99+" si pasa de 99
+- **Footer** solo desde `md`
+- **Áreas seguras**: `viewportFit: 'cover'` y `env(safe-area-inset-*)` en el header y la barra inferior
+- `manifest.json` con `display: standalone` → instalable desde el navegador; `theme-color` en `viewport` del layout.
+  Dos íconos SVG: `icon.svg` (`any`) e `icon-maskable.svg` (`maskable`). No hay `apple-touch-icon` en PNG
 - **No hay service worker**: la app no funciona offline sin conexión inicial (los datos sí persisten en localStorage)
 
 ---
@@ -456,7 +470,7 @@ npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
 - **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
-- **No aparece el botón 📷** — el navegador no tiene `getUserMedia`: pasa sin HTTPS (por ejemplo, abriendo la app
+- **No aparece el botón del lector de códigos** — el navegador no tiene `getUserMedia`: pasa sin HTTPS (por ejemplo, abriendo la app
   desde otro equipo por la IP local). Para probar en el celular, usar la URL de preview de Vercel
 - **"Sin permiso para usar la cámara"** — el permiso quedó bloqueado para el sitio: habilitarlo desde el candado de la
   barra de direcciones (Chrome) o en *Configuración → Safari → Cámara* (iPhone). Chrome también lo bloquea solo
@@ -549,6 +563,9 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 - Formularios controlados con `useState`; inputs con `id` + `<label htmlFor>`; números del store con `NumberInput`
 - Formato siempre con `src/lib/format.ts` (nunca `toFixed` para mostrar)
 - Tailwind exclusivamente para estilos; clases reutilizables en `globals.css` (`@layer components`): `.btn-primary`, `.btn-secondary`, `.card`, `.input-field`, `.list-row` (fila tocable de una lista)
+- Íconos siempre de `lucide-react`, con `aria-hidden="true"`; un botón de solo ícono lleva `aria-label`. Sin emojis ni
+  símbolos (✕ ✓ ←) como ícono
+- Toque mínimo de 44 px (`min-h-11`) en botones, pestañas y botones de solo ícono; texto sobre blanco no más claro que `gray-500`
 - Grids responsivos: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`
 - Comentarios de sección en el código con el estilo `// ── Título ─────`
 - Textos de UI y comentarios en español
@@ -573,20 +590,34 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 
 ## Configuración de Estilos
 
-Paleta custom `primary` (teal) en `@theme` de `src/app/globals.css`:
+Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y-navegacion.md)):
 
 | Token | Hex | Uso |
 |---|---|---|
-| `primary-50` | `#f0fdfa` | |
-| `primary-200` | `#99f6e4` | Focus ring de inputs |
-| `primary-500` | `#14b8a6` | Borde de input en focus |
-| `primary-600` | `#0d9488` | Gradiente del header |
-| `primary-700` | `#0f766e` | **Color de marca** (botones, nav activo, `theme_color` PWA) |
-| `primary-800` | `#115e59` | Hover de `.btn-primary` |
-| `primary-900` | `#134e4a` | |
+| `primary-50` | `#f7f3fb` | Hover de filas, fondo de `.btn-secondary` |
+| `primary-100` | `#ede4f6` | Píldora de la pestaña activa |
+| `primary-200` | `#dbc9ec` | Focus ring de inputs |
+| `primary-500` | `#8253b3` | Borde de input en focus |
+| `primary-700` | `#5b2a86` | **Color de marca** (header, botones, pestaña activa, `theme_color` PWA) |
+| `primary-800` | `#48216b` | Hover de `.btn-primary` |
+| `primary-900` | `#371a52` | `active` de `.btn-primary`, aviso de Buscar |
+| `accent-400` | `#ffd23f` | **Acento** (amarillo cartel): solo logo y contador del carrito |
+| `gray-50` | `#faf8fc` | Fondo de la app, `background_color` PWA |
+| `gray-200` | `#e7e2ee` | Bordes de tarjetas |
+| `gray-500` | `#6f6780` | Texto secundario (el más claro permitido sobre blanco) |
+| `gray-900` | `#1f1630` | Texto principal (tinta) |
+
+- La escala `gray-*` de Tailwind está **redefinida** con neutros apenas violáceos: `text-gray-*`, `bg-gray-*` y
+  `border-gray-*` ya usan los de la marca
+- **El amarillo es de marca, no de estado**: los avisos siguen en ámbar. Texto sobre amarillo en `gray-900`
+- Verde, rojo, azul y ámbar (más barato, más caro, igual, completar precio) son los de Tailwind, sin cambios
+- **Tipografía** con `next/font/google` (archivos servidos desde el propio dominio): **Rubik** en `h1`–`h3` y con
+  `font-display`; **Nunito Sans** en el resto (`--font-sans`). Cifras tabulares en toda la app
+- Formas: `.card` con `rounded-2xl`; botones e inputs con `rounded-xl` y 44 px de alto; inputs con texto de 16 px
+  (regla global, para que el iPhone no haga zoom al enfocarlos)
+- Ningún hex de marca en componentes: en SVG se usa `var(--color-primary-700)` (ver `PriceChart`)
 
 ---
-
 ## Build y Despliegue
 
 - **CI** — `.github/workflows/ci.yml` (Node 24): `npm ci → lint → test → build` en cada push a `main`/`dev` y en cada PR
@@ -657,6 +688,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)
 - [x] Carrito agrupado por comercio con checkout por comercio (spec 14)
 - [x] Agregar al carrito desde el catálogo sin dar de alta el producto; categoría opcional (spec 18)
+- [x] Restyling: paleta berenjena y amarillo, Rubik + Nunito Sans, íconos de lucide y barra de navegación inferior (spec 19)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

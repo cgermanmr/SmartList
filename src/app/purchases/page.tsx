@@ -1,5 +1,6 @@
 'use client';
 
+import { ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
@@ -48,7 +49,7 @@ export default function PurchasesPage() {
       {purchases.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500 text-lg mb-2">No hay compras registradas</p>
-          <p className="text-gray-400 text-sm">Finalizá una compra desde el carrito para verla aquí</p>
+          <p className="text-gray-500 text-sm">Finalizá una compra desde el carrito para verla aquí</p>
         </div>
       )}
 
@@ -78,15 +79,17 @@ export default function PurchasesPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <p className="text-xl font-bold text-primary-700">${formatMoney(purchase.total)}</p>
-                    <span className="text-gray-400" aria-hidden="true">{expanded ? '▲' : '▼'}</span>
+                    {expanded
+                      ? <ChevronUp aria-hidden="true" className="size-5 text-gray-400" />
+                      : <ChevronDown aria-hidden="true" className="size-5 text-gray-400" />}
                   </div>
                 </button>
                 <button
                   onClick={() => loadToCart(purchase)}
                   aria-label={`Repetir compra del ${date.slice(0, 10)}`}
                   title="Cargar todos los productos al carrito"
-                  className="mr-4 shrink-0 text-sm px-3 py-1 rounded-lg border border-primary-300 text-primary-700 hover:bg-primary-50 transition-colors flex items-center gap-1">
-                  🛒 <span className="hidden sm:inline">Repetir</span>
+                  className="mr-4 shrink-0 min-h-11 text-sm px-3 py-1 rounded-lg border border-primary-300 text-primary-700 hover:bg-primary-50 transition-colors flex items-center gap-1">
+                  <ShoppingCart aria-hidden="true" className="size-4" /> <span className="hidden sm:inline">Repetir</span>
                 </button>
               </div>
 
@@ -155,9 +158,9 @@ function PurchaseItemRow({ item, last }: { item: CartItem; last: number | null }
         </div>
         {/* Sub-índice: último precio registrado */}
         {last !== null && (
-          <p className="text-xs text-gray-400 mt-0.5">Último precio: ${formatMoney(last)}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Último precio: ${formatMoney(last)}</p>
         )}
-        <p className="text-xs text-gray-400">Cantidad: {item.quantity}</p>
+        <p className="text-xs text-gray-500">Cantidad: {item.quantity}</p>
       </div>
 
       <p className="font-bold text-gray-800 ml-4 mt-1">${formatMoney(item.subtotal)}</p>

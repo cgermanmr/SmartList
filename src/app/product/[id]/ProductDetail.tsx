@@ -1,5 +1,6 @@
 'use client';
 
+import { ArrowLeft, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -79,8 +80,9 @@ export default function ProductDetail() {
   return (
     <div>
       <div className="mb-6">
-        <Link href="/" className="text-primary-700 hover:text-primary-800 font-semibold">
-          ← Volver
+        <Link href="/" className="inline-flex min-h-11 items-center gap-1.5 text-primary-700 hover:text-primary-800 font-semibold">
+          <ArrowLeft aria-hidden="true" className="size-5" />
+          Volver
         </Link>
       </div>
 
@@ -161,10 +163,10 @@ export default function ProductDetail() {
                       <p className="text-xs text-gray-500">{formatShortDateTime(price.date)}</p>
                       <button
                         onClick={() => startEdit(price)}
-                        className="text-gray-400 hover:text-primary-700 text-sm transition-colors"
+                        className="flex size-11 items-center justify-center rounded-lg text-gray-500 hover:text-primary-700 transition-colors"
                         title="Editar precio"
                         aria-label={`Editar precio de $${formatMoney(price.amount)}`}>
-                        ✏️
+                        <Pencil aria-hidden="true" className="size-4" />
                       </button>
                     </div>
                   </div>

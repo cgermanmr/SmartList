@@ -1,5 +1,6 @@
 'use client';
 
+import { Calculator, Check, Droplet, LucideIcon, Package, RotateCcw, Scale, X } from 'lucide-react';
 import { useMemo } from 'react';
 import { formatMoney, formatNumber } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
@@ -17,10 +18,10 @@ const BASE_UNIT: Record<Magnitude, string> = {
   unidades: 'u',
 };
 
-const MAGNITUDES: { value: Magnitude; icon: string; label: string }[] = [
-  { value: 'peso',     icon: '⚖️', label: 'Peso'     },
-  { value: 'volumen',  icon: '🧴', label: 'Volumen'  },
-  { value: 'unidades', icon: '📦', label: 'Unidades' },
+const MAGNITUDES: { value: Magnitude; icon: LucideIcon; label: string }[] = [
+  { value: 'peso',     icon: Scale,   label: 'Peso'     },
+  { value: 'volumen',  icon: Droplet, label: 'Volumen'  },
+  { value: 'unidades', icon: Package, label: 'Unidades' },
 ];
 
 const PROMO_TYPES: { value: PromoType; label: string }[] = [
@@ -115,7 +116,10 @@ export default function CalculatorPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-2">🧮 Calculadora de precio unitario</h1>
+      <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">
+        <Calculator aria-hidden="true" className="size-6 shrink-0 text-primary-700" />
+        Calculadora de precio unitario
+      </h1>
       <p className="text-gray-600 mb-6">Compará presentaciones del mismo producto por precio por kg, litro o unidad.</p>
 
       {/* Magnitud */}
@@ -133,7 +137,7 @@ export default function CalculatorPage() {
                 className={`flex flex-col items-center px-2 py-2 rounded-lg border font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200 ${
                   active ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-700 border-gray-300'
                 }`}>
-                <span aria-hidden="true">{m.icon}</span>
+                <m.icon aria-hidden="true" className="size-5 mb-0.5" />
                 <span>{m.label}</span>
               </button>
             );
@@ -147,8 +151,9 @@ export default function CalculatorPage() {
         <button
           type="button"
           onClick={resetCalculator}
-          className="px-3 py-1 rounded-lg text-sm font-semibold text-primary-700 hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200">
-          ↺ Nueva comparación
+          className="inline-flex min-h-11 items-center gap-1.5 px-3 py-1 rounded-lg text-sm font-semibold text-primary-700 hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-200">
+          <RotateCcw aria-hidden="true" className="size-4" />
+          Nueva comparación
         </button>
       </div>
 
@@ -172,8 +177,8 @@ export default function CalculatorPage() {
                   onClick={() => removePresentation(p.id)}
                   disabled={!canRemove}
                   aria-label={`Quitar presentación ${i + 1}`}
-                  className="shrink-0 w-10 h-10 rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 disabled:cursor-not-allowed">
-                  ✕
+                  className="shrink-0 flex size-11 items-center justify-center rounded-lg text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-500 disabled:cursor-not-allowed">
+                  <X aria-hidden="true" className="size-5" />
                 </button>
               </div>
 
@@ -262,8 +267,9 @@ export default function CalculatorPage() {
                         {r.lotUnits > 1 && <span className="block text-sm font-normal text-gray-500">llevando {r.lotUnits}</span>}
                       </p>
                       {r.isBest && (
-                        <span className="px-2 py-1 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
-                          ✓ Más conveniente
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+                          <Check aria-hidden="true" className="size-4" />
+                          Más conveniente
                         </span>
                       )}
                       {r.diffPercent !== null && (

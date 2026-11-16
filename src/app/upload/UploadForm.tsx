@@ -1,5 +1,6 @@
 'use client';
 
+import { Check, CirclePlus, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useRef, useState } from 'react';
@@ -21,7 +22,7 @@ type Message = { text: string; type: 'ok' | 'error' };
 type EanError = Extract<EanCheck, { status: 'invalid' | 'duplicate' }>;
 
 function tabClass(active: boolean) {
-  return `px-4 py-3 font-semibold text-gray-500 hover:text-primary-700 transition-colors ${active ? 'border-b-2 border-primary-700 text-primary-700' : ''}`;
+  return `inline-flex min-h-11 items-center gap-1.5 px-4 py-3 font-semibold text-gray-500 hover:text-primary-700 transition-colors ${active ? 'border-b-2 border-primary-700 text-primary-700' : ''}`;
 }
 
 export default function UploadForm() {
@@ -110,7 +111,7 @@ export default function UploadForm() {
     };
 
     addPrice(price);
-    showMessage('✓ Precio compartido exitosamente!', 'ok');
+    showMessage('Precio compartido exitosamente!', 'ok');
     setPriceForm(EMPTY_PRICE_FORM);
   }
 
@@ -129,7 +130,7 @@ export default function UploadForm() {
     }
 
     addProduct(productFromForm(productForm, newId(), check.status === 'ok' ? check.ean : undefined));
-    showMessage('✓ Producto agregado exitosamente!', 'ok');
+    showMessage('Producto agregado exitosamente!', 'ok');
     setProductForm(EMPTY_PRODUCT_FORM);
     // Sin el ean en la URL, recargar no vuelve a completar el formulario con el producto recién guardado
     if (searchParams.has('ean')) router.replace('/upload?tab=producto', { scroll: false });
@@ -192,10 +193,12 @@ export default function UploadForm() {
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
         <button onClick={() => setActiveTab('price')} aria-pressed={activeTab === 'price'} className={tabClass(activeTab === 'price')}>
-          💲 Cargar Precio
+          <Tag aria-hidden="true" className="size-4" />
+          Cargar Precio
         </button>
         <button onClick={() => setActiveTab('product')} aria-pressed={activeTab === 'product'} className={tabClass(activeTab === 'product')}>
-          ➕ Agregar Producto
+          <CirclePlus aria-hidden="true" className="size-4" />
+          Agregar Producto
         </button>
       </div>
 
@@ -403,8 +406,9 @@ export default function UploadForm() {
 
       {/* Mensaje de feedback */}
       {message && (
-        <div role="status" className={`mt-4 p-4 rounded ${message.type === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {message.text}
+        <div role="status" className={`mt-4 flex items-start gap-2 p-4 rounded-xl ${message.type === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          {message.type === 'ok' && <Check aria-hidden="true" className="mt-0.5 size-5 shrink-0" />}
+          <span>{message.text}</span>
         </div>
       )}
 

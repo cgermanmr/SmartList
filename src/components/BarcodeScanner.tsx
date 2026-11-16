@@ -1,5 +1,6 @@
 'use client';
 
+import { X } from 'lucide-react';
 import { FormEvent, useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { BarcodeDetectorLike, cameraAvailable, createConfirmer, createDetector } from '@/lib/barcode';
@@ -177,7 +178,7 @@ function ScannerView({ onDetected, onClose }: Omit<BarcodeScannerProps, 'open'>)
           onClick={onClose}
           aria-label="Cerrar lector"
           className="flex size-11 items-center justify-center rounded-full bg-black/60 text-xl leading-none text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white">
-          ✕
+          <X aria-hidden="true" className="size-6" />
         </button>
       </div>
 

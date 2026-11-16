@@ -131,7 +131,7 @@ function StoreForm({ item, stores, titleId, onClose }: FormProps) {
             </div>
             <div>
               <label htmlFor="other-store-barrio" className="text-sm text-gray-600 block mb-1">
-                Barrio <span className="text-gray-400">(opcional)</span>
+                Barrio <span className="text-gray-500">(opcional)</span>
               </label>
               <input
                 id="other-store-barrio"

@@ -1,6 +1,6 @@
 # SPEC 19 — Restyling: base visual y navegación inferior
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md), [SPEC 07](07-nombre-el-changuito.md)
 > **Fecha:** 2026-11-16
 > **Objetivo:** Darle a la app una identidad visual nueva (paleta berenjena y amarillo, tipografía, íconos, formas) y una barra de navegación inferior, para que se vea moderna y amigable en el celular sin rediseñar todavía cada pantalla.
@@ -195,25 +195,39 @@ Diseño con `/frontend-design` y `/ui-ux-pro-max` al implementar.
 10. **Documentación.** `CLAUDE.md`: stack (lucide-react), estructura (`Logo.tsx`, `CartBadge.tsx`,
     `icon-maskable.svg`), rutas (etiquetas de la navegación), *Layout y PWA*, *Configuración de Estilos* (paleta
     nueva, acento, neutros, fuentes) y *Estado Actual*. `README.md` si menciona el color o muestra capturas.
+11. **Ajustes de la implementación:**
+    - Seis textos en `text-gray-400` pasan a `text-gray-500`, por la regla de contraste.
+    - El tacho y los botones − / + del selector de cantidad de Buscar pasan a 44 px.
+    - El badge del carrito contra la última compra muestra una flecha de lucide y "+$X" / "−$X".
+    - El indicador de desplegar del historial usa `ChevronUp` / `ChevronDown`.
+    - El nombre de la app en el header deja de ser un `<h1>` (cada pantalla tiene el suyo) y es un link a `/`.
+    - Regla global: `input`, `select` y `textarea` con al menos 16 px, también los que no usan `.input-field`.
+    - Los títulos con `font-bold` en su pantalla se ven en Rubik 700, no 600: esas clases no se tocaron.
+    - `README.md` no menciona el color ni tiene capturas: sin cambios.
+    - Next.js y `eslint-config-next` pasan de 16.4.3 a 16.4.6 por una vulnerabilidad conocida que cortaba el build.
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] En 375 px la barra inferior muestra las 5 pestañas con ícono y etiqueta, sin scroll horizontal, en las 6 pantallas.
-- [ ] La pestaña de la pantalla actual tiene `aria-current="page"`, color `primary-700` y la píldora de fondo; en `/product/[id]` no hay ninguna activa.
-- [ ] Con 3 unidades en el carrito, la pestaña Carrito muestra "3" y el header el total; con el carrito vacío no se ve ninguno de los dos.
-- [ ] El último elemento de cada pantalla se puede ver completo haciendo scroll: la barra inferior no lo tapa.
-- [ ] El aviso "✓ <nombre> en el carrito" se ve entero por encima de la barra inferior.
-- [ ] Desde 768 px la navegación está arriba y el footer se ve; por debajo, la navegación está abajo y el footer no se ve.
-- [ ] No queda ningún emoji ni símbolo usado como ícono en `src/**/*.tsx` (fuera de comentarios).
-- [ ] No queda `#0f766e` ni `#0d9488` en `src/` ni en `public/`.
-- [ ] Los títulos se ven en Rubik y el texto en Nunito Sans; las fuentes se sirven desde el propio dominio (ninguna petición a `fonts.googleapis.com` ni `fonts.gstatic.com`).
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] En 375 px la barra inferior muestra las 5 pestañas con ícono y etiqueta, sin scroll horizontal, en las 6 pantallas.
+- [x] La pestaña de la pantalla actual tiene `aria-current="page"`, color `primary-700` y la píldora de fondo; en `/product/[id]` no hay ninguna activa.
+- [x] Con 3 unidades en el carrito, la pestaña Carrito muestra "3" y el header el total; con el carrito vacío no se ve ninguno de los dos.
+- [x] El último elemento de cada pantalla se puede ver completo haciendo scroll: la barra inferior no lo tapa.
+- [ ] El aviso "<nombre> en el carrito" (con ícono de check) se ve entero por encima de la barra inferior.
+- [x] Desde 768 px la navegación está arriba y el footer se ve; por debajo, la navegación está abajo y el footer no se ve.
+- [x] No queda ningún emoji ni símbolo usado como ícono en `src/**/*.tsx` (fuera de comentarios).
+- [x] No queda `#0f766e` ni `#0d9488` en `src/` ni en `public/`.
+- [x] Los títulos se ven en Rubik y el texto en Nunito Sans; las fuentes se sirven desde el propio dominio (ninguna petición a `fonts.googleapis.com` ni `fonts.gstatic.com`).
 - [ ] Enfocar cualquier input en un iPhone no hace zoom.
-- [ ] Botones, pestañas y botones de solo ícono miden al menos 44 px de alto.
-- [ ] El texto blanco sobre `primary-700`, el texto tinta sobre `accent-400` y el texto `gray-500` sobre blanco cumplen 4,5:1.
-- [ ] Los badges verde, rojo, azul y ámbar de Buscar, el detalle y el carrito conservan sus colores y su significado.
+- [x] Botones, pestañas y botones de solo ícono miden al menos 44 px de alto.
+- [x] El texto blanco sobre `primary-700`, el texto tinta sobre `accent-400` y el texto `gray-500` sobre blanco cumplen 4,5:1.
+- [x] Los badges verde, rojo, azul y ámbar de Buscar, el detalle y el carrito conservan sus colores y su significado.
 - [ ] El manifest declara `theme_color` `#5B2A86` y los dos íconos; el favicon muestra el changuito.
 - [ ] El lector de códigos de barras, los modales (`SepaLinkDialog`, `CartStoreDialog`, "Repetir") y el medio de pago siguen funcionando igual.
+
+> Verificado en el navegador contra el build de producción, en 320, 375 y 800 px. Los cuatro criterios sin marcar
+> quedan para probar a mano: el aviso de Buscar (necesita el catálogo), el zoom en un iPhone real, el favicon y el
+> ícono instalado, y el lector y los modales, que solo cambiaron de íconos.
 
 ## Decisiones
 

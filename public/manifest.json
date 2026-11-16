@@ -4,8 +4,8 @@
   "description": "PWA para comparar precios y gestionar compras",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0f766e",
+  "background_color": "#faf8fc",
+  "theme_color": "#5b2a86",
   "lang": "es",
   "icons": [
     {
@@ -13,6 +13,12 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, QrCode, X } from 'lucide-react';
 import Link from 'next/link';
 import { ReactNode, useId, useState } from 'react';
 import CartStoreDialog from '@/components/CartStoreDialog';
@@ -16,12 +17,12 @@ import {
 
 // ── Medios de pago ─────────────────────────────────────────
 const PAYMENT_METHODS = [
-  { id: 'efectivo',      label: 'Efectivo',           icon: '💵' },
-  { id: 'debito',        label: 'Débito',             icon: '💳' },
-  { id: 'credito1',      label: 'Crédito (1 cuota)',  icon: '💳' },
-  { id: 'creditoN',      label: 'Crédito en cuotas',  icon: '📆' },
-  { id: 'transferencia', label: 'Transferencia / QR', icon: '📲' },
-  { id: 'cheque',        label: 'Cheque',             icon: '📝' },
+  { id: 'efectivo',      label: 'Efectivo',           icon: Banknote     },
+  { id: 'debito',        label: 'Débito',             icon: CreditCard   },
+  { id: 'credito1',      label: 'Crédito (1 cuota)',  icon: CreditCard   },
+  { id: 'creditoN',      label: 'Crédito en cuotas',  icon: CalendarDays },
+  { id: 'transferencia', label: 'Transferencia / QR', icon: QrCode       },
+  { id: 'cheque',        label: 'Cheque',             icon: FilePen      },
 ];
 
 type PriceStatus = 'cheaper' | 'expensive' | 'same' | 'new';
@@ -44,7 +45,7 @@ function priceStatus(item: CartItem, last: number | null): PriceStatus {
 function priceBadge(item: CartItem, last: number): string {
   const diff = item.price - last;
   if (diff === 0) return '= igual';
-  return `${diff > 0 ? '▲' : '▼'} ${diff > 0 ? '+' : ''}$${formatMoney(Math.abs(diff))}`;
+  return `${diff > 0 ? '+' : '−'}$${formatMoney(Math.abs(diff))}`;
 }
 
 /** Ítem sin precio conocido (entró en $0 desde el catálogo): hay que completarlo antes de comprar */
@@ -305,7 +306,9 @@ function CartRow({ item, reference, onChangeStore }: CartRowProps) {
         <div className="min-w-0">
           <h3 className="font-bold">{item.productName}</h3>
           {last !== null && (
-            <span className={`text-xs font-semibold ${STATUS_CLASS[status]}`}>
+            <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${STATUS_CLASS[status]}`}>
+              {item.price > last && <ArrowUp aria-hidden="true" className="size-3.5" />}
+              {item.price < last && <ArrowDown aria-hidden="true" className="size-3.5" />}
               {priceBadge(item, last)}
             </span>
           )}
@@ -313,8 +316,8 @@ function CartRow({ item, reference, onChangeStore }: CartRowProps) {
         <button
           onClick={() => removeFromCart(item.id)}
           aria-label={`Quitar ${item.productName}`}
-          className="text-red-500 hover:text-red-700 text-xl ml-2 shrink-0 min-w-11 min-h-11 -mt-2 -mr-2">
-          ✕
+          className="text-red-500 hover:text-red-700 text-xl ml-2 shrink-0 min-w-11 min-h-11 -mt-2 -mr-2 flex items-center justify-center">
+          <X aria-hidden="true" className="size-5" />
         </button>
       </div>
 
@@ -391,7 +394,7 @@ function PaymentStep({
         <div className="mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label htmlFor="loose-barrio" className="text-sm text-gray-600 block mb-1">
-              Barrio <span className="text-gray-400">(opcional)</span>
+              Barrio <span className="text-gray-500">(opcional)</span>
             </label>
             <input
               id="loose-barrio"
@@ -404,7 +407,7 @@ function PaymentStep({
           </div>
           <div>
             <label htmlFor="loose-store" className="text-sm text-gray-600 block mb-1">
-              Comercio <span className="text-gray-400">(opcional)</span>
+              Comercio <span className="text-gray-500">(opcional)</span>
             </label>
             <input
               id="loose-store"
@@ -430,7 +433,7 @@ function PaymentStep({
                 ? 'border-primary-600 bg-primary-50 text-primary-700'
                 : 'border-gray-200 bg-white hover:border-primary-300 text-gray-700'
             }`}>
-            <span className="text-2xl" aria-hidden="true">{m.icon}</span>
+            <m.icon aria-hidden="true" className="size-6" />
             {m.label}
           </button>
         ))}

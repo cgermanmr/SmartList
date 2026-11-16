@@ -1,17 +1,34 @@
 @import "tailwindcss";
 
-/* Paleta de marca (teal) — primary-700 es el color principal */
+/* Paleta de marca (berenjena) — primary-700 es el color principal */
 @theme {
-  --color-primary-50:  #f0fdfa;
-  --color-primary-100: #ccfbf1;
-  --color-primary-200: #99f6e4;
-  --color-primary-300: #5eead4;
-  --color-primary-400: #2dd4bf;
-  --color-primary-500: #14b8a6;
-  --color-primary-600: #0d9488;
-  --color-primary-700: #0f766e;
-  --color-primary-800: #115e59;
-  --color-primary-900: #134e4a;
+  --color-primary-50:  #f7f3fb;
+  --color-primary-100: #ede4f6;
+  --color-primary-200: #dbc9ec;
+  --color-primary-300: #c1a3dd;
+  --color-primary-400: #a078c9;
+  --color-primary-500: #8253b3;
+  --color-primary-600: #6c3c9c;
+  --color-primary-700: #5b2a86;
+  --color-primary-800: #48216b;
+  --color-primary-900: #371a52;
+
+  /* Acento (amarillo cartel): es de marca, no de estado. Solo en el logo y el contador del carrito */
+  --color-accent-100: #fff4cc;
+  --color-accent-400: #ffd23f;
+  --color-accent-500: #f5be0b;
+
+  /* Neutros apenas violáceos: reemplazan a los gray de Tailwind */
+  --color-gray-50:  #faf8fc;
+  --color-gray-100: #f3f0f7;
+  --color-gray-200: #e7e2ee;
+  --color-gray-300: #d5cedf;
+  --color-gray-400: #a59db3;
+  --color-gray-500: #6f6780;
+  --color-gray-600: #554d66;
+  --color-gray-700: #40384f;
+  --color-gray-800: #2d2540;
+  --color-gray-900: #1f1630;
 
   /* Línea del lector de códigos de barras: recorre el recuadro guía de arriba abajo */
   --animate-scan: scan 1.8s ease-in-out infinite alternate;
@@ -22,15 +39,30 @@
   }
 }
 
+/* Fuentes de next/font (variables definidas en el layout), con la pila del sistema como respaldo */
+@theme inline {
+  --font-sans: var(--font-nunito-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: var(--font-rubik), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
 html, body {
   height: 100%;
   margin: 0;
   padding: 0;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  body {
+    color: var(--color-gray-900);
+    /* Cifras tabulares: los precios no bailan al cambiar */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+  }
 }
 
 /* Tailwind v4 pone cursor: default en los botones */
@@ -38,21 +70,27 @@ button:not(:disabled) {
   cursor: pointer;
 }
 
+/* Con menos de 16 px, el iPhone hace zoom al enfocar un campo. Fuera de las capas para ganarle a text-sm */
+input, select, textarea {
+  font-size: max(16px, 1em);
+}
+
 @layer components {
+  /* Botones: 44 px de alto por el padding (también en los <a>), con estados active, disabled y foco */
   .btn-primary {
-    @apply px-4 py-2 bg-primary-700 text-white rounded-lg font-semibold hover:bg-primary-800 transition-colors;
+    @apply inline-block min-h-11 px-4 py-2.5 text-center bg-primary-700 text-white rounded-xl font-semibold hover:bg-primary-800 active:bg-primary-900 disabled:opacity-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2;
   }
 
   .btn-secondary {
-    @apply px-4 py-2 bg-gray-200 text-gray-800 rounded-lg font-semibold hover:bg-gray-300 transition-colors;
+    @apply inline-block min-h-11 px-4 py-2.5 text-center bg-primary-50 text-primary-700 rounded-xl font-semibold hover:bg-primary-100 active:bg-primary-200 disabled:opacity-50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2;
   }
 
   .card {
-    @apply bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow;
+    @apply bg-white rounded-2xl border border-gray-200 shadow-xs;
   }
 
   .input-field {
-    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200;
+    @apply w-full min-h-11 px-4 py-2 bg-white text-base border border-gray-300 rounded-xl focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-200;
   }
 
   /* Fila tocable de una lista: el foco va hacia adentro porque la lista recorta los bordes */

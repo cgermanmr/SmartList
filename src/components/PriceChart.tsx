@@ -47,16 +47,16 @@ export default function PriceChart({ prices }: { prices: Price[] }) {
          role="img" aria-label={`Evolución del precio: de $${formatMoney(amounts[0])} a $${formatMoney(amounts[amounts.length - 1])}`}>
       <defs>
         <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#0f766e" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#0f766e" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--color-primary-700)" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="var(--color-primary-700)" stopOpacity="0" />
         </linearGradient>
       </defs>
 
       {/* Líneas guía horizontales y etiquetas eje Y */}
       {gridY.map((gy, gi) => (
         <g key={gi}>
-          <line x1={padL} y1={gy} x2={W - padR} y2={gy} stroke="#e5e7eb" strokeWidth="1" />
-          <text x={padL - 6} y={gy + 4} textAnchor="end" fontSize="10" fill="#9ca3af">
+          <line x1={padL} y1={gy} x2={W - padR} y2={gy} stroke="var(--color-gray-200)" strokeWidth="1" />
+          <text x={padL - 6} y={gy + 4} textAnchor="end" fontSize="10" fill="var(--color-gray-500)">
             ${formatNumber(gridLabels[gi], 0)}
           </text>
         </g>
@@ -66,20 +66,20 @@ export default function PriceChart({ prices }: { prices: Price[] }) {
       <path d={areaPath} fill="url(#areaGrad)" />
 
       {/* Línea */}
-      <polyline points={polyline} fill="none" stroke="#0f766e" strokeWidth="2.5"
+      <polyline points={polyline} fill="none" stroke="var(--color-primary-700)" strokeWidth="2.5"
                 strokeLinejoin="round" strokeLinecap="round" />
 
       {/* Puntos */}
       {points.map(pt => (
         <g key={pt.id}>
-          <circle cx={pt.x} cy={pt.y} r="4" fill="white" stroke="#0f766e" strokeWidth="2" />
+          <circle cx={pt.x} cy={pt.y} r="4" fill="white" stroke="var(--color-primary-700)" strokeWidth="2" />
           <title>${formatMoney(pt.price)}</title>
         </g>
       ))}
 
       {/* Etiquetas eje X */}
       {xLabels.map(pt => (
-        <text key={pt.id} x={pt.x} y={padT + cH + padB - 6} textAnchor="middle" fontSize="10" fill="#9ca3af">
+        <text key={pt.id} x={pt.x} y={padT + cH + padB - 6} textAnchor="middle" fontSize="10" fill="var(--color-gray-500)">
           {pt.label}
         </text>
       ))}

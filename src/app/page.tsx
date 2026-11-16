@@ -1,5 +1,6 @@
 'use client';
 
+import { Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useRef, useState } from 'react';
@@ -58,7 +59,7 @@ export default function SearchPage() {
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   function showNotice(name: string) {
-    setNotice(`✓ ${name} en el carrito`);
+    setNotice(`${name} en el carrito`);
     clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 3000);
   }
@@ -184,7 +185,7 @@ export default function SearchPage() {
                   <div className="flex items-center gap-2 mb-2">
                     <button
                       onClick={() => removeFromCart(cartItem.id)}
-                      className="text-red-400 hover:text-red-600 transition-colors p-1"
+                      className="text-red-400 hover:text-red-600 transition-colors flex size-11 shrink-0 items-center justify-center rounded-lg -ml-2"
                       title="Quitar del carrito"
                       aria-label={`Quitar ${product.name} del carrito`}>
                       <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none"
@@ -195,22 +196,22 @@ export default function SearchPage() {
                         <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
                       </svg>
                     </button>
-                    <div className="flex items-center border border-primary-300 rounded-lg overflow-hidden flex-1">
+                    <div className="flex items-center border border-primary-300 rounded-xl overflow-hidden flex-1">
                       <button
                         onClick={() => changeQuantity(cartItem.id, cartItem.quantity - 1)}
                         aria-label="Restar uno"
-                        className="px-3 py-1.5 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">−</button>
+                        className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">−</button>
                       <NumberInput
                         value={cartItem.quantity}
                         onValueChange={qty => changeQuantity(cartItem.id, qty)}
                         min="1"
                         aria-label={`Cantidad de ${product.name}`}
-                        className="w-12 text-center text-sm font-semibold border-x border-primary-300 py-1.5 focus:outline-none"
+                        className="w-12 text-center text-sm font-semibold border-x border-primary-300 min-h-11 focus:outline-none"
                       />
                       <button
                         onClick={() => changeQuantity(cartItem.id, cartItem.quantity + 1)}
                         aria-label="Sumar uno"
-                        className="px-3 py-1.5 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">+</button>
+                        className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">+</button>
                     </div>
                     <span className="text-sm font-bold text-primary-700 whitespace-nowrap">
                       ${formatMoney(cartItem.subtotal)}
@@ -311,10 +312,11 @@ export default function SearchPage() {
       )}
 
       {/* Aviso al agregar: fijo abajo para que se vea desde cualquier parte de la lista. La región queda montada */}
-      <div role="status" className="pointer-events-none fixed inset-x-4 bottom-14 z-10 flex justify-center">
+      <div role="status" className="pointer-events-none fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 flex justify-center md:bottom-14">
         {notice && (
-          <p className="max-w-sm rounded-lg bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg break-words">
-            {notice}
+          <p className="flex max-w-sm items-start gap-2 rounded-xl bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg">
+            <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent-400" />
+            <span className="min-w-0 break-words">{notice}</span>
           </p>
         )}
       </div>
