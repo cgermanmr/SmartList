@@ -1,6 +1,6 @@
 # SPEC 14 — Carrito por comercio
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Que cada producto del carrito pueda tener su comercio, ver el carrito agrupado por comercio y cerrar la compra de cada comercio por separado, para salir a comprar y visitar cada local.
@@ -81,9 +81,10 @@ addToCart: (item: CartItem) => void;                // ver regla "un producto, u
 - **Cambiar comercio** no toca el precio, salvo que se pase `price` (lo usa la spec 15 al elegir una sucursal con
   precio conocido).
 - **Checkout por grupo.** Confirmar un grupo:
-  1. guarda un `Purchase` con los ítems del grupo, `store = name`, `barrio = barrio ?? 'Sin especificar'`, el medio
-     de pago elegido y el total del grupo;
-  2. registra un `Price` por ítem con ese barrio y comercio;
+  1. guarda un `Purchase` con los ítems del grupo, `store = name`, `barrio` solo si se conoce (sin barrio no lleva
+     la clave, como hasta hoy: el historial muestra "Día" y no "Día, Sin especificar"), el medio de pago elegido y
+     el total del grupo;
+  2. registra un `Price` por ítem con ese comercio y el barrio, o `Sin especificar` si no se conoce (es requerido);
   3. saca del carrito solo esos ítems. Los demás grupos quedan intactos.
 - **Grupo "Sin comercio":** al confirmarlo se puede escribir barrio y comercio (los dos opcionales), que reemplazan
   al checkbox "comercio único" de hoy. Sin datos, se registra `Sin especificar` como hoy.
@@ -119,17 +120,20 @@ addToCart: (item: CartItem) => void;                // ver regla "un producto, u
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] Un carrito guardado antes de esta spec abre sin errores, con todos los ítems en "Sin comercio".
-- [ ] Con ítems en 3 comercios se ven 3 tarjetas con su subtotal, y la suma coincide con el total del header.
-- [ ] "Cambiar comercio" mueve el ítem de tarjeta sin cambiar cantidad ni precio.
-- [ ] "Coto" y " coto" quedan en el mismo grupo.
-- [ ] Confirmar la compra de un comercio crea **una** compra con solo sus ítems, registra sus precios con ese barrio y comercio, y deja los demás grupos en el carrito.
-- [ ] Confirmar "Sin comercio" sin completar nada registra `Sin especificar`, como hoy.
-- [ ] Agregar desde Buscar un producto que ya está en el carrito suma cantidad y no crea otra línea.
-- [ ] "Repetir" una compra hecha en un comercio carga los ítems en ese comercio.
-- [ ] Recargar la página conserva los comercios de cada ítem.
-- [ ] En 375 px no hay scroll horizontal.
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] Un carrito guardado antes de esta spec abre sin errores, con todos los ítems en "Sin comercio".
+- [x] Con ítems en 3 comercios se ven 3 tarjetas con su subtotal, y la suma coincide con el total del header.
+- [x] "Cambiar comercio" mueve el ítem de tarjeta sin cambiar cantidad ni precio.
+- [x] "Coto" y " coto" quedan en el mismo grupo.
+- [x] Confirmar la compra de un comercio crea **una** compra con solo sus ítems, registra sus precios con ese barrio y comercio, y deja los demás grupos en el carrito.
+- [x] Confirmar "Sin comercio" sin completar nada registra `Sin especificar`, como hoy.
+- [x] Agregar desde Buscar un producto que ya está en el carrito suma cantidad y no crea otra línea (test de
+  `addToCart`; en Buscar, un producto que ya está en el carrito muestra +/− en lugar de "Agregar").
+- [x] "Repetir" una compra hecha en un comercio carga los ítems en ese comercio.
+- [x] Recargar la página conserva los comercios de cada ítem.
+- [x] En 375 px no hay scroll horizontal.
+
+Verificados el 16/11/2026 con tests y en el navegador contra el servidor de desarrollo (375 px con un iframe).
 
 ## Decisiones
 
@@ -138,6 +142,9 @@ addToCart: (item: CartItem) => void;                // ver regla "un producto, u
 - **Sí:** una compra por comercio. `Purchase` ya tiene un solo `store`; el historial y la comparación por comercio (feature 02) quedan correctos sin tocar el modelo.
 - **Sí:** quitar el checkbox "comercio único". El agrupado lo reemplaza y el caso "todo en un comercio" es un solo grupo.
 - **No:** pagar todos los comercios juntos. Son compras distintas, en momentos y con medios de pago distintos.
+- **Sí (implementación):** la compra lleva `barrio` solo si se conoce. Con `Sin especificar` el historial mostraba "Día, Sin especificar"; el `Price` sí lo lleva porque `barrio` es requerido.
+- **Sí (implementación):** "Repetir" usa el `StoreRef` guardado en el ítem de la compra si existe (conserva dirección y `sepaId` para la spec 15); si no, `{ name: store, barrio }`, sin copiar un barrio `Sin especificar` (dejaría el ítem en otro grupo que "Coto").
+- **Sí (implementación):** "Total: $X en N comercios" cuenta solo los comercios reales; con todo en "Sin comercio" muestra solo el total.
 
 ## Riesgos
 
