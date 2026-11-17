@@ -1,8 +1,11 @@
 'use client';
 
-import { ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, QrCode, X } from 'lucide-react';
+import {
+  ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, Map as MapIcon, QrCode, Route as RouteIcon, X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { ReactNode, useId, useState } from 'react';
+import BranchMap from '@/components/BranchMap';
 import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
@@ -10,6 +13,7 @@ import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
+import { mapStops, MapStop, MAX_STOPS } from '@/lib/route';
 import { ReferenceSummary, referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
 import {
   CartGroup, NO_BARRIO, getCartStores, getCartTotal, getLastPurchasedPrice, groupCartByStore, useStore,
@@ -80,6 +84,23 @@ export default function CartPage() {
   const groups = groupCartByStore(cart);
   const storeCount = groups.filter(g => g.store).length;
   const storeItem = cart.find(i => i.id === storeItemId) ?? null;
+
+  // ── Mapa: un comercio o el recorrido por todos ─────────────
+  const [map, setMap] = useState<{ stops: MapStop[]; notes?: string[] } | null>(null);
+  // Paradas en el orden de los grupos; solo los comercios con coordenadas (los del SEPA)
+  const located = mapStops(groups.flatMap(g => (g.store ? [g.store] : [])), Infinity);
+
+  function showTour() {
+    const missing = storeCount - located.length;
+    setMap({
+      stops: located.slice(0, MAX_STOPS),
+      notes: [
+        ...(missing === 1 ? ['1 comercio sin ubicación no aparece en el mapa'] : []),
+        ...(missing > 1 ? [`${missing} comercios sin ubicación no aparecen en el mapa`] : []),
+        ...(located.length > MAX_STOPS ? [`Se muestran los primeros ${MAX_STOPS} comercios`] : []),
+      ],
+    });
+  }
 
   // Precio de referencia de los ítems con EAN, en una sola consulta
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
@@ -165,6 +186,7 @@ export default function CartPage() {
             eanOf={eanOf}
             references={references}
             onChangeStore={setStoreItemId}
+            onMap={store => setMap({ stops: mapStops([store]) })}
             onCheckout={() => openCheckout(group.key)}
             payment={checkoutKey === group.key ? (
               <PaymentStep
@@ -184,7 +206,7 @@ export default function CartPage() {
       </div>
 
       {/* Total de todo el carrito */}
-      <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6">
+      <div className="bg-green-50 border-2 border-green-500 rounded-lg p-6 mb-6 flex flex-wrap items-center justify-between gap-4">
         <p className="text-3xl font-bold text-green-700">
           Total: ${formatMoney(total)}
           {storeCount > 0 && (
@@ -193,6 +215,13 @@ export default function CartPage() {
             </span>
           )}
         </p>
+        {/* Con un solo comercio en el mapa alcanza el botón de su encabezado */}
+        {located.length >= 2 && (
+          <button type="button" onClick={showTour} className="btn-secondary inline-flex w-full items-center justify-center gap-2 bg-white sm:w-auto">
+            <RouteIcon aria-hidden="true" className="size-5" />
+            Ver recorrido
+          </button>
+        )}
       </div>
 
       <button onClick={clear} className="btn-secondary w-full sm:w-auto min-h-11">
@@ -200,6 +229,7 @@ export default function CartPage() {
       </button>
 
       <CartStoreDialog item={storeItem} stores={getCartStores(cart)} onClose={() => setStoreItemId(null)} />
+      <BranchMap stops={map?.stops ?? null} notes={map?.notes} onClose={() => setMap(null)} />
     </div>
   );
 }
@@ -210,12 +240,14 @@ interface StoreGroupProps {
   eanOf: (productId: string) => string | undefined;
   references: Map<string, ReferenceSummary>;
   onChangeStore: (itemId: string) => void;
+  /** Ver el comercio en el mapa (solo se ofrece si tiene coordenadas) */
+  onMap: (store: StoreRef) => void;
   onCheckout: () => void;
   /** Paso de medio de pago de este grupo, si está abierto */
   payment: ReactNode;
 }
 
-function StoreGroup({ group, eanOf, references, onChangeStore, onCheckout, payment }: StoreGroupProps) {
+function StoreGroup({ group, eanOf, references, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
   const titleId = useId();
   const store = group.store;
   const detail = storeDetail(store);
@@ -236,6 +268,15 @@ function StoreGroup({ group, eanOf, references, onChangeStore, onCheckout, payme
             {detail && `${detail} · `}{count} {count === 1 ? 'producto' : 'productos'}
           </p>
         </div>
+        {store && store.lat !== undefined && store.lng !== undefined && (
+          <button
+            type="button"
+            onClick={() => onMap(store)}
+            aria-label={`Ver ${store.name} en el mapa`}
+            className="-my-1 flex size-11 shrink-0 items-center justify-center rounded-xl bg-white text-primary-700 hover:bg-primary-100 active:bg-primary-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+            <MapIcon aria-hidden="true" className="size-5" />
+          </button>
+        )}
         <p className={`shrink-0 whitespace-nowrap text-lg font-bold ${store ? 'text-primary-700' : 'text-gray-800'}`}>
           ${formatMoney(group.total)}
         </p>

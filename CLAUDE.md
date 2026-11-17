@@ -20,7 +20,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   su catálogo de productos para cargar y vincular productos por código de barras
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
   ([SPEC 12](specs/12-precio-de-referencia-sepa.md)), y sus sucursales para mostrar el precio en los comercios
-  cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage
+  cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage. El mapa
+  de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -39,6 +40,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | Zustand | ^5 | Estado global |
 | @supabase/supabase-js | ^2.119 | Lectura del catálogo SEPA desde el navegador (clave publishable, sin sesión) |
 | barcode-detector | ^3.2 | Ponyfill de `BarcodeDetector` (ZXing en WebAssembly) para el lector de códigos de barras |
+| leaflet | ^1.9 | Mapa del comercio con teselas de OpenStreetMap; se carga con `import()` al abrir el primer mapa |
 | lucide-react | ^1.73 | Íconos SVG (solo entran al bundle los que se usan); no se usan emojis como ícono |
 | Vitest | ^5 | Tests de la lógica pura |
 | ESLint | ^9 | Lint (`eslint-config-next`: core-web-vitals + typescript + reglas del React Compiler) |
@@ -111,7 +113,9 @@ src/
 │   │                           #   useNearbyPrices (precio de varios EAN en los comercios cercanos, una consulta)
 │   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
 │   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; NearbyLine ("Desde $X…")
-│   └── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
+│   ├── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
+│   └── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
+│                               #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
@@ -120,6 +124,8 @@ src/
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
     ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
+    ├── route.ts                # Ruta del mapa: getRoute (OSRM, caché y 8 s de límite), parseOsrmRoute, googleMapsUrl,
+    │                           #   formatDuration, mapStops (paradas a partir de comercios con coordenadas)
     ├── location.ts             # UserLocation, RADIUS_OPTIONS, parseLocationState, gpsLocation, requestPosition
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
@@ -174,7 +180,8 @@ src/
   `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía).
   Las respuestas se acumulan en el hook: al cambiar los EAN, solo los nuevos quedan cargando
   (`useSepaReferenceLookup().isLoading(ean)`)
-- **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**:
+- **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**
+  (única excepción: la ruta del mapa, ver *Mapa y ruta*):
   `getSepaBranches()` baja todas las sucursales una vez por sesión (de a 1.000 filas, caché de módulo) y
   `nearestBranches` calcula las distancias en el navegador (haversine, línea recta): hasta **40** dentro del radio
   (1, 3, 5 o 10 km; 3 por defecto). `getNearbyPrices(eans, sucursales)` llama a `sepa_precios_en_sucursales` solo
@@ -188,6 +195,18 @@ src/
   sirve: en CABA casi todo dice "Capital Federal"), y el punto es la **mediana** de las coordenadas; con una
   localidad las distancias dicen "aprox.". El comercio del carrito sale de `storeRefFromBranch`
   (`"<cadena> — <sucursal>"`, `sepaId`, dirección, barrio y coordenadas)
+- **Mapa y ruta** ([SPEC 16](specs/16-mapa-y-como-llegar.md)) — `BranchMap` carga Leaflet y su CSS con `import()`
+  dentro de un efecto, la primera vez que se abre un mapa (chunks aparte: no entran en el JS ni en el CSS inicial,
+  ni se ejecutan en el prerender). El mapa se crea al montarse el contenido del modal y se destruye
+  (`map.remove()`) en la limpieza; el modal se cierra también al ocultarse la página con `<Activity>`. El evento
+  `close` del `<dialog>` se ignora si el modal ya está abierto otra vez (llega en una tarea aparte y cerraría un
+  mapa reabierto enseguida). Los marcadores son `L.divIcon` con SVG propio y el nombre con `textContent`. El
+  origen es `location` del store **solo si `source === 'gps'`**. La ruta (`getRoute`) se pide al OSRM público de
+  `routing.openstreetmap.de` con 8 s de límite y caché de módulo por puntos + modo (un fallo no se guarda); sin
+  respuesta, línea recta punteada. **Es la única excepción a "la ubicación no sale del dispositivo"**: las
+  coordenadas viajan a ese servicio solo al abrir un mapa con ubicación de GPS, y el modal lo avisa. El link a
+  Google Maps (`googleMapsUrl`) nunca lleva `origin`. Sin conexión (`navigator.onLine`) o si no carga Leaflet, el
+  modal queda sin mapa
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -385,6 +404,8 @@ interface CalculatorState {
   - En el catálogo, debajo de la lista quedan "Agregar sin comercio" (el de la spec 18) y "Editar antes de
     agregar". Un resultado sin precio cercano despliega la lista por cadena de la spec 12
   - Sin ubicación (o si falla la consulta) todo queda como en la spec 12: resumen y lista por cadena
+  - Cada comercio con coordenadas lleva el botón **Mapa** (`aria-label="Ver <comercio> en el mapa"`; solo ícono
+    en el celular), que abre el mapa del comercio (ver *Mapa del comercio*). Los precios cargados a mano no lo llevan
 
 ### Cargar (`/upload`)
 - Tab **precio**: producto, monto, barrio (requeridos) y tienda (opcional)
@@ -412,6 +433,25 @@ interface CalculatorState {
 - Errores, siempre con el ingreso manual abierto: permiso denegado ("Sin permiso para usar la cámara…"), sin cámara
   o sin `getUserMedia` ("Este dispositivo no tiene cámara disponible.") y falla del detector ("No se pudo iniciar el lector.")
 - Ingreso manual: valida con `toGtin13` (ignora espacios); inválido → "Código de barras inválido"
+
+### Mapa del comercio (`BranchMap`, [SPEC 16](specs/16-mapa-y-como-llegar.md))
+- Modal a pantalla completa en el celular (tarjeta centrada desde `sm`): nombre y dirección del comercio, mapa de
+  OpenStreetMap con su marcador (color de marca) y, abajo, el botón **Abrir en Google Maps** (pestaña nueva, sin
+  origen en la URL: Google usa la posición del dispositivo)
+- **Con ubicación de GPS**: marcador azul "Vos" y la ruta por las calles, con la leyenda "1,7 km · 23 min a pie" y
+  el selector **A pie / En auto** (`aria-pressed`); "Buscando la ruta…" mientras llega. Si el servicio no responde
+  (o tarda más de 8 s), línea recta punteada y "350 m en línea recta", sin error ni selector. Debajo, "Para marcar
+  la ruta, tu ubicación se envía a OpenStreetMap."
+- **Con localidad elegida a mano o sin ubicación**: solo el comercio, centrado, sin ruta ni consultas, y el botón
+  **Usar mi ubicación**: al aceptar, la ubicación guardada pasa a ser la de GPS en toda la app y aparecen el
+  marcador y la ruta. Permiso denegado → "Sin permiso para usar tu ubicación."; sin señal → "No se pudo obtener
+  tu ubicación."
+- **Recorrido** (desde el carrito): "Recorrido: N comercios", marcadores numerados, la ruta que los une en orden y
+  la lista numerada de paradas; el link de Google Maps lleva las paradas intermedias como `waypoints`
+- Cierra con Escape o con el botón de cerrar (`aria-label="Cerrar mapa"`) y devuelve el foco al botón que lo abrió.
+  Sin conexión: nombre, dirección y el botón de Google Maps, sin mapa
+- Se abre desde Buscar y el detalle (botón "Mapa" de cada comercio) y desde el carrito; no desde "Cambiar
+  comercio" ni desde el historial
 
 ### Detalle de producto (`/product/[id]`)
 - Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista); "Categoría: X" solo si tiene
@@ -442,6 +482,10 @@ interface CalculatorState {
 - **Cambiar comercio** (link debajo de cada ítem, `CartStoreDialog`): comercios ya usados (`getCartStores`), "Sin
   comercio" u "Otro comercio" (nombre requerido, barrio opcional). No cambia cantidad ni precio
   (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`)
+- **Mapa** ([SPEC 16](specs/16-mapa-y-como-llegar.md)): botón de solo ícono en el encabezado de cada comercio con
+  coordenadas (los del SEPA) y, con 2 o más, **Ver recorrido** junto al total: todos esos comercios en el orden
+  del carrito, hasta 9 ("Se muestran los primeros 9 comercios"). Los que no tienen coordenadas se aclaran en el
+  mapa ("1 comercio sin ubicación no aparece en el mapa")
 - Editar cantidad y precio de cada ítem; eliminar
 - **Ítem sin precio** (entró en $0 desde el catálogo, spec 18): campo en ámbar con "Completar precio" y sin
   comparaciones; el botón de compra de su grupo queda deshabilitado con "Completá los precios para comprar" hasta
@@ -741,6 +785,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Agregar al carrito desde el catálogo sin dar de alta el producto; categoría opcional (spec 18)
 - [x] Precios y comercios cercanos con ubicación o localidad en Buscar, el detalle y el carrito (spec 15)
 - [x] Restyling: paleta berenjena y amarillo, Rubik + Nunito Sans, íconos de lucide y barra de navegación inferior (spec 19)
+- [x] Mapa del comercio con la ruta para llegar y recorrido del carrito (spec 16)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

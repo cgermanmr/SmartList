@@ -1,7 +1,7 @@
 import { LatLng } from './geo';
 
-// Ubicación del usuario: se pide solo cuando toca "Usar mi ubicación" y se guarda en localStorage. Nunca se manda
-// a un servidor: las distancias se calculan en el navegador.
+// Ubicación del usuario: se pide solo cuando toca "Usar mi ubicación" y se guarda en localStorage. Las distancias
+// se calculan en el navegador; la única vez que sale del dispositivo es al pedir la ruta de un mapa (lib/route.ts).
 
 export interface UserLocation extends LatLng {
   source: 'gps' | 'localidad';

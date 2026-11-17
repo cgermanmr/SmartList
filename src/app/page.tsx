@@ -4,6 +4,7 @@ import { Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useRef, useState } from 'react';
+import BranchMap from '@/components/BranchMap';
 import LocationBar from '@/components/LocationBar';
 import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import NumberInput from '@/components/NumberInput';
@@ -16,6 +17,7 @@ import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Product, StoreRef } from '@/lib/models';
+import { mapStops, MapStop } from '@/lib/route';
 import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { filterProducts, getPriceStats, getRecentStorePrices, initialCartPrice, useStore } from '@/lib/store';
 
@@ -40,6 +42,9 @@ export default function SearchPage() {
   /** Producto propio con la lista de comercios desplegada (uno a la vez) */
   const [storesOpenId, setStoresOpenId] = useState<string | null>(null);
   const [now] = useState(() => new Date());
+  // Comercio que se está viendo en el mapa (un solo BranchMap para toda la pantalla)
+  const [mapStop, setMapStop] = useState<MapStop[] | null>(null);
+  const showMap = (store: StoreRef) => setMapStop(mapStops([store]));
   /** Aviso "✓ <nombre> en el carrito"; se oculta a los 3 s */
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -234,6 +239,7 @@ export default function SearchPage() {
                       approx={nearby.approx}
                       ownPrices={ownStorePrices}
                       onChoose={(store, price) => addAt(product, store, price)}
+                      onMap={showMap}
                     />
                   )}
                 </div>
@@ -364,6 +370,7 @@ export default function SearchPage() {
                           prices={stores}
                           approx={nearby.approx}
                           onChoose={(store, price) => addSepaAt(product, store, price)}
+                          onMap={showMap}
                         />
                       ) : summary && <SepaPriceTable summary={summary} />}
                       <AddToCartButton
@@ -395,6 +402,8 @@ export default function SearchPage() {
           </p>
         )}
       </div>
+
+      <BranchMap stops={mapStop} onClose={() => setMapStop(null)} />
     </div>
   );
 }

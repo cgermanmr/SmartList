@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { newId } from '@/lib/ids';
 import { Product, StoreRef } from '@/lib/models';
 import { sepaEnabled } from '@/lib/sepa';
+import { mapStops, MapStop } from '@/lib/route';
 import { getRecentStorePrices, useStore } from '@/lib/store';
+import BranchMap from './BranchMap';
 import LocationBar from './LocationBar';
 import NearbyStores, { NearbyLine } from './NearbyStores';
 import { useNearbyPrices } from './useNearby';
@@ -20,6 +22,7 @@ export default function NearbyStoresCard({ product }: { product: Product }) {
   const nearby = useNearbyPrices([product.ean]);
   const [now] = useState(() => new Date());
   const [added, setAdded] = useState<string | null>(null);
+  const [mapStop, setMapStop] = useState<MapStop[] | null>(null);
 
   if (!sepaEnabled || !product.ean) return null;
 
@@ -49,6 +52,7 @@ export default function NearbyStoresCard({ product }: { product: Product }) {
                 approx={nearby.approx}
                 ownPrices={ownPrices}
                 onChoose={add}
+                onMap={store => setMapStop(mapStops([store]))}
               />
             </div>
           )}
@@ -59,6 +63,8 @@ export default function NearbyStoresCard({ product }: { product: Product }) {
       <div role="status">
         {added && <p className="mt-3 text-sm font-semibold text-green-800">En el carrito, en {added}</p>}
       </div>
+
+      <BranchMap stops={mapStop} onClose={() => setMapStop(null)} />
     </section>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { Map as MapIcon } from 'lucide-react';
 import { useState } from 'react';
 import { formatDayMonth, formatIsoDate, formatMoney } from '@/lib/format';
 import { formatDistance } from '@/lib/geo';
@@ -57,6 +58,8 @@ interface Props {
   action?: string;
   /** Comercio actual del ítem (storeKey): su fila dice "Actual" en lugar del botón */
   currentKey?: string;
+  /** Ver un comercio en el mapa; sin esto (o si el comercio no tiene coordenadas) la fila no lleva el botón */
+  onMap?: (store: StoreRef) => void;
 }
 
 interface Row {
@@ -75,7 +78,7 @@ interface Row {
  * de los cercanos (empatados, todos) se marca con fondo y con texto, no solo con color. En 375 px cada fila apila
  * nombre y dirección arriba y precio y botón abajo.
  */
-export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], onChoose, action = 'Agregar', currentKey }: Props) {
+export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], onChoose, action = 'Agregar', currentKey, onMap }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [today] = useState(() => new Date());
   const lowest = prices[0]?.price;
@@ -125,17 +128,29 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
                     <span className="rounded-full bg-green-100 px-2 text-xs font-semibold text-green-800">Más barato</span>
                   )}
                 </span>
-                {current ? (
-                  <span className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-primary-700">Actual</span>
-                ) : onChoose && (
-                  <button
-                    type="button"
-                    onClick={() => onChoose(row.store, row.price)}
-                    aria-label={`${action} ${productName} en ${row.store.name}`}
-                    className="btn-primary shrink-0 px-4 text-sm">
-                    {action}
-                  </button>
-                )}
+                <span className="flex shrink-0 items-center gap-2">
+                  {onMap && row.store.lat !== undefined && row.store.lng !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => onMap(row.store)}
+                      aria-label={`Ver ${row.store.name} en el mapa`}
+                      className="btn-secondary inline-flex min-w-11 items-center justify-center gap-1.5 px-2.5 text-sm sm:px-3">
+                      <MapIcon aria-hidden="true" className="size-5" />
+                      <span aria-hidden="true" className="hidden sm:inline">Mapa</span>
+                    </button>
+                  )}
+                  {current ? (
+                    <span className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-primary-700">Actual</span>
+                  ) : onChoose && (
+                    <button
+                      type="button"
+                      onClick={() => onChoose(row.store, row.price)}
+                      aria-label={`${action} ${productName} en ${row.store.name}`}
+                      className="btn-primary shrink-0 px-4 text-sm">
+                      {action}
+                    </button>
+                  )}
+                </span>
               </div>
             </li>
           );

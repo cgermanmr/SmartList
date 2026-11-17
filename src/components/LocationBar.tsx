@@ -27,8 +27,8 @@ function storeCount(count: number): string {
 
 /**
  * Barra de ubicación: "Usar mi ubicación" (el permiso se pide recién al tocarlo) o elegir la localidad a mano; con
- * ubicación, el radio y "Cambiar" / "Quitar". La ubicación se guarda en el dispositivo y nunca se manda a un
- * servidor. Sin Supabase no se muestra.
+ * ubicación, el radio y "Cambiar" / "Quitar". La ubicación se guarda en el dispositivo y no se manda a ningún
+ * servidor (salvo la ruta del mapa de un comercio, que lo avisa). Sin Supabase no se muestra.
  */
 export default function LocationBar() {
   const location = useStore(s => s.location);

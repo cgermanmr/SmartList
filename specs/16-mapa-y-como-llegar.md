@@ -1,6 +1,6 @@
 # SPEC 16 — Mapa del comercio y cómo llegar
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 19](19-restyling-base-y-navegacion.md)
 > **Fecha:** 2026-11-17
 > **Objetivo:** Abrir un mapa con la ubicación propia, la del comercio y la ruta marcada para llegar, desde la lista de comercios cercanos y desde el carrito.
@@ -168,23 +168,23 @@ las filas no llevan el botón.
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] Con ubicación de GPS, "Mapa" en una fila de comercio abre el modal con mi ubicación, el comercio y la ruta por las calles, con distancia y tiempo.
-- [ ] Cambiar entre "A pie" y "En auto" actualiza la ruta y el tiempo; volver al modo anterior no hace otra consulta (pestaña Network).
-- [ ] Si el servicio de rutas no responde, se ve la línea recta punteada y la distancia en línea recta, sin error.
-- [ ] Con ubicación de GPS se ve el aviso "Para marcar la ruta, tu ubicación se envía a OpenStreetMap."
-- [ ] "Abrir en Google Maps" abre la ruta hacia el comercio; la URL no contiene mi latitud ni mi longitud.
-- [ ] Con una localidad elegida a mano (o sin ubicación), el mapa muestra solo el comercio centrado, sin ruta y sin consultas a `routing.openstreetmap.de`, con "Usar mi ubicación" y el botón de Google Maps.
-- [ ] Al aceptar "Usar mi ubicación" en el mapa aparecen el marcador "Vos" y la ruta, y al cerrar, la barra de ubicación de Buscar dice "Mi ubicación".
-- [ ] Al denegar el permiso se lee "Sin permiso para usar tu ubicación." y el mapa sigue con el comercio.
-- [ ] En el carrito con 3 comercios del SEPA, "Ver recorrido" muestra los 3 marcadores numerados, la lista de paradas y la ruta que los une en orden.
-- [ ] Un comercio cargado a mano (sin coordenadas) no tiene botón "Mapa" y se informa en el recorrido; con un solo comercio con coordenadas no aparece "Ver recorrido".
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] Con ubicación de GPS, "Mapa" en una fila de comercio abre el modal con mi ubicación, el comercio y la ruta por las calles, con distancia y tiempo.
+- [x] Cambiar entre "A pie" y "En auto" actualiza la ruta y el tiempo; volver al modo anterior no hace otra consulta (pestaña Network).
+- [x] Si el servicio de rutas no responde, se ve la línea recta punteada y la distancia en línea recta, sin error.
+- [x] Con ubicación de GPS se ve el aviso "Para marcar la ruta, tu ubicación se envía a OpenStreetMap."
+- [x] "Abrir en Google Maps" abre la ruta hacia el comercio; la URL no contiene mi latitud ni mi longitud.
+- [x] Con una localidad elegida a mano (o sin ubicación), el mapa muestra solo el comercio centrado, sin ruta y sin consultas a `routing.openstreetmap.de`, con "Usar mi ubicación" y el botón de Google Maps.
+- [x] Al aceptar "Usar mi ubicación" en el mapa aparecen el marcador "Vos" y la ruta, y al cerrar, la barra de ubicación de Buscar dice "Mi ubicación".
+- [x] Al denegar el permiso se lee "Sin permiso para usar tu ubicación." y el mapa sigue con el comercio.
+- [x] En el carrito con 3 comercios del SEPA, "Ver recorrido" muestra los 3 marcadores numerados, la lista de paradas y la ruta que los une en orden.
+- [x] Un comercio cargado a mano (sin coordenadas) no tiene botón "Mapa" y se informa en el recorrido; con un solo comercio con coordenadas no aparece "Ver recorrido".
 - [ ] Las filas de "Cerca tuyo" del diálogo "Cambiar comercio" no tienen botón "Mapa".
-- [ ] Leaflet no se descarga hasta abrir un mapa (pestaña Network).
-- [ ] Cerrar con Escape devuelve el foco al botón "Mapa"; abrir y cerrar 5 veces no deja mapas duplicados ni errores en consola.
-- [ ] Con el mapa abierto, navegar a otra pestaña de la app y volver: la página responde (el modal quedó cerrado).
-- [ ] Sin conexión, el modal muestra nombre, dirección y el botón de Google Maps.
-- [ ] La atribución de OpenStreetMap está visible.
+- [x] Leaflet no se descarga hasta abrir un mapa (pestaña Network).
+- [x] Cerrar con Escape devuelve el foco al botón "Mapa"; abrir y cerrar 5 veces no deja mapas duplicados ni errores en consola.
+- [x] Con el mapa abierto, navegar a otra pestaña de la app y volver: la página responde (el modal quedó cerrado).
+- [x] Sin conexión, el modal muestra nombre, dirección y el botón de Google Maps.
+- [x] La atribución de OpenStreetMap está visible.
 - [ ] En 375 px el modal ocupa la pantalla, el botón "Mapa" mide al menos 44 px y no hay scroll horizontal.
 
 ## Decisiones
