@@ -15,6 +15,7 @@ export interface StoreRef {
   barrio?: string;     // barrio o localidad
   address?: string;    // "Av Rivadavia 5000"
   sepaId?: string;     // id de sepa_sucursales ('10-1-123') si viene del SEPA (spec 15)
+  chain?: string;      // nombre de la cadena (bandera) si viene del SEPA, p. ej. "Coto" (spec 03)
   lat?: number;
   lng?: number;
 }

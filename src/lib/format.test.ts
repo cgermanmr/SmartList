@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatIsoDate, formatMoney, formatNumber, formatPct, formatPctChange, formatSize, initialOf } from './format';
+import {
+  formatDateTime, formatIsoDate, formatMoney, formatMonth, formatNumber, formatPct, formatPctChange, formatSize, initialOf,
+  monthName, shortMonth,
+} from './format';
 
 describe('format', () => {
   it('usa separadores es-AR', () => {
@@ -39,5 +42,14 @@ describe('format', () => {
 
   it('fecha y hora dd/MM/yyyy HH:mm', () => {
     expect(formatDateTime(new Date(2026, 9, 28, 9, 5))).toBe('28/10/2026 09:05');
+  });
+
+  it('meses: nombre, mes y año, nombre corto', () => {
+    expect(formatMonth('2026-11')).toBe('Noviembre 2026');
+    expect(formatMonth('2025-01')).toBe('Enero 2025');
+    expect(monthName('2026-10')).toBe('octubre');
+    expect(monthName('2026-12')).toBe('diciembre');
+    expect(shortMonth('2026-09')).toBe('sep');
+    expect(shortMonth('2026-06')).toBe('jun');
   });
 });

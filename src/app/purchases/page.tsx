@@ -1,12 +1,16 @@
 'use client';
 
-import { ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, ShoppingCart } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 import ProductImage from '@/components/ProductImage';
+import SpendingVariation from '@/components/SpendingVariation';
 import { useSepaImages } from '@/components/useSepaImages';
-import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
+import { formatDateTime, formatMoney, formatNumber, monthName } from '@/lib/format';
 import { CartItem, Purchase } from '@/lib/models';
+import { paymentLabel } from '@/lib/payment-methods';
+import { monthKey, monthSummary, monthVariation, previousMonth } from '@/lib/spending';
 import { getPriceStats, useStore } from '@/lib/store';
 
 export default function PurchasesPage() {
@@ -18,6 +22,8 @@ export default function PurchasesPage() {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pendingPurchase, setPendingPurchase] = useState<Purchase | null>(null);
+  // El mes actual se toma al montar la página (como el `now` de Buscar)
+  const [currentMonth] = useState(() => monthKey(new Date()));
 
   // Imágenes (spec 17): solo las de la compra expandida, por el EAN del producto propio de cada ítem.
   // Si el producto se borró no hay EAN: queda el marcador con la inicial del nombre guardado en la compra
@@ -59,6 +65,8 @@ export default function PurchasesPage() {
     <div>
       <h1 className="text-3xl font-bold mb-6">Historial de Compras</h1>
 
+      {purchases.length > 0 && <SpendingCard purchases={purchases} month={currentMonth} />}
+
       {purchases.length === 0 && (
         <div className="text-center py-12">
           <p className="text-gray-500 text-lg mb-2">No hay compras registradas</p>
@@ -87,7 +95,7 @@ export default function PurchasesPage() {
                       {purchase.store && (
                         <span className="ml-1">· {purchase.store}{purchase.barrio && <span>, {purchase.barrio}</span>}</span>
                       )}
-                      {purchase.paymentMethod && <span className="ml-1">· {purchase.paymentMethod}</span>}
+                      {purchase.paymentMethod && <span className="ml-1">· {paymentLabel(purchase.paymentMethod)}</span>}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
@@ -149,6 +157,36 @@ export default function PurchasesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Tarjeta que lleva a /gastos: total del mes actual y variación contra el mes anterior (spec 03) */
+function SpendingCard({ purchases, month }: { purchases: Purchase[]; month: string }) {
+  const summary = monthSummary(purchases, month);
+  const previous = previousMonth(month);
+  const name = monthName(month);
+
+  let detail: ReactNode = null;
+  if (summary.count === 0) {
+    detail = <span className="text-gray-500">Todavía no compraste este mes</span>;
+  } else if (monthSummary(purchases, previous).count > 0) {
+    detail = <SpendingVariation value={monthVariation(purchases, month)} suffix={` que ${monthName(previous)}`} />;
+  }
+
+  return (
+    <Link
+      href="/gastos"
+      className="card mb-4 flex min-h-11 items-center gap-3 p-4 transition-colors hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500">
+      <div className="min-w-0 flex-1">
+        <p className="font-bold text-gray-900 wrap-anywhere">
+          {name.charAt(0).toUpperCase()}{name.slice(1)}: ${formatMoney(summary.total)}
+        </p>
+        {detail && <p className="text-sm">{detail}</p>}
+      </div>
+      <span className="flex shrink-0 items-center gap-1 text-sm font-semibold text-primary-700">
+        Ver gastos <ChevronRight aria-hidden="true" className="size-5" />
+      </span>
+    </Link>
   );
 }
 

@@ -5,17 +5,22 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CartBadge from '@/components/CartBadge';
 
-const LINKS: { href: string; label: string; icon: LucideIcon }[] = [
+// `match`: otras rutas en las que la pestaña queda activa (Gastos se abre desde Historial, spec 03)
+const LINKS: { href: string; label: string; icon: LucideIcon; match?: string[] }[] = [
   { href: '/',            label: 'Buscar',      icon: Search       },
   { href: '/upload',      label: 'Cargar',      icon: CirclePlus   },
   { href: '/cart',        label: 'Carrito',     icon: ShoppingCart },
-  { href: '/purchases',   label: 'Historial',   icon: ReceiptText  },
+  { href: '/purchases',   label: 'Historial',   icon: ReceiptText, match: ['/gastos'] },
   { href: '/calculadora', label: 'Calculadora', icon: Calculator   },
 ];
 
-function isActive(href: string, pathname: string | null) {
-  if (pathname === null) return false;
+function matchesRoute(href: string, pathname: string) {
   return href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
+}
+
+function isActive(link: { href: string; match?: string[] }, pathname: string | null) {
+  if (pathname === null) return false;
+  return [link.href, ...(link.match ?? [])].some(href => matchesRoute(href, pathname));
 }
 
 /**
@@ -29,7 +34,7 @@ export function NavLinks({ pathname }: { pathname: string | null }) {
       className="order-last z-40 border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom)] md:order-none md:border-t-0 md:border-b md:pb-0">
       <div className="mx-auto flex max-w-6xl md:gap-2 md:px-4">
         {LINKS.map(link => {
-          const active = isActive(link.href, pathname);
+          const active = isActive(link, pathname);
           const Icon = link.icon;
           return (
             <Link

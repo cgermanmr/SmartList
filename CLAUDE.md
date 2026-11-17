@@ -90,18 +90,22 @@ src/
 │   │                           #   agregar producto; ?tab=producto&ean=… abre agregar producto completado
 │   ├── product/[id]/           # page.tsx (Suspense) + ProductDetail.tsx (useParams); vincular con el catálogo
 │   ├── cart/page.tsx           # Carrito y checkout con medio de pago
-│   ├── purchases/page.tsx      # Historial de compras, Repetir compra
+│   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
+│   ├── gastos/page.tsx         # Panel de gasto mensual: selector de mes, resumen, gráfico y desgloses
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
 │   └── not-found.tsx           # Redirige a /
 ├── components/
-│   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname;
-│   │                           #   NavLinks sin activo como fallback
+│   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname (y las rutas
+│   │                           #   de `match`: Historial en /gastos); NavLinks sin activo como fallback
 │   ├── CartBadge.tsx           # Contador del carrito sobre el ícono de su pestaña
 │   ├── CartSummary.tsx         # Total del carrito en el header, link a /cart
 │   ├── Logo.tsx                # Changuito de la marca en SVG (el mismo de icon.svg)
 │   ├── StoreHydrator.tsx       # Carga localStorage en el cliente antes de mostrar las páginas
 │   ├── NumberInput.tsx         # Input numérico sobre un valor del store (conserva el texto mientras se edita)
 │   ├── PriceChart.tsx          # Gráfico de tendencia en SVG propio
+│   ├── SpendingChart.tsx       # Gasto de 6 meses en barras de HTML; cada mes con compras es un botón que lo elige
+│   ├── SpendingBreakdown.tsx   # Desglose del mes (por comercio o medio de pago): monto, % y barra horizontal
+│   ├── SpendingVariation.tsx   # "X % más" (rojo) / "X % menos" (verde) / "Igual" (azul) / "—"
 │   ├── useSepaSearch.ts        # Hook: consulta al catálogo con espera de 300 ms; estado idle/loading/done/error
 │   ├── SepaResults.tsx         # Mensajes y lista de resultados del catálogo (cada fila la arma quien lo usa)
 │   ├── SepaSearch.tsx          # Buscador "Buscar en Precios Claros" que devuelve el producto elegido
@@ -128,7 +132,11 @@ src/
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
-    ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR)
+    ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR);
+    │                           #   meses con nombres propios: formatMonth, monthName, shortMonth
+    ├── payment-methods.ts      # PAYMENT_METHODS (sin íconos), NO_PAYMENT y paymentLabel (id o label → label)
+    ├── spending.ts             # Gasto mensual desde Purchase: monthKey, availableMonths, monthSummary,
+    │                           #   lastMonthsTotals, monthVariation, byStore (por cadena o comercio), byPayment
     ├── ids.ts                  # newId() / uniqueId()
     ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
     ├── route.ts                # Ruta del mapa: getRoute (OSRM, caché y 8 s de límite), parseOsrmRoute, googleMapsUrl,
@@ -202,7 +210,7 @@ src/
   (`branchLocalities`) usa el **barrio** de la sucursal o, si no tiene, la localidad (la columna localidad sola no
   sirve: en CABA casi todo dice "Capital Federal"), y el punto es la **mediana** de las coordenadas; con una
   localidad las distancias dicen "aprox.". El comercio del carrito sale de `storeRefFromBranch`
-  (`"<cadena> — <sucursal>"`, `sepaId`, dirección, barrio y coordenadas)
+  (`"<cadena> — <sucursal>"`, `sepaId`, `chain` con el nombre de la cadena, dirección, barrio y coordenadas)
 - **Mapa y ruta** ([SPEC 16](specs/16-mapa-y-como-llegar.md)) — `BranchMap` carga Leaflet y su CSS con `import()`
   dentro de un efecto, la primera vez que se abre un mapa (chunks aparte: no entran en el JS ni en el CSS inicial,
   ni se ejecutan en el prerender). El mapa se crea al montarse el contenido del modal y se destruye
@@ -279,6 +287,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/upload` | `app/upload/page.tsx` | Cargar | Cargar precio o producto nuevo; `?tab=producto&ean=…` |
 | `/cart` | `app/cart/page.tsx` | Carrito | Carrito y checkout |
 | `/purchases` | `app/purchases/page.tsx` | Historial | Historial de compras |
+| `/gastos` | `app/gastos/page.tsx` | Historial | Panel de gasto mensual (se abre desde Historial) |
 | `/calculadora` | `app/calculadora/page.tsx` | Calculadora | Comparar presentaciones por precio unitario |
 | `/product/[id]` | `app/product/[id]/page.tsx` | — | Detalle del producto |
 | otra | `app/not-found.tsx` | — | Redirige a `/` |
@@ -313,6 +322,7 @@ interface StoreRef {   // comercio de un ítem del carrito; viaja dentro del ít
   barrio?: string;
   address?: string;
   sepaId?: string;     // id de sepa_sucursales si viene del SEPA (spec 15)
+  chain?: string;      // nombre de la cadena si viene del SEPA (spec 03); las compras de antes no lo tienen
   lat?: number;
   lng?: number;
 }
@@ -334,7 +344,7 @@ interface Purchase {
   total: number;
   barrio?: string;   // solo si se conoce
   store?: string;    // una compra por comercio
-  paymentMethod?: string;
+  paymentMethod?: string;  // label ('Efectivo'); la versión Angular guardaba el id ('efectivo'): leer con paymentLabel
 }
 ```
 
@@ -521,20 +531,45 @@ interface CalculatorState {
 - Ítems con EAN: línea "Ref. $X · 8 % arriba" (o "abajo", "en línea") con los mismos colores, comparando el precio del
   ítem contra la referencia SEPA; una sola consulta para todo el carrito
 - **Checkout por comercio**: "Comprar en <comercio>" ("Registrar compra" en "Sin comercio") abre el medio de pago de
-  ese grupo (un grupo a la vez): efectivo, débito, crédito 1 cuota, crédito en cuotas, transferencia/QR, cheque. En
+  ese grupo (un grupo a la vez): efectivo, débito, crédito 1 cuota, crédito en cuotas, transferencia/QR, cheque
+  (`PAYMENT_METHODS` de `lib/payment-methods.ts`; los íconos, en el carrito); se guarda el label. En
   "Sin comercio" se pueden escribir barrio y comercio, los dos opcionales
 - Al confirmar un grupo: guarda **un** `Purchase` con sus ítems (`store` = comercio, `barrio` solo si se conoce),
   **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no se conoce) y saca del
   carrito solo esos ítems (`removeCartItems`); los demás grupos quedan
 
 ### Historial de compras (`/purchases`)
-- Lista expandible de compras (`aria-expanded` / `aria-controls`)
+- **Tarjeta del gasto del mes** (solo con compras), link a `/gastos`: "Noviembre: $5.000,00" y debajo la variación
+  contra el mes anterior ("54,5 % menos que octubre" en verde, "X % más…" en rojo, "Igual que…" en azul), "Todavía
+  no compraste este mes" o nada si el mes anterior no tiene compras; "Ver gastos" con chevron
+- Lista expandible de compras (`aria-expanded` / `aria-controls`); el medio de pago se muestra con `paymentLabel`
+  (una compra vieja con `'efectivo'` dice "Efectivo")
 - Por ítem: imagen de 40 px (por el EAN del producto propio; si el producto ya no existe, la inicial del nombre
   guardado) y variación % del precio pagado vs último precio registrado
 - "Repetir" (botón hermano del de expandir, con `aria-label` "Repetir compra del dd/MM/yyyy"): si el carrito tiene
   ítems abre un modal para **combinar o reemplazar** (`loadPurchaseToCart(purchase, merge)`); usa el precio actual
   registrado de cada producto y navega a `/cart`. Los ítems vuelven al comercio de la compra (el `StoreRef` guardado
   en el ítem o `{ name: store, barrio }`); al combinar, un ítem que ya estaba conserva su comercio
+
+### Gastos (`/gastos`, [SPEC 03](specs/03-panel-gasto-mensual.md))
+- No está en la barra de navegación: se abre desde la tarjeta de Historial, que queda activa (`match` en `NavBar`).
+  Link "Historial" con flecha para volver
+- Todo se calcula desde `purchases` (`lib/spending.ts`), sin datos nuevos. El mes de una compra es el de su fecha en
+  **hora local** (una compra del 31/10 a las 22:00 cuenta en octubre)
+- **Selector de mes** (`ChevronLeft` · "Noviembre 2026" · `ChevronRight`, botones de 44 px con `aria-label`): recorre
+  los meses con compras y el actual; abre en el mes actual (estado local, se conserva con `<Activity>`)
+- **Resumen** en 4 tarjetas: total del mes, compras, ticket promedio y "Vs. <mes anterior>" con la variación
+  (`monthVariation`; "—" si alguno de los dos meses no tiene compras; "Igual" con menos de 0,05 %)
+- **Gráfico** (`SpendingChart`): los 6 meses calendario que terminan en el elegido, en barras de HTML; el elegido en
+  `primary-700`, los demás en `primary-200`; cada mes con compras es un botón (`aria-pressed`, `aria-label` "Septiembre
+  2026: $6.000,00") que lo elige; un mes sin compras muestra solo la línea base
+- **Desgloses** (`SpendingBreakdown`): "Por comercio" y "Por medio de pago", de mayor a menor monto, con % y barra.
+  Por comercio (`byStore`): las sucursales del SEPA se suman por **cadena** (bandera de `sepaId`, nombre de
+  `StoreRef.chain` o, en compras de antes, el texto anterior a `' — '`); los propios por nombre sin mayúsculas ni
+  espacios de más; sin comercio, "Sin comercio". Por medio de pago (`byPayment`): `paymentLabel` suma el id viejo y
+  el label; sin medio, "Sin especificar"
+- Mes actual sin compras: $0,00, 0 compras, "—" y "Todavía no compraste este mes" con "Ir al carrito" en lugar de
+  los desgloses. Sin ninguna compra: "Todavía no hay compras" con "Ir al carrito", sin selector
 
 ### Calculadora de precio unitario (`/calculadora`)
 - Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
@@ -832,6 +867,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Restyling: paleta berenjena y amarillo, Rubik + Nunito Sans, íconos de lucide y barra de navegación inferior (spec 19)
 - [x] Mapa del comercio con la ruta para llegar y recorrido del carrito (spec 16)
 - [x] Imágenes de productos por EAN (Open Food Facts y portal Precios Claros) con marcador de inicial (spec 17)
+- [x] Panel de gasto mensual por cadena o comercio y por medio de pago, desde Historial (spec 03)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

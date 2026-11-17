@@ -601,7 +601,7 @@ export function branchLabel(branch: Pick<SepaBranch, 'chain' | 'name'>): string 
 
 /** StoreRef del carrito a partir de una sucursal; el barrio es el de la sucursal o, si no tiene, su localidad */
 export function storeRefFromBranch(branch: SepaBranch): StoreRef {
-  const store: StoreRef = { name: branchLabel(branch), sepaId: branch.id };
+  const store: StoreRef = { name: branchLabel(branch), sepaId: branch.id, chain: branch.chain };
   const barrio = branch.barrio ?? branch.localidad;
   if (barrio) store.barrio = barrio;
   if (branch.address) store.address = branch.address;

@@ -69,3 +69,31 @@ export function formatIsoDate(iso: string): string {
   const [year, month, day] = iso.slice(0, 10).split('-');
   return `${day}/${month}/${year}`;
 }
+
+// ── Meses ('YYYY-MM') ─────────────────────────────────────
+// Nombres propios en lugar de Intl: el nombre corto de Intl cambia según la versión de ICU ('sept', 'sep.')
+
+export const MONTH_NAMES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+function monthIndex(month: string): number {
+  return Number(month.slice(5, 7)) - 1;
+}
+
+/** Nombre del mes en minúscula: '2026-10' → 'octubre' */
+export function monthName(month: string): string {
+  return MONTH_NAMES[monthIndex(month)] ?? month;
+}
+
+/** Mes y año: '2026-11' → 'Noviembre 2026' */
+export function formatMonth(month: string): string {
+  const name = monthName(month);
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${month.slice(0, 4)}`;
+}
+
+/** Nombre corto del mes: '2026-09' → 'sep' */
+export function shortMonth(month: string): string {
+  return monthName(month).slice(0, 3);
+}

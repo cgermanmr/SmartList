@@ -6,8 +6,6 @@ enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se imple
 
 ## Análisis de gastos
 
-- **Panel de gasto mensual**: total gastado por mes, por categoría y por medio de pago, a partir de `Purchase`.
-  → [spec 03](../specs/03-panel-gasto-mensual.md)
 - **Inflación personal**: variación de la canasta propia entre compras o entre meses (mismos productos, mismas
   cantidades), para comparar contra la inflación oficial. → [spec 04](../specs/04-inflacion-personal.md)
 - Exportar historial de compras y precios a CSV. → [spec 05](../specs/05-exportar-csv.md)

@@ -1,6 +1,6 @@
 # SPEC 03 — Panel de gasto mensual
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 19](19-restyling-base-y-navegacion.md)
 > **Fecha:** 2026-11-17
 > **Objetivo:** Agregar una página `/gastos`, a la que se llega desde Historial, que muestre a partir de las compras cuánto se gastó por mes, cómo se compara con el mes anterior y cómo se reparte por cadena o comercio y por medio de pago.
@@ -226,6 +226,7 @@ Usan un arreglo propio `MONTH_NAMES` en español, no `Intl`: el nombre corto de 
    - Verificar: el checkout muestra los 6 medios con sus íconos y guarda el label como antes; `npm test` pasa.
 2. **Cadena en el comercio.**
    - Agregar `chain?` a `StoreRef` y completarlo en `storeRefFromBranch`, con su caso en `sepa.test.ts`.
+     *Al implementar:* el caso quedó en `sepa-nearby.test.ts`, donde ya estaban los tests de `storeRefFromBranch`.
    - Verificar: al agregar un producto en un comercio cercano, el ítem del carrito guardado en localStorage tiene `chain`.
 3. **Meses en `format.ts`.**
    - Agregar `MONTH_NAMES`, `formatMonth`, `monthName` y `shortMonth`, con sus tests en `format.test.ts`.
@@ -242,6 +243,8 @@ Usan un arreglo propio `MONTH_NAMES` en español, no `Intl`: el nombre corto de 
 6. **Selector y resumen.** Agregar el selector de mes y las 4 tarjetas con `monthSummary` y `monthVariation`.
 7. **Gráfico.** Crear `SpendingChart.tsx` con `lastMonthsTotals(..., 6)` y la selección al tocar.
 8. **Desgloses.** Crear `SpendingBreakdown.tsx` y usarlo con `byStore` y `byPayment`; agregar el mensaje del mes sin compras.
+   *Al implementar:* el texto de la variación ("X % más" / "X % menos" / "Igual" / "—", con su color) quedó en
+   `src/components/SpendingVariation.tsx`, que usan `/gastos` y la tarjeta de Historial.
 9. **Tarjeta en Historial.** Agregarla arriba de la lista de `/purchases`.
 10. **Documentación.**
     - Actualizar `CLAUDE.md`: árbol (`gastos/`, `payment-methods.ts`, `spending.ts`, los dos componentes), tabla de
@@ -280,35 +283,35 @@ Totales: septiembre $6.000 (1 compra); octubre $11.000 (4 compras: 2.400 + 1.000
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` terminan sin errores ni warnings.
-- [ ] La barra de navegación sigue con 5 pestañas. En `/gastos`, Historial tiene `aria-current="page"`.
-- [ ] Sin compras, Historial no muestra la tarjeta y `/gastos` muestra "Todavía no hay compras" con el link a
+- [x] `npm run lint`, `npm test` y `npm run build` terminan sin errores ni warnings.
+- [x] La barra de navegación sigue con 5 pestañas. En `/gastos`, Historial tiene `aria-current="page"`.
+- [x] Sin compras, Historial no muestra la tarjeta y `/gastos` muestra "Todavía no hay compras" con el link a
       `/cart`, sin selector ni errores en consola.
-- [ ] Con los datos de prueba, la tarjeta de Historial dice "Noviembre: $5.000,00" y "54,5 % menos que octubre"
+- [x] Con los datos de prueba, la tarjeta de Historial dice "Noviembre: $5.000,00" y "54,5 % menos que octubre"
       en verde, y lleva a `/gastos`.
-- [ ] `/gastos` abre en **Noviembre 2026**.
-- [ ] ◀ recorre Octubre 2026 y Septiembre 2026. ◀ está deshabilitado en Septiembre y ▶ en Noviembre.
-- [ ] Noviembre: total $5.000,00, 1 compra, ticket promedio $5.000,00, "Vs. octubre" 54,5 % menos en verde.
-- [ ] Octubre: total $11.000,00, 4 compras, ticket promedio $2.750,00, "Vs. septiembre" 83,3 % más en rojo. La
+- [x] `/gastos` abre en **Noviembre 2026**.
+- [x] ◀ recorre Octubre 2026 y Septiembre 2026. ◀ está deshabilitado en Septiembre y ▶ en Noviembre.
+- [x] Noviembre: total $5.000,00, 1 compra, ticket promedio $5.000,00, "Vs. octubre" 54,5 % menos en verde.
+- [x] Octubre: total $11.000,00, 4 compras, ticket promedio $2.750,00, "Vs. septiembre" 83,3 % más en rojo. La
       compra del 31/10 22:00 cuenta en octubre, no en noviembre.
-- [ ] Septiembre: total $6.000,00, 1 compra, ticket promedio $6.000,00, "Vs. agosto" "—".
-- [ ] Con Noviembre elegido, el gráfico muestra jun–nov: jun, jul y ago con solo la línea base, sep y oct en
+- [x] Septiembre: total $6.000,00, 1 compra, ticket promedio $6.000,00, "Vs. agosto" "—".
+- [x] Con Noviembre elegido, el gráfico muestra jun–nov: jun, jul y ago con solo la línea base, sep y oct en
       `primary-200` y nov en `primary-700`. Tocar la barra de sep selecciona Septiembre 2026.
-- [ ] Por comercio en Octubre: Verdulería Juan $7.600,00 (69,1 %), Coto $2.400,00 (21,8 %), Sin comercio $1.000,00 (9,1 %).
-- [ ] Por comercio en Noviembre: Coto $5.000,00 (100 %).
-- [ ] Por comercio en Septiembre: Verdulería Juan $6.000,00 (100 %).
-- [ ] Por medio de pago en Octubre: Transferencia / QR $7.600,00 (69,1 %), Efectivo $3.400,00 (30,9 %).
-- [ ] Por medio de pago en Noviembre: Débito $5.000,00 (100 %). En Septiembre: Sin especificar $6.000,00 (100 %).
-- [ ] En Historial, la compra `"5"` muestra "Efectivo" y la `"2"` muestra "Transferencia / QR".
-- [ ] Con compras solo en meses anteriores, `/gastos` abre en el mes actual con $0,00, 0 compras, "—" en ticket y
+- [x] Por comercio en Octubre: Verdulería Juan $7.600,00 (69,1 %), Coto $2.400,00 (21,8 %), Sin comercio $1.000,00 (9,1 %).
+- [x] Por comercio en Noviembre: Coto $5.000,00 (100 %).
+- [x] Por comercio en Septiembre: Verdulería Juan $6.000,00 (100 %).
+- [x] Por medio de pago en Octubre: Transferencia / QR $7.600,00 (69,1 %), Efectivo $3.400,00 (30,9 %).
+- [x] Por medio de pago en Noviembre: Débito $5.000,00 (100 %). En Septiembre: Sin especificar $6.000,00 (100 %).
+- [x] En Historial, la compra `"5"` muestra "Efectivo" y la `"2"` muestra "Transferencia / QR".
+- [x] Con compras solo en meses anteriores, `/gastos` abre en el mes actual con $0,00, 0 compras, "—" en ticket y
       variación, y "Todavía no compraste este mes" con el link a `/cart`. La tarjeta de Historial dice
       "Todavía no compraste este mes".
-- [ ] Los tests de `spending.test.ts` cubren: compra de las 22:00 del último día del mes, cadena con `chain`, cadena
+- [x] Los tests de `spending.test.ts` cubren: compra de las 22:00 del último día del mes, cadena con `chain`, cadena
       sin `chain` (texto antes de `' — '`), comercio con mayúsculas y espacios distintos, compra sin comercio, id y
       label del mismo medio de pago, compra sin medio de pago, y suma de cada desglose igual al total del mes.
-- [ ] Al agregar un producto en un comercio cercano y comprarlo, la `Purchase` guardada tiene `chain` en sus ítems.
-- [ ] En 375 px, `/gastos` y la tarjeta de Historial no tienen scroll horizontal y las columnas del gráfico se pueden tocar.
-- [ ] El checkout del carrito sigue mostrando los 6 medios de pago con sus íconos y guarda el label.
+- [x] Al agregar un producto en un comercio cercano y comprarlo, la `Purchase` guardada tiene `chain` en sus ítems.
+- [x] En 375 px, `/gastos` y la tarjeta de Historial no tienen scroll horizontal y las columnas del gráfico se pueden tocar.
+- [x] El checkout del carrito sigue mostrando los 6 medios de pago con sus íconos y guarda el label.
 
 ## Decisiones
 

@@ -280,13 +280,19 @@ describe('branchLabel', () => {
 describe('storeRefFromBranch', () => {
   it('arma el comercio del carrito con el id del SEPA y las coordenadas', () => {
     expect(storeRefFromBranch(branch('10-1-219', { chain: 'Hipermercado Carrefour', name: 'Caballito' }))).toEqual({
-      name: 'Hipermercado Carrefour — Caballito', sepaId: '10-1-219', barrio: 'Caballito', address: 'Av Rivadavia 5000',
-      lat: -34.61, lng: -58.44,
+      name: 'Hipermercado Carrefour — Caballito', sepaId: '10-1-219', chain: 'Hipermercado Carrefour',
+      barrio: 'Caballito', address: 'Av Rivadavia 5000', lat: -34.61, lng: -58.44,
     });
   });
 
   it('sin barrio usa la localidad; lo que falta no se guarda', () => {
     const store = storeRefFromBranch(branch('2-1-109', { barrio: null, localidad: 'General Pico', address: null, lat: null, lng: null }));
-    expect(store).toEqual({ name: 'Coto — Sucursal 2-1-109', sepaId: '2-1-109', barrio: 'General Pico' });
+    expect(store).toEqual({ name: 'Coto — Sucursal 2-1-109', sepaId: '2-1-109', chain: 'Coto', barrio: 'General Pico' });
+  });
+
+  it('guarda la cadena aunque el nombre de la sucursal ya la incluya (sin " — ")', () => {
+    const store = storeRefFromBranch(branch('15-1-5', { chain: 'Día', name: 'Día Palermo' }));
+    expect(store.name).toBe('Día Palermo');
+    expect(store.chain).toBe('Día');
   });
 });

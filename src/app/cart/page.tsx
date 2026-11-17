@@ -1,7 +1,8 @@
 'use client';
 
 import {
-  ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, Map as MapIcon, QrCode, Route as RouteIcon, X,
+  ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, LucideIcon, Map as MapIcon, QrCode,
+  Route as RouteIcon, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { ReactNode, useId, useState } from 'react';
@@ -15,6 +16,7 @@ import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
+import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { mapStops, MapStop, MAX_STOPS } from '@/lib/route';
 import { ReferenceSummary, referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
 import {
@@ -22,14 +24,14 @@ import {
 } from '@/lib/store';
 
 // ── Medios de pago ─────────────────────────────────────────
-const PAYMENT_METHODS = [
-  { id: 'efectivo',      label: 'Efectivo',           icon: Banknote     },
-  { id: 'debito',        label: 'Débito',             icon: CreditCard   },
-  { id: 'credito1',      label: 'Crédito (1 cuota)',  icon: CreditCard   },
-  { id: 'creditoN',      label: 'Crédito en cuotas',  icon: CalendarDays },
-  { id: 'transferencia', label: 'Transferencia / QR', icon: QrCode       },
-  { id: 'cheque',        label: 'Cheque',             icon: FilePen      },
-];
+const PAYMENT_ICONS: Record<string, LucideIcon> = {
+  efectivo:      Banknote,
+  debito:        CreditCard,
+  credito1:      CreditCard,
+  creditoN:      CalendarDays,
+  transferencia: QrCode,
+  cheque:        FilePen,
+};
 
 type PriceStatus = 'cheaper' | 'expensive' | 'same' | 'new';
 
@@ -473,20 +475,23 @@ function PaymentStep({
 
       <h3 id={headingId} className="font-bold mb-3">¿Con qué medio de pago?</h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-        {PAYMENT_METHODS.map(m => (
-          <button
-            key={m.id}
-            onClick={() => onSelectPayment(m.label)}
-            aria-pressed={selectedPayment === m.label}
-            className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
-              selectedPayment === m.label
-                ? 'border-primary-600 bg-primary-50 text-primary-700'
-                : 'border-gray-200 bg-white hover:border-primary-300 text-gray-700'
-            }`}>
-            <m.icon aria-hidden="true" className="size-6" />
-            {m.label}
-          </button>
-        ))}
+        {PAYMENT_METHODS.map(m => {
+          const Icon = PAYMENT_ICONS[m.id];
+          return (
+            <button
+              key={m.id}
+              onClick={() => onSelectPayment(m.label)}
+              aria-pressed={selectedPayment === m.label}
+              className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 text-sm font-medium transition-colors ${
+                selectedPayment === m.label
+                  ? 'border-primary-600 bg-primary-50 text-primary-700'
+                  : 'border-gray-200 bg-white hover:border-primary-300 text-gray-700'
+              }`}>
+              <Icon aria-hidden="true" className="size-6" />
+              {m.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex gap-3">
