@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { CartItem, StoreRef } from '@/lib/models';
 import { storeKey, useStore } from '@/lib/store';
+import NearbyStores from './NearbyStores';
+import { useNearbyPrices } from './useNearby';
 
 interface Props {
   /** Ítem al que se le cambia el comercio; null con el modal cerrado */
@@ -13,7 +15,8 @@ interface Props {
 }
 
 /**
- * Modal "Cambiar comercio" de un ítem del carrito: comercios ya usados, "Sin comercio" u otro comercio nuevo.
+ * Modal "Cambiar comercio" de un ítem del carrito: comercios ya usados, "Sin comercio", las sucursales cercanas con
+ * su precio (ítems con EAN, con ubicación) u otro comercio nuevo.
  * `<dialog>` nativo con showModal: deja inerte el resto de la página, cierra con Escape y devuelve el foco.
  * Se cierra también si la página se oculta con <Activity> (un modal oculto dejaría inerte la página nueva).
  */
@@ -56,9 +59,19 @@ function StoreForm({ item, stores, titleId, onClose }: FormProps) {
   const [barrio, setBarrio] = useState('');
   const [error, setError] = useState('');
   const currentKey = storeKey(item.store);
+  // Sucursales cercanas que tienen el producto: solo si tiene EAN y hay ubicación
+  const ean = useStore(s => s.products.find(p => p.id === item.productId)?.ean);
+  const nearby = useNearbyPrices([ean]);
+  const near = nearby.get(ean);
 
   function choose(store?: StoreRef) {
     if (storeKey(store) !== currentKey) setCartItemStore(item.id, store);
+    onClose();
+  }
+
+  /** Una sucursal cercana cambia el comercio y también el precio, que es el de esa sucursal */
+  function chooseNearby(store: StoreRef, price: number) {
+    setCartItemStore(item.id, store, price);
     onClose();
   }
 
@@ -111,6 +124,27 @@ function StoreForm({ item, stores, titleId, onClose }: FormProps) {
             );
           })}
         </ul>
+
+        {near !== undefined && (near === 'loading' || near.length > 0) && (
+          <section aria-labelledby="nearby-stores-title" className="mt-5">
+            <h3 id="nearby-stores-title" className="font-semibold mb-1">Cerca tuyo</h3>
+            {near === 'loading' ? (
+              <p role="status" className="text-sm text-gray-600">Buscando precios…</p>
+            ) : (
+              <>
+                <p className="mb-3 text-sm text-gray-600">Al elegir uno, el ítem pasa a ese comercio y a su precio.</p>
+                <NearbyStores
+                  productName={item.productName}
+                  prices={near}
+                  approx={nearby.approx}
+                  onChoose={chooseNearby}
+                  action="Elegir"
+                  currentKey={currentKey}
+                />
+              </>
+            )}
+          </section>
+        )}
 
         <form onSubmit={submit} noValidate className="mt-5">
           <h3 className="font-semibold mb-3">Otro comercio</h3>

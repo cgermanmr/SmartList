@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import NearbyStoresCard from '@/components/NearbyStoresCard';
 import PriceChart from '@/components/PriceChart';
 import ReferencePrice from '@/components/ReferencePrice';
 import SepaLinkDialog from '@/components/SepaLinkDialog';
@@ -137,6 +138,9 @@ export default function ProductDetail() {
 
       {/* Referencia nacional de Precios Claros: solo con EAN y precios en el catálogo */}
       <ReferencePrice ean={product.ean} ownPrice={stats?.current ?? null} />
+
+      {/* Comercios cerca de la ubicación que tienen el producto: solo con EAN */}
+      <NearbyStoresCard product={product} />
 
       {/* Gráfico de evolución de precios (solo si hay más de 3 registros) */}
       {prices.length > 3 && (

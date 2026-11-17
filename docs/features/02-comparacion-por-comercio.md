@@ -34,9 +34,10 @@ agrupa por comercio.
 ## Evolución futura
 
 - Ranking de comercios por canasta: "con tu última compra, este local te salía $X más barato".
-- Mapa de precios por barrio. Para las cadenas del SEPA, los precios por sucursal cercana y el mapa del comercio
-  están en las specs [15](../../specs/15-precios-y-comercios-cercanos.md) y
-  [16](../../specs/16-mapa-y-como-llegar.md); los comercios cargados a mano no tienen coordenadas.
+- Mapa de precios por barrio. Para las cadenas del SEPA, los precios por sucursal cercana ya están
+  ([spec 15](../../specs/15-precios-y-comercios-cercanos.md): la lista de comercios suma al final los precios
+  cargados a mano de los últimos 60 días) y el mapa del comercio es la
+  [spec 16](../../specs/16-mapa-y-como-llegar.md); los comercios cargados a mano no tienen coordenadas.
 - Con backend (Fase 2): precios compartidos entre vecinos, no solo los propios.
 
 ## Modelo de datos propuesto

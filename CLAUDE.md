@@ -19,7 +19,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md)). La app consulta
   su catálogo de productos para cargar y vincular productos por código de barras
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
-  ([SPEC 12](specs/12-precio-de-referencia-sepa.md)); los datos propios siguen en localStorage
+  ([SPEC 12](specs/12-precio-de-referencia-sepa.md)), y sus sucursales para mostrar el precio en los comercios
+  cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -105,7 +106,12 @@ src/
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
 │   ├── ScanButton.tsx          # Botón que abre el lector; solo si el navegador puede pedir la cámara
-│   └── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito
+│   ├── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito; sección "Cerca tuyo"
+│   ├── useNearby.ts            # Hooks: useSepaBranches (todas las sucursales), useNearBranches (las del radio) y
+│   │                           #   useNearbyPrices (precio de varios EAN en los comercios cercanos, una consulta)
+│   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
+│   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; NearbyLine ("Desde $X…")
+│   └── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
@@ -113,11 +119,15 @@ src/
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
+    ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
+    ├── location.ts             # UserLocation, RADIUS_OPTIONS, parseLocationState, gpsLocation, requestPosition
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
     ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
-    │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras
+    │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras;
+    │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
+    │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch)
     ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges;
     │                           #   productFromSepa (producto propio desde el catálogo, sin categoría)
     └── *.test.ts               # Tests de Vitest junto a cada módulo
@@ -144,7 +154,8 @@ src/
   (`useStore(s => s.cart)`) y llaman acciones (`useStore(s => s.addToCart)`). Las consultas derivadas son funciones
   puras que reciben la colección: `getPricesForProduct(prices, id)`, `getPriceStats(prices, id)`,
   `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`,
-  `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`, `initialCartPrice(prices, id, reference?)`.
+  `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`, `initialCartPrice(prices, id, reference?)`,
+  `getRecentStorePrices(prices, id, now)`, `priceStoreRef(price)`.
   Fuera de React: `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
@@ -163,6 +174,20 @@ src/
   `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía).
   Las respuestas se acumulan en el hook: al cambiar los EAN, solo los nuevos quedan cargando
   (`useSepaReferenceLookup().isLoading(ean)`)
+- **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**:
+  `getSepaBranches()` baja todas las sucursales una vez por sesión (de a 1.000 filas, caché de módulo) y
+  `nearestBranches` calcula las distancias en el navegador (haversine, línea recta): hasta **40** dentro del radio
+  (1, 3, 5 o 10 km; 3 por defecto). `getNearbyPrices(eans, sucursales)` llama a `sepa_precios_en_sucursales` solo
+  con los EAN y los `id` de las sucursales, **una llamada** por búsqueda (de a 20 EAN), con caché por EAN +
+  sucursal: cambiar de ubicación o de radio solo pide lo que falta. Las pantallas usan `useNearbyPrices(eans)`,
+  cuyo `get(ean)` devuelve la lista ordenada por precio y distancia, `'loading'` o `undefined` (sin EAN, sin
+  ubicación, sin comercios en el radio o con error): con `undefined` la pantalla queda como sin ubicación, sin
+  mensajes de error. El permiso de ubicación se pide solo al tocar "Usar mi ubicación" (`getCurrentPosition` sin
+  alta precisión, 10 s, `maximumAge` 5 min; se guarda redondeada a 4 decimales). La alternativa manual
+  (`branchLocalities`) usa el **barrio** de la sucursal o, si no tiene, la localidad (la columna localidad sola no
+  sirve: en CABA casi todo dice "Capital Federal"), y el punto es la **mediana** de las coordenadas; con una
+  localidad las distancias dicen "aprox.". El comercio del carrito sale de `storeRefFromBranch`
+  (`"<cadena> — <sucursal>"`, `sepaId`, dirección, barrio y coordenadas)
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -192,6 +217,7 @@ src/
 | `preciolocal_cart` | `CartItem[]` | `[]` |
 | `preciolocal_purchases` | `Purchase[]` (más reciente primero) | `[]` |
 | `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`defaultCalculator()`) |
+| `preciolocal_location` | `{ location: UserLocation \| null, radiusKm }` | Sin ubicación, 3 km |
 
 El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Los campos de `Product` de la
 spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo. Lo
@@ -200,6 +226,7 @@ desde la spec 18: los productos guardados la conservan; los creados desde el cat
 Las claves conservan el prefijo `preciolocal_` del nombre anterior a propósito (cambiarlo dejaría sin datos a quien
 ya usa la app).
 `loadFromStorage<T>` / `saveToStorage<T>` envuelven todo en try/catch (fallback a defaults; ignora cuota excedida).
+`preciolocal_location` se valida al cargar (`parseLocationState`): si algo no es válido, sin ubicación y 3 km.
 `preciolocal_calculator` además se valida al cargar (`loadCalculator`): si la magnitud, el largo (2–6) o la forma de
 alguna presentación no es válida, se usa el estado inicial.
 Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar con `new Date(p.date)`.
@@ -338,6 +365,26 @@ interface CalculatorState {
 - "Añadir Carrito" con `initialCartPrice` (la referencia SEPA si tiene EAN y no tiene precio propio; nunca el `100`
   de antes) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
+- **Barra de ubicación** (`LocationBar`, debajo del buscador, solo con Supabase): sin ubicación, "Activá tu
+  ubicación para ver comercios cercanos" con **Usar mi ubicación** y "Elegir localidad" (buscador de barrios y
+  localidades con sucursales); con ubicación, su nombre, el `select` de radio, "Cambiar" y "Quitar" (borra
+  ubicación y radio), y la cantidad de comercios cerca. Sin comercios en el radio: "No hay comercios de Precios
+  Claros a menos de N km" con el botón "Buscar a M km". Permiso denegado → "Sin permiso para usar tu ubicación.
+  Podés elegir tu localidad."; sin señal → "No se pudo obtener tu ubicación."; en los dos casos se abre el selector
+- **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md), con ubicación): cada resultado del
+  catálogo y cada producto propio con EAN muestra "Desde $X · <cadena> — <distancia>" y "en N comercios cerca"
+  ("Sin precio en comercios cercanos" si ninguno lo tiene; "Buscando precios…" mientras tanto). Al desplegarlo
+  (la fila del catálogo, o "Ver comercios" en la tarjeta propia), la lista de comercios (`NearbyStores`): hasta
+  10 y "Ver N más", por precio y después distancia, con dirección, distancia, precio y **Agregar**
+  (`aria-label="Agregar <producto> en <comercio>"`); el más barato lleva "Más barato". En un producto propio se
+  suman al final sus precios cargados a mano de los últimos 60 días que tienen comercio (el último de cada barrio
+  + comercio), con "Cargado por vos · dd/mm". Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa",
+  en ámbar con más de 7 días
+  - **Agregar** en un comercio: crea el producto si no existe (`addSepaToCart` con `at`) y lo deja en el carrito
+    con ese comercio y ese precio; si ya estaba, suma 1 y pasa a ellos. No registra precios
+  - En el catálogo, debajo de la lista quedan "Agregar sin comercio" (el de la spec 18) y "Editar antes de
+    agregar". Un resultado sin precio cercano despliega la lista por cadena de la spec 12
+  - Sin ubicación (o si falla la consulta) todo queda como en la spec 12: resumen y lista por cadena
 
 ### Cargar (`/upload`)
 - Tab **precio**: producto, monto, barrio (requeridos) y tienda (opcional)
@@ -376,6 +423,8 @@ interface CalculatorState {
   hoy/ayer/hace N días" ("Datos del dd/mm/aaaa" con más de 7 días), promedio entre cadenas con el badge de comparación
   contra el último precio propio (verde "X % por debajo de la referencia", azul "En línea con la referencia", rojo
   "X % por encima…"; ±5 %), cadena más barata, rango y la lista por cadena. Sin EAN no consulta
+- Con EAN, tarjeta **Comercios cercanos** (`NearbyStoresCard`) después de la de referencia: la `LocationBar` y,
+  con ubicación, el resumen y la misma lista de comercios de Buscar, con "Agregar" por comercio
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
 - Agregar al carrito con el precio actual
@@ -388,6 +437,8 @@ interface CalculatorState {
   ("Coto" y " coto" son el mismo grupo, con el nombre del primer ítem)
 - **Un producto, un comercio**: un producto está una sola vez; `addToCart` de uno que ya está suma 1 y, si el ítem
   nuevo trae comercio, lo pasa a ese comercio y precio
+- **Cerca tuyo** en "Cambiar comercio" (ítems con EAN, con ubicación): las sucursales cercanas con su precio; al
+  elegir una cambian el comercio **y el precio** del ítem (la cantidad no)
 - **Cambiar comercio** (link debajo de cada ítem, `CartStoreDialog`): comercios ya usados (`getCartStores`), "Sin
   comercio" u "Otro comercio" (nombre requerido, barrio opcional). No cambia cantidad ni precio
   (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`)
@@ -500,8 +551,8 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 
 - **Uso desde la app:** solo lectura con la clave publishable de `sepa_productos`
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y de `sepa_precios` + `sepa_banderas` para el precio de
-  referencia ([SPEC 12](specs/12-precio-de-referencia-sepa.md)). Las sucursales y los precios por sucursal todavía no
-  se usan en la app (spec 15)
+  referencia ([SPEC 12](specs/12-precio-de-referencia-sepa.md)), y de `sepa_sucursales` +
+  `sepa_precios_en_sucursales` para los comercios cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md))
 - **Proyecto:** `bjzeknajhrbtormkuunj` (`https://bjzeknajhrbtormkuunj.supabase.co`); el MCP de `.mcp.json` sirve para
   consultar e inspeccionar, no para aplicar migraciones
 - **Tablas** (`public`, RLS con lectura pública salvo `sepa_cargas`):
@@ -688,6 +739,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Precio de referencia SEPA por cadena en Buscar, el lector, el detalle y el carrito (spec 12)
 - [x] Carrito agrupado por comercio con checkout por comercio (spec 14)
 - [x] Agregar al carrito desde el catálogo sin dar de alta el producto; categoría opcional (spec 18)
+- [x] Precios y comercios cercanos con ubicación o localidad en Buscar, el detalle y el carrito (spec 15)
 - [x] Restyling: paleta berenjena y amarillo, Rubik + Nunito Sans, íconos de lucide y barra de navegación inferior (spec 19)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 

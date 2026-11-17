@@ -1,3 +1,4 @@
+import { LocationState, parseLocationState } from './location';
 import { Product, Price, CalculatorState, Magnitude, PromoType } from './models';
 import { UNITS_BY_MAGNITUDE } from './unit-price';
 
@@ -6,6 +7,7 @@ export const PRICES_KEY     = 'preciolocal_prices';
 export const CART_KEY       = 'preciolocal_cart';
 export const PURCHASES_KEY  = 'preciolocal_purchases';
 export const CALCULATOR_KEY = 'preciolocal_calculator';
+export const LOCATION_KEY   = 'preciolocal_location';
 
 export const DEFAULT_PRODUCTS: Product[] = [
   { id: '1', name: 'Leche 1L',          category: 'Lacteos'   },
@@ -87,4 +89,9 @@ export function loadCalculator(): CalculatorState {
     && state.presentations.length <= 6
     && state.presentations.every(p => isValidPresentation(p, state.magnitude as Magnitude));
   return valid ? state as CalculatorState : defaultCalculator();
+}
+
+/** Ubicación y radio guardados; si no son válidos, sin ubicación y 3 km */
+export function loadLocation(): LocationState {
+  return parseLocationState(loadFromStorage<unknown>(LOCATION_KEY, null));
 }

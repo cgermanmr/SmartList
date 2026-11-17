@@ -137,7 +137,7 @@ Decidido el 31/10/2026: ZIP oficial → ETL propio → **Supabase**, resumido po
 | [11 — Lector de códigos de barras](../../specs/11-lector-codigo-de-barras.md) | Cámara desde la web (API nativa + ponyfill ZXing) |
 | [12 — Precio de referencia](../../specs/12-precio-de-referencia-sepa.md) | Referencia por cadena en Buscar, el lector, el detalle y el carrito |
 
-Las specs 13, 15, 16 y 17 (sucursales, comercios cercanos, mapa e imágenes) pasaron al
+Las specs 13, 15 (las dos ya hechas), 16 y 17 (sucursales, comercios cercanos, mapa e imágenes) pasaron al
 [feature 07](07-precios-cercanos-sepa.md) el 16/11/2026; la
 [14 — Carrito por comercio](../../specs/14-carrito-por-comercio.md) pertenece al feature 02. La API del portal
 (fuente B) se volvió a probar el 15/11/2026 y sigue caída.

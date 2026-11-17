@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { toGtin13 } from './gtin';
 import { uniqueId } from './ids';
+import { DEFAULT_RADIUS, RadiusKm, UserLocation } from './location';
 import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
 import { productFromSepa } from './product-form';
 import type { SepaProduct } from './sepa';
 import {
-  PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY,
+  PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY, LOCATION_KEY,
   DEFAULT_PRODUCTS, defaultPrices, defaultCalculator,
-  loadFromStorage, saveToStorage, loadCalculator,
+  loadFromStorage, saveToStorage, loadCalculator, loadLocation,
 } from './storage';
 
 // Estado único de la app. Las acciones son el punto donde se van a enchufar las llamadas al backend.
@@ -19,6 +20,10 @@ export interface AppState {
   cart: CartItem[];
   purchases: Purchase[];
   calculator: CalculatorState;
+  /** Ubicación elegida para ver comercios cercanos; null sin ubicación. No sale del dispositivo */
+  location: UserLocation | null;
+  /** Radio de búsqueda de comercios, en km */
+  radiusKm: RadiusKm;
 
   hydrate: () => void;
   addProduct: (product: Product) => void;
@@ -30,10 +35,11 @@ export interface AppState {
   addToCart: (item: CartItem) => void;
   /**
    * Agrega al carrito un producto del catálogo SEPA: usa el propio con ese EAN o lo crea con productFromSepa (sin
-   * categoría). Entra sin comercio con initialCartPrice; si ya estaba, suma 1 y conserva su comercio. No registra
-   * precios. Devuelve el producto propio
+   * categoría). Entra sin comercio con initialCartPrice; si ya estaba, suma 1 y conserva su comercio. Con `at` (una
+   * fila de comercio) entra en ese comercio y a ese precio y, si ya estaba, pasa a ellos. No registra precios.
+   * Devuelve el producto propio
    */
-  addSepaToCart: (sepa: SepaProduct, reference?: number) => Product;
+  addSepaToCart: (sepa: SepaProduct, reference?: number, at?: { store: StoreRef; price: number }) => Product;
   removeFromCart: (itemId: string) => void;
   /** El checkout de un grupo saca solo sus ítems */
   removeCartItems: (itemIds: string[]) => void;
@@ -46,6 +52,9 @@ export interface AppState {
   savePurchase: (purchase: Purchase) => void;
   saveCalculator: (state: CalculatorState) => void;
   resetCalculator: () => void;
+  /** null quita la ubicación y vuelve el radio a 3 km */
+  setLocation: (location: UserLocation | null) => void;
+  setRadius: (radiusKm: RadiusKm) => void;
 }
 
 export const useStore = create<AppState>()((set, get) => ({
@@ -55,6 +64,8 @@ export const useStore = create<AppState>()((set, get) => ({
   cart: [],
   purchases: [],
   calculator: defaultCalculator(),
+  location: null,
+  radiusKm: DEFAULT_RADIUS,
 
   hydrate: () => {
     if (get().hydrated) return;
@@ -65,6 +76,7 @@ export const useStore = create<AppState>()((set, get) => ({
       cart:       loadFromStorage(CART_KEY,      []),
       purchases:  loadFromStorage(PURCHASES_KEY, []),
       calculator: loadCalculator(),
+      ...loadLocation(),
     });
   },
 
@@ -95,7 +107,7 @@ export const useStore = create<AppState>()((set, get) => ({
     };
   }),
 
-  addSepaToCart: (sepa, reference) => {
+  addSepaToCart: (sepa, reference, at) => {
     const ean = toGtin13(sepa.ean) ?? sepa.ean;
     let product = get().products.find(p => p.ean === ean);
     if (!product) {
@@ -103,9 +115,10 @@ export const useStore = create<AppState>()((set, get) => ({
       set(s => ({ products: [...s.products, created] }));
       product = created;
     }
-    const price = initialCartPrice(get().prices, product.id, reference);
+    const price = at ? at.price : initialCartPrice(get().prices, product.id, reference);
     get().addToCart({
       id: uniqueId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price,
+      ...(at && { store: at.store }),
     });
     return product;
   },
@@ -165,6 +178,11 @@ export const useStore = create<AppState>()((set, get) => ({
   saveCalculator: state => set({ calculator: state }),
 
   resetCalculator: () => set({ calculator: defaultCalculator() }),
+
+  // ── Ubicación ─────────────────────────────────────────────
+  setLocation: location => set(location ? { location } : { location: null, radiusKm: DEFAULT_RADIUS }),
+
+  setRadius: radiusKm => set({ radiusKm }),
 }));
 
 function withQuantity(item: CartItem, quantity: number): CartItem {
@@ -188,6 +206,9 @@ useStore.subscribe((state, prev) => {
   if (state.cart       !== prev.cart)       saveToStorage(CART_KEY,       state.cart);
   if (state.purchases  !== prev.purchases)  saveToStorage(PURCHASES_KEY,  state.purchases);
   if (state.calculator !== prev.calculator) saveToStorage(CALCULATOR_KEY, state.calculator);
+  if (state.location !== prev.location || state.radiusKm !== prev.radiusKm) {
+    saveToStorage(LOCATION_KEY, { location: state.location, radiusKm: state.radiusKm });
+  }
 });
 
 // ── Consultas ─────────────────────────────────────────────
@@ -251,6 +272,32 @@ export function initialCartPrice(prices: Price[], productId: string, reference?:
   if (own !== undefined) return own;
   if (reference !== undefined && reference > 0) return Math.round(reference * 100) / 100;
   return 0;
+}
+
+/** Días hacia atrás que se muestran los precios cargados a mano junto a los comercios cercanos */
+const OWN_PRICE_DAYS = 60;
+
+/**
+ * Precios propios de un producto de los últimos 60 días que tienen comercio: el último de cada par barrio +
+ * comercio, del más reciente al más viejo. Van al final de la lista de comercios cercanos
+ */
+export function getRecentStorePrices(prices: Price[], productId: string, now: Date): Price[] {
+  const since = now.getTime() - OWN_PRICE_DAYS * 86_400_000;
+  const seen = new Set<string>();
+  return getPricesForProduct(prices, productId).filter(price => {
+    if (!price.store?.trim() || new Date(price.date).getTime() < since) return false;
+    const key = storeKey(priceStoreRef(price));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Comercio de un precio cargado a mano: { name: store, barrio }; el barrio "Sin especificar" no es un barrio */
+export function priceStoreRef(price: Pick<Price, 'store' | 'barrio'>): StoreRef {
+  const name = (price.store ?? '').trim();
+  const barrio = price.barrio?.trim();
+  return barrio && barrio !== NO_BARRIO ? { name, barrio } : { name };
 }
 
 export function getCartTotal(cart: CartItem[]): number {

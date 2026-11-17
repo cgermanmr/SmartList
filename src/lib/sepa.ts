@@ -1,5 +1,7 @@
 import { formatIsoDate, formatPct } from './format';
+import { distanceKm, LatLng } from './geo';
 import { toGtin13 } from './gtin';
+import { StoreRef } from './models';
 import { supabase } from './supabase';
 
 // Consultas al catálogo SEPA (tabla pública sepa_productos). Errores de red o de Supabase → la promesa rechaza,
@@ -271,3 +273,294 @@ export function accentPattern(word: string): string {
 const ACCENT_CLASSES: Record<string, string> = {
   a: '[aá]', e: '[eé]', i: '[ií]', o: '[oó]', u: '[uúü]', n: '[nñ]',
 };
+
+// ── Sucursales y precios cercanos ────────────────────────────
+// La app baja todas las sucursales una vez y calcula las distancias en el navegador: a Supabase solo le llegan los
+// id de las sucursales elegidas, nunca las coordenadas del usuario.
+
+export interface SepaBranch {
+  id: string;               // '10-1-123'
+  chain: string;            // nombre de la bandera
+  name: string;
+  address: string | null;
+  barrio: string | null;
+  localidad: string | null;
+  provincia: string | null; // código ISO del archivo: 'AR-C', 'AR-B'…
+  lat: number | null;
+  lng: number | null;
+  updated: string;          // 'YYYY-MM-DD': fecha del archivo con el que se cargó
+}
+
+export type NearBranch = SepaBranch & { distanceKm: number };
+
+export interface NearbyPrice {
+  ean: string;
+  branch: SepaBranch;
+  price: number;
+  distanceKm: number;
+}
+
+/** Lugar para elegir la ubicación a mano: un barrio o una localidad con sucursales */
+export interface SepaLocality {
+  label: string;            // "Caballito, CABA"
+  lat: number;
+  lng: number;
+  branches: number;
+}
+
+/** Fila de sepa_sucursales con el nombre de la bandera */
+export interface SepaBranchRow {
+  id: string;
+  nombre: string;
+  direccion: string | null;
+  barrio: string | null;
+  localidad: string | null;
+  provincia: string | null;
+  lat: number | null;
+  lng: number | null;
+  actualizado: string;
+  sepa_banderas: { nombre: string } | null;
+}
+
+const BRANCH_COLUMNS = 'id, nombre, direccion, barrio, localidad, provincia, lat, lng, actualizado, sepa_banderas(nombre)';
+/** Tope de filas por pedido de la API de Supabase */
+const BRANCH_PAGE = 1000;
+/** Topes de sepa_precios_en_sucursales: lo que se pase de más, la función lo ignora */
+export const MAX_NEAR_BRANCHES = 40;
+const MAX_NEARBY_EANS = 20;
+
+let branchCache: Promise<SepaBranch[]> | null = null;
+
+/** Todas las sucursales, una vez por sesión (caché de módulo; si la descarga falla, se vuelve a intentar) */
+export function getSepaBranches(): Promise<SepaBranch[]> {
+  if (!supabase) return Promise.resolve([]);
+  if (!branchCache) {
+    const request = fetchSepaBranches();
+    branchCache = request;
+    request.catch(() => {
+      if (branchCache === request) branchCache = null;
+    });
+  }
+  return branchCache;
+}
+
+async function fetchSepaBranches(): Promise<SepaBranch[]> {
+  if (!supabase) return [];
+  const rows: SepaBranchRow[] = [];
+  for (let from = 0; ; from += BRANCH_PAGE) {
+    const { data, error } = await supabase
+      .from('sepa_sucursales')
+      .select(BRANCH_COLUMNS)
+      .order('id')
+      .range(from, from + BRANCH_PAGE - 1)
+      .retry(false);
+    if (error) throw error;
+    rows.push(...(data as unknown as SepaBranchRow[]));
+    if (data.length < BRANCH_PAGE) break;
+  }
+  return rows.flatMap(row => toSepaBranch(row) ?? []);
+}
+
+// Caché por EAN + sucursal, válida durante la sesión: guarda la promesa y también los "no lo informa" (null). Cambiar
+// de ubicación o de radio solo pide lo que falta. Si la consulta falla, sus pares salen de la caché.
+const nearbyCache = new Map<string, Promise<number | null>>();
+
+function nearbyKey(ean: string, branchId: string): string {
+  return `${ean}|${branchId}`;
+}
+
+/**
+ * Precios de esos EAN en esas sucursales (hasta 40), ordenados con sortNearbyPrices; sin precios → []. Una sola
+ * llamada con los EAN que tienen algún par sin consultar (de a 20, el tope de la función de la base)
+ */
+export async function getNearbyPrices(eans: string[], branches: NearBranch[]): Promise<Map<string, NearbyPrice[]>> {
+  if (!supabase) return new Map();
+  const unique = [...new Set(eans)];
+  const near = branches.slice(0, MAX_NEAR_BRANCHES);
+  const ids = near.map(b => b.id);
+  const missing = near.length === 0
+    ? []
+    : unique.filter(ean => ids.some(id => !nearbyCache.has(nearbyKey(ean, id))));
+
+  for (let from = 0; from < missing.length; from += MAX_NEARBY_EANS) {
+    const chunk = missing.slice(from, from + MAX_NEARBY_EANS);
+    const request = fetchNearbyPrices(chunk, ids);
+    for (const ean of chunk) {
+      for (const id of ids) {
+        const key = nearbyKey(ean, id);
+        if (nearbyCache.has(key)) continue;
+        const entry = request.then(byPair => byPair.get(key) ?? null);
+        nearbyCache.set(key, entry);
+        entry.catch(() => {
+          if (nearbyCache.get(key) === entry) nearbyCache.delete(key);
+        });
+      }
+    }
+  }
+
+  const entries = await Promise.all(unique.map(async ean => {
+    const prices = await Promise.all(near.map(async branch => {
+      const price = await nearbyCache.get(nearbyKey(ean, branch.id))!;
+      return price === null ? null : toNearbyPrice(ean, branch, price);
+    }));
+    return [ean, sortNearbyPrices(prices.filter(p => p !== null))] as const;
+  }));
+  return new Map(entries);
+}
+
+async function fetchNearbyPrices(eans: string[], branchIds: string[]): Promise<Map<string, number>> {
+  if (!supabase) return new Map();
+  const { data, error } = await supabase
+    .rpc('sepa_precios_en_sucursales', { p_eans: eans, p_sucursales: branchIds })
+    .retry(false);
+  if (error) throw error;
+  const rows = data as { ean: string; sucursal: string; precio: number | string }[];
+  return new Map(rows.map(row => [nearbyKey(row.ean, row.sucursal), Number(row.precio)]));
+}
+
+function toNearbyPrice(ean: string, near: NearBranch, price: number): NearbyPrice {
+  const { distanceKm: distance, ...branch } = near;
+  return { ean, branch, price, distanceKm: distance };
+}
+
+/** Fila de sepa_sucursales → SepaBranch; sin el nombre de la bandera, null */
+export function toSepaBranch(row: SepaBranchRow): SepaBranch | null {
+  if (!row.sepa_banderas) return null;
+  return {
+    id: row.id,
+    chain: row.sepa_banderas.nombre,
+    name: row.nombre,
+    address: row.direccion,
+    barrio: row.barrio,
+    localidad: row.localidad,
+    provincia: row.provincia,
+    lat: row.lat,
+    lng: row.lng,
+    updated: row.actualizado,
+  };
+}
+
+/** Las `limit` sucursales con coordenadas dentro del radio, de la más cercana a la más lejana */
+export function nearestBranches(
+  branches: SepaBranch[], origin: LatLng, radiusKm: number, limit = MAX_NEAR_BRANCHES,
+): NearBranch[] {
+  return branches
+    .flatMap(branch => {
+      if (branch.lat === null || branch.lng === null) return [];
+      const distance = distanceKm(origin, { lat: branch.lat, lng: branch.lng });
+      return distance <= radiusKm ? [{ ...branch, distanceKm: distance }] : [];
+    })
+    .sort((a, b) => a.distanceKm - b.distanceKm || a.id.localeCompare(b.id))
+    .slice(0, limit);
+}
+
+/** Ordena por precio y, a igual precio, por distancia */
+export function sortNearbyPrices(prices: NearbyPrice[]): NearbyPrice[] {
+  return [...prices].sort((a, b) =>
+    a.price - b.price || a.distanceKm - b.distanceKm || a.branch.id.localeCompare(b.branch.id));
+}
+
+/** Fecha más reciente de los datos de esas sucursales ('YYYY-MM-DD'); null sin sucursales */
+export function latestBranchDate(branches: Pick<SepaBranch, 'updated'>[]): string | null {
+  return branches.reduce<string | null>((latest, b) => (latest === null || b.updated > latest ? b.updated : latest), null);
+}
+
+/** true si la fecha de los datos tiene más de 7 días */
+export function isStaleDate(date: string, today: Date): boolean {
+  return daysSince(date, today) > STALE_DAYS;
+}
+
+// ── Lugares para elegir la ubicación a mano ──────────────────
+// La columna localidad del SEPA no alcanza: en CABA casi todo dice "Capital Federal" y hay cadenas que cargan la
+// provincia como localidad y el lugar real en barrio. Por eso el lugar es el barrio si la sucursal lo tiene y, si
+// no, la localidad.
+
+/** Nombre corto de cada provincia para la etiqueta del lugar */
+const PROVINCES: Record<string, string> = {
+  'AR-A': 'Salta', 'AR-B': 'Buenos Aires', 'AR-C': 'CABA', 'AR-D': 'San Luis', 'AR-E': 'Entre Ríos',
+  'AR-F': 'La Rioja', 'AR-G': 'Santiago del Estero', 'AR-H': 'Chaco', 'AR-J': 'San Juan', 'AR-K': 'Catamarca',
+  'AR-L': 'La Pampa', 'AR-M': 'Mendoza', 'AR-N': 'Misiones', 'AR-P': 'Formosa', 'AR-Q': 'Neuquén',
+  'AR-R': 'Río Negro', 'AR-S': 'Santa Fe', 'AR-T': 'Tucumán', 'AR-U': 'Chubut', 'AR-V': 'Tierra del Fuego',
+  'AR-W': 'Corrientes', 'AR-X': 'Córdoba', 'AR-Y': 'Jujuy', 'AR-Z': 'Santa Cruz',
+};
+
+/** Formas en que el SEPA nombra a la ciudad de Buenos Aires entera (ya en minúsculas y sin acentos) */
+const CABA_NAMES = /^(capital federal|caba|ciudad autonoma( de)? buenos aires|ciudad de buenos aires)$/;
+const CABA_LABEL = 'Ciudad de Buenos Aires';
+
+/** Minúsculas, sin acentos, sin aclaraciones entre paréntesis ("(901)") ni espacios de más */
+function placeKey(name: string): string {
+  return name
+    .replace(/\([^)]*\)/g, ' ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/**
+ * Lugares con sucursales, para elegir la ubicación a mano, ordenados por nombre. El lugar es el barrio (o la
+ * localidad si no tiene) dentro de su provincia, sin distinguir mayúsculas ni acentos; se muestra con la forma más
+ * usada. El punto es la mediana de las coordenadas: una sucursal mal cargada no lo corre
+ */
+export function branchLocalities(branches: SepaBranch[]): SepaLocality[] {
+  interface Place { province: string; names: Map<string, number>; lats: number[]; lngs: number[] }
+  const places = new Map<string, Place>();
+  for (const branch of branches) {
+    if (branch.lat === null || branch.lng === null) continue;
+    const name = (branch.barrio ?? branch.localidad ?? '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+    const key = placeKey(name);
+    if (!key) continue;
+    const province = branch.provincia ? PROVINCES[branch.provincia] ?? '' : '';
+    const caba = province === 'CABA' && CABA_NAMES.test(key);
+    const id = `${province}|${caba ? 'caba' : key}`;
+    const place: Place = places.get(id) ?? { province, names: new Map(), lats: [], lngs: [] };
+    const shown = caba ? CABA_LABEL : name;
+    place.names.set(shown, (place.names.get(shown) ?? 0) + 1);
+    place.lats.push(branch.lat);
+    place.lngs.push(branch.lng);
+    places.set(id, place);
+  }
+
+  return [...places.values()]
+    .map(place => {
+      const name = [...place.names].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'es-AR'))[0][0];
+      const repeated = placeKey(name) === placeKey(place.province) || name === CABA_LABEL;
+      return {
+        label: place.province && !repeated ? `${name}, ${place.province}` : name,
+        lat: median(place.lats),
+        lng: median(place.lngs),
+        branches: place.lats.length,
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, 'es-AR'));
+}
+
+// ── Comercio del carrito ─────────────────────────────────────
+
+/** "<cadena> — <sucursal>"; solo la sucursal si su nombre ya empieza con el de la cadena ("Jumbo Morón") */
+export function branchLabel(branch: Pick<SepaBranch, 'chain' | 'name'>): string {
+  const name = branch.name.trim();
+  if (!name) return branch.chain;
+  return placeKey(name).startsWith(placeKey(branch.chain)) ? name : `${branch.chain} — ${name}`;
+}
+
+/** StoreRef del carrito a partir de una sucursal; el barrio es el de la sucursal o, si no tiene, su localidad */
+export function storeRefFromBranch(branch: SepaBranch): StoreRef {
+  const store: StoreRef = { name: branchLabel(branch), sepaId: branch.id };
+  const barrio = branch.barrio ?? branch.localidad;
+  if (barrio) store.barrio = barrio;
+  if (branch.address) store.address = branch.address;
+  if (branch.lat !== null && branch.lng !== null) {
+    store.lat = branch.lat;
+    store.lng = branch.lng;
+  }
+  return store;
+}

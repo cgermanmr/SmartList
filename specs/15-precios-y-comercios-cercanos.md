@@ -1,6 +1,6 @@
 # SPEC 15 — Precios y comercios cercanos en la búsqueda
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 13](13-precios-por-sucursal-sepa.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md)
 > **Fecha:** 2026-11-15
 > **Objetivo:** Al buscar un producto, ver su precio en los comercios cercanos con la distancia a cada uno, y agregarlo al carrito directamente desde la lista, con el comercio y el precio elegidos.
@@ -180,17 +180,17 @@ y 3 km).
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] Al abrir Buscar no aparece ningún pedido de permiso de ubicación.
-- [ ] Con ubicación, buscar "pañal" muestra en cada resultado "Desde $X · <cadena> — <distancia>" y al desplegarlo, los comercios con dirección, distancia y precio, del más barato al más caro.
-- [ ] El precio de una fila coincide con el de esa sucursal en la base (comparado con la función de la spec 13).
-- [ ] "Agregar" en un comercio, sobre un producto que no era propio, crea el producto vinculado y lo deja en el carrito con ese precio y ese comercio, sin pasar por el formulario.
-- [ ] El mismo producto agregado después desde otro comercio queda en una sola línea, con el comercio y el precio nuevos.
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] Al abrir Buscar no aparece ningún pedido de permiso de ubicación.
+- [x] Con ubicación, buscar "pañal" muestra en cada resultado "Desde $X · <cadena> — <distancia>" y al desplegarlo, los comercios con dirección, distancia y precio, del más barato al más caro.
+- [x] El precio de una fila coincide con el de esa sucursal en la base (comparado con la función de la spec 13).
+- [x] "Agregar" en un comercio, sobre un producto que no era propio, crea el producto vinculado y lo deja en el carrito con ese precio y ese comercio, sin pasar por el formulario.
+- [x] El mismo producto agregado después desde otro comercio queda en una sola línea, con el comercio y el precio nuevos.
 - [ ] Con el permiso denegado se ve el mensaje y se puede elegir una localidad; las distancias dicen "aprox.".
-- [ ] Cambiar el radio de 3 a 10 km suma comercios sin volver a bajar las sucursales.
-- [ ] Sin ubicación se ven el resumen y la lista por cadena de la spec 12 y el aviso para activarla; no hay botón "Agregar" por sucursal.
-- [ ] En la pestaña Network, ninguna consulta a Supabase lleva la latitud ni la longitud del usuario.
-- [ ] La ubicación y el radio se conservan al recargar; "Quitar" los borra.
+- [x] Cambiar el radio de 3 a 10 km suma comercios sin volver a bajar las sucursales.
+- [x] Sin ubicación se ven el resumen y la lista por cadena de la spec 12 y el aviso para activarla; no hay botón "Agregar" por sucursal.
+- [x] En la pestaña Network, ninguna consulta a Supabase lleva la latitud ni la longitud del usuario.
+- [x] La ubicación y el radio se conservan al recargar; "Quitar" los borra.
 - [ ] Sin variables de Supabase o sin conexión, Buscar, el detalle y el carrito funcionan como antes.
 - [ ] En 375 px no hay scroll horizontal y los botones se pueden tocar (44 px de alto como mínimo).
 

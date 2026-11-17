@@ -4,17 +4,20 @@ import { Check } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useRef, useState } from 'react';
+import LocationBar from '@/components/LocationBar';
+import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import NumberInput from '@/components/NumberInput';
 import ScanButton from '@/components/ScanButton';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
+import { useNearbyPrices } from '@/components/useNearby';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { newId } from '@/lib/ids';
-import { CartItem, Product } from '@/lib/models';
+import { CartItem, Product, StoreRef } from '@/lib/models';
 import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
-import { filterProducts, getPriceStats, initialCartPrice, useStore } from '@/lib/store';
+import { filterProducts, getPriceStats, getRecentStorePrices, initialCartPrice, useStore } from '@/lib/store';
 
 /** Código leído con la cámara que no es de un producto propio */
 type ScanResult =
@@ -34,6 +37,9 @@ export default function SearchPage() {
   const [scan, setScan] = useState<ScanResult | null>(null);
   /** Resultado del catálogo desplegado con sus precios por cadena (uno a la vez) */
   const [expandedEan, setExpandedEan] = useState<string | null>(null);
+  /** Producto propio con la lista de comercios desplegada (uno a la vez) */
+  const [storesOpenId, setStoresOpenId] = useState<string | null>(null);
+  const [now] = useState(() => new Date());
   /** Aviso "✓ <nombre> en el carrito"; se oculta a los 3 s */
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -56,6 +62,13 @@ export default function SearchPage() {
     filteredProducts.filter(p => p.ean && !getPriceStats(prices, p.id)).map(p => p.ean),
   );
 
+  // Comercios cercanos (solo con ubicación): una sola consulta con los EAN visibles, propios y del catálogo, cuando
+  // ya llegaron los resultados; mientras se escribe no se pide nada nuevo
+  const nearby = useNearbyPrices(sepaSearch.status === 'loading' ? [] : [
+    ...filteredProducts.map(p => p.ean),
+    ...catalogSearch.results.map(r => r.ean),
+  ]);
+
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   function showNotice(name: string) {
@@ -69,6 +82,19 @@ export default function SearchPage() {
   function addSepa(product: SepaProduct, summary: ReferenceSummary | undefined) {
     const own = addSepaToCart(product, summary?.reference);
     showNotice(own.name);
+  }
+
+  // Desde una fila de comercio: entra con ese comercio y ese precio; si ya estaba en el carrito, pasa a ellos
+  function addSepaAt(product: SepaProduct, store: StoreRef, price: number) {
+    const own = addSepaToCart(product, undefined, { store, price });
+    showNotice(own.name);
+  }
+
+  function addAt(product: Product, store: StoreRef, price: number) {
+    addToCart({
+      id: newId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price, store,
+    });
+    showNotice(product.name);
   }
 
   // ── Código leído con la cámara ─────────────────────────────
@@ -131,6 +157,7 @@ export default function SearchPage() {
           />
           <ScanButton onDetected={scanned} />
         </div>
+        <LocationBar />
         {scan && (
           <ScanOffer
             key={scan.ean}
@@ -147,6 +174,12 @@ export default function SearchPage() {
         {filteredProducts.map(product => {
           const stats = getPriceStats(prices, product.id);
           const cartItem = cart.find(i => i.productId === product.id);
+          // Comercios cercanos: solo con EAN y con ubicación; los precios cargados a mano van al final de la lista
+          const near = nearby.get(product.ean);
+          const ownStorePrices = near === undefined ? [] : getRecentStorePrices(prices, product.id, now);
+          const hasStores = Array.isArray(near) && near.length + ownStorePrices.length > 0;
+          const storesOpen = storesOpenId === product.id && hasStores;
+          const storesId = 'comercios-' + product.id;
           const priceColor = stats && stats.previous !== null && stats.current > stats.previous
             ? 'text-red-600'
             : stats && stats.previous !== null && stats.current < stats.previous
@@ -176,6 +209,33 @@ export default function SearchPage() {
                     {stats.previous !== null && <span>Anterior: ${formatMoney(stats.previous)}</span>}
                     <span>Promedio: ${formatMoney(stats.avg)}</span>
                   </div>
+                </div>
+              )}
+
+              {near !== undefined && (
+                <div className="mb-4">
+                  <NearbyLine prices={near} approx={nearby.approx} />
+                  {hasStores && (
+                    <button
+                      type="button"
+                      onClick={() => setStoresOpenId(storesOpen ? null : product.id)}
+                      aria-expanded={storesOpen}
+                      aria-controls={storesId}
+                      className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+                      Ver comercios
+                      <Chevron open={storesOpen} />
+                    </button>
+                  )}
+                  {storesOpen && Array.isArray(near) && (
+                    <NearbyStores
+                      id={storesId}
+                      productName={product.name}
+                      prices={near}
+                      approx={nearby.approx}
+                      ownPrices={ownStorePrices}
+                      onChoose={(store, price) => addAt(product, store, price)}
+                    />
+                  )}
                 </div>
               )}
 
@@ -254,14 +314,19 @@ export default function SearchPage() {
           <SepaResults
             search={catalogSearch}
             renderDetails={product => {
+              // Con ubicación, el mejor precio cercano; si no (o si falla), el resumen por cadena
+              const near = nearby.get(product.ean);
+              if (near !== undefined) return <NearbyLine prices={near} approx={nearby.approx} />;
               const summary = references.get(product.ean);
               return summary && <ReferenceLine summary={summary} />;
             }}
             renderItem={(product, info) => {
               const summary = references.get(product.ean);
               const loading = catalogLookup.isLoading(product.ean);
+              const near = nearby.get(product.ean);
+              const stores = Array.isArray(near) && near.length > 0 ? near : null;
               // Sin precios (o mientras cargan): datos y, a la derecha, el botón y el link al formulario
-              if (!summary) {
+              if (!summary && !stores) {
                 return (
                   <div className="flex items-center gap-3 px-3 py-2">
                     {info}
@@ -292,13 +357,23 @@ export default function SearchPage() {
                   </button>
                   {open && (
                     <div id={panelId} className="border-t border-gray-200 bg-gray-50 px-3 py-3">
-                      <SepaPriceTable summary={summary} />
+                      {/* Con comercios cercanos, la lista por sucursal; si no, el precio por cadena */}
+                      {stores ? (
+                        <NearbyStores
+                          productName={product.description}
+                          prices={stores}
+                          approx={nearby.approx}
+                          onChoose={(store, price) => addSepaAt(product, store, price)}
+                        />
+                      ) : summary && <SepaPriceTable summary={summary} />}
                       <AddToCartButton
                         name={product.description}
                         loading={loading}
                         onClick={() => addSepa(product, summary)}
-                        className="mt-3 min-h-11 w-full"
-                      />
+                        secondary={stores !== null}
+                        className="mt-3 min-h-11 w-full">
+                        {stores ? 'Agregar sin comercio' : undefined}
+                      </AddToCartButton>
                       <div className="text-center">
                         <EditLink ean={product.ean} />
                       </div>
@@ -330,11 +405,13 @@ interface AddToCartButtonProps {
   /** Se están buscando sus precios: deshabilitado con "Buscando precio…" para no agregarlo en $0 */
   loading: boolean;
   onClick: () => void;
+  /** Acción de segundo orden: cuando arriba ya hay un "Agregar" por comercio */
+  secondary?: boolean;
   className?: string;
   children?: ReactNode;
 }
 
-function AddToCartButton({ name, loading, onClick, className = '', children = 'Agregar al carrito' }: AddToCartButtonProps) {
+function AddToCartButton({ name, loading, onClick, secondary = false, className = '', children = 'Agregar al carrito' }: AddToCartButtonProps) {
   return (
     <button
       type="button"
@@ -342,7 +419,7 @@ function AddToCartButton({ name, loading, onClick, className = '', children = 'A
       disabled={loading}
       aria-busy={loading || undefined}
       aria-label={loading ? `Buscando el precio de ${name}` : `Agregar ${name} al carrito`}
-      className={`btn-primary disabled:cursor-wait disabled:opacity-60 disabled:hover:bg-primary-700 ${className}`}>
+      className={`${secondary ? 'btn-secondary' : 'btn-primary disabled:hover:bg-primary-700'} disabled:cursor-wait disabled:opacity-60 ${className}`}>
       {loading ? 'Buscando precio…' : children}
     </button>
   );

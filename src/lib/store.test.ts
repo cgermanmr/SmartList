@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { CartItem, Product, Purchase, StoreRef } from './models';
+import { CartItem, Price, Product, Purchase, StoreRef } from './models';
 import type { SepaProduct } from './sepa';
-import { CALCULATOR_KEY, CART_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
+import { CALCULATOR_KEY, CART_KEY, LOCATION_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
 import {
-  filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, groupCartByStore, initialCartPrice,
-  storeKey, useStore,
+  filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, getRecentStorePrices,
+  groupCartByStore, initialCartPrice, priceStoreRef, storeKey, useStore,
 } from './store';
 
 // localStorage en memoria para el entorno de Node
@@ -541,5 +541,110 @@ describe('addSepaToCart', () => {
     const cart = useStore.getState().cart;
     expect(cart).toHaveLength(1);
     expect(cart[0]).toMatchObject({ productId: product.id, quantity: 2, price: 1400, store: { name: 'Coto' } });
+  });
+
+  it('desde una fila de comercio entra con ese comercio y ese precio, aunque tenga precio propio', () => {
+    const store: StoreRef = { name: 'Coto — Caballito', sepaId: '12-1-45', barrio: 'Caballito' };
+    useStore.setState({
+      products: [{ id: 'own', name: 'Yerba de casa', ean: '7793704000911' }],
+      prices: [{ id: 'a', productId: 'own', amount: 2000, date: new Date('2026-03-01'), barrio: 'Almagro' }],
+    });
+    useStore.getState().addSepaToCart(sepa, 1500, { store, price: 1320.5 });
+    const s = useStore.getState();
+    expect(s.cart[0]).toMatchObject({ productId: 'own', price: 1320.5, quantity: 1, subtotal: 1320.5, store });
+    expect(s.prices).toHaveLength(1);
+  });
+
+  it('agregado después desde otro comercio queda en una sola línea, con el comercio y el precio nuevos', () => {
+    const coto: StoreRef = { name: 'Coto — Caballito', sepaId: '12-1-45' };
+    const dia: StoreRef = { name: 'Supermercados DIA — 82 - Lanus', sepaId: '15-1-82' };
+    useStore.getState().addSepaToCart(sepa, undefined, { store: coto, price: 1400 });
+    useStore.getState().addSepaToCart(sepa, undefined, { store: dia, price: 1250 });
+    const s = useStore.getState();
+    expect(s.products.filter(p => p.ean === sepa.ean)).toHaveLength(1);
+    expect(s.cart).toHaveLength(1);
+    expect(s.cart[0]).toMatchObject({ price: 1250, quantity: 2, subtotal: 2500, store: dia });
+  });
+});
+
+describe('ubicación', () => {
+  const location = { lat: -34.6037, lng: -58.3816, source: 'gps' as const, label: 'Mi ubicación' };
+
+  it('sin nada guardado arranca sin ubicación y con 3 km', () => {
+    useStore.getState().hydrate();
+    expect(useStore.getState()).toMatchObject({ location: null, radiusKm: 3 });
+  });
+
+  it('guarda la ubicación y el radio, y los recupera al hidratar', () => {
+    useStore.getState().hydrate();
+    useStore.getState().setLocation(location);
+    useStore.getState().setRadius(10);
+    expect(saved(LOCATION_KEY)).toEqual({ location, radiusKm: 10 });
+
+    useStore.setState(initialState, true);
+    useStore.getState().hydrate();
+    expect(useStore.getState()).toMatchObject({ location, radiusKm: 10 });
+  });
+
+  it('quitar la ubicación borra también el radio', () => {
+    useStore.getState().hydrate();
+    useStore.getState().setLocation(location);
+    useStore.getState().setRadius(5);
+    useStore.getState().setLocation(null);
+    expect(useStore.getState()).toMatchObject({ location: null, radiusKm: 3 });
+    expect(saved(LOCATION_KEY)).toEqual({ location: null, radiusKm: 3 });
+  });
+
+  it('con datos guardados que no son válidos arranca sin ubicación', () => {
+    storage.setItem(LOCATION_KEY, JSON.stringify({ location: { lat: 'x', lng: 1 }, radiusKm: 7 }));
+    useStore.getState().hydrate();
+    expect(useStore.getState()).toMatchObject({ location: null, radiusKm: 3 });
+  });
+});
+
+describe('getRecentStorePrices', () => {
+  const now = new Date('2026-11-16T12:00:00');
+
+  function price(id: string, daysAgo: number, patch: Partial<Price> = {}): Price {
+    return {
+      id, productId: 'p1', amount: 100, date: new Date(now.getTime() - daysAgo * 86_400_000), barrio: 'Almagro',
+      store: 'Almacen', ...patch,
+    };
+  }
+
+  it('devuelve el último de cada par barrio + comercio, del más reciente al más viejo', () => {
+    const prices = [
+      price('a', 10, { amount: 90 }),
+      price('b', 2, { amount: 110 }),
+      price('c', 5, { store: 'Coto', barrio: 'Caballito' }),
+      price('d', 1, { store: ' almacen ', barrio: 'ALMAGRO', amount: 120 }),
+    ];
+    expect(getRecentStorePrices(prices, 'p1', now).map(p => p.id)).toEqual(['d', 'c']);
+  });
+
+  it('deja afuera los de más de 60 días, los que no tienen comercio y los de otros productos', () => {
+    const prices = [
+      price('a', 61),
+      price('b', 59, { store: 'Coto' }),
+      price('c', 1, { store: undefined }),
+      price('d', 1, { store: ' ' }),
+      price('e', 1, { productId: 'p2', store: 'Dia' }),
+    ];
+    expect(getRecentStorePrices(prices, 'p1', now).map(p => p.id)).toEqual(['b']);
+  });
+
+  it('acepta fechas como texto, como vienen de localStorage', () => {
+    const stored = JSON.parse(JSON.stringify([price('a', 3)])) as Price[];
+    expect(getRecentStorePrices(stored, 'p1', now)).toHaveLength(1);
+  });
+});
+
+describe('priceStoreRef', () => {
+  it('arma el comercio con nombre y barrio', () => {
+    expect(priceStoreRef({ store: ' Coto ', barrio: 'Caballito' })).toEqual({ name: 'Coto', barrio: 'Caballito' });
+  });
+
+  it('el barrio "Sin especificar" no se guarda', () => {
+    expect(priceStoreRef({ store: 'Coto', barrio: 'Sin especificar' })).toEqual({ name: 'Coto' });
   });
 });

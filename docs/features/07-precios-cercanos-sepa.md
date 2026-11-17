@@ -1,6 +1,7 @@
 # 07 — Precios cercanos y extensiones del SEPA
 
-- **Estado:** En curso (spec 13: sucursales y precios por sucursal en la base; specs 15, 16 y 17 en borrador)
+- **Estado:** En curso (spec 13: sucursales y precios por sucursal en la base; spec 15: comercios cercanos en la
+  app; spec 18: agregar al carrito sin alta; specs 16 y 17 en borrador)
 - **Fase:** 1–2 (Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Separado del [feature 06](06-precios-sepa.md) el 16/11/2026, al cerrarlo con la
@@ -24,6 +25,11 @@ también publica.
 - Sucursales con dirección y coordenadas (`sepa_sucursales`) y precio de cada producto en cada sucursal
   (`sepa_precios_sucursal`, arreglos por EAN × bandera), con la función `sepa_precios_en_sucursales` para pedir
   hasta 20 productos en 40 sucursales (spec 13). Medido el 16/11/2026: 2.618 sucursales, 75 MB, base de 178 MB.
+- Ubicación (GPS o barrio/localidad) con radio elegible, precio en los comercios cercanos con la distancia en
+  Buscar y en el detalle, agregar al carrito con el comercio y el precio elegidos, y "Cerca tuyo" al cambiar el
+  comercio de un ítem (spec 15). La ubicación no sale del dispositivo: las distancias se calculan en el navegador.
+  Para elegir el lugar a mano se usa el barrio de la sucursal o, si no tiene, la localidad: en el SEPA la
+  localidad sola no alcanza (en CABA casi todo figura como "Capital Federal").
 
 ## Alcance MVP
 
