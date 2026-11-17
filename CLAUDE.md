@@ -121,6 +121,8 @@ src/
 │   ├── useNearby.ts            # Hooks: useSepaBranches (todas las sucursales), useNearBranches (las del radio) y
 │   │                           #   useNearbyPrices (precio de varios EAN en los comercios cercanos, una consulta)
 │   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
+│   │                           #   y el link "N comercios cerca" que abre la lista
+│   ├── NearbyBranchesDialog.tsx # Modal <dialog> con los comercios del radio por distancia; tocar uno abre su mapa
 │   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; NearbyLine ("Desde $X…")
 │   ├── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
 │   ├── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
@@ -196,6 +198,12 @@ src/
   `useSepaReferences`: sin EAN, sin Supabase, sin precios o con error no muestran nada (ni error ni tarjeta vacía).
   Las respuestas se acumulan en el hook: al cambiar los EAN, solo los nuevos quedan cargando
   (`useSepaReferenceLookup().isLoading(ean)`)
+- **Lista de comercios cercanos** ([SPEC 20](specs/20-lista-de-comercios-cercanos.md)): "N comercios cerca" es un
+  link que abre el modal `NearbyBranchesDialog` (pantalla completa en el celular, tarjeta desde `sm`): "N comercios
+  a menos de R km" (con localidad, "… de <localidad>"; con 40, "Los 40 más cercanos, …") y una fila por sucursal
+  con nombre, dirección y distancia ("aprox." con localidad), de la más cercana a la más lejana; la primera en
+  `primary-700`. Tocar una fila abre `BranchMap` encima (con ruta si la ubicación es de GPS); al cerrarlo se
+  vuelve a la lista. Sin consultas nuevas: sale de `useNearBranches`. También en la tarjeta del detalle
 - **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**
   (única excepción: la ruta del mapa, ver *Mapa y ruta*):
   `getSepaBranches()` baja todas las sucursales una vez por sesión (de a 1.000 filas, caché de módulo) y
@@ -868,6 +876,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Mapa del comercio con la ruta para llegar y recorrido del carrito (spec 16)
 - [x] Imágenes de productos por EAN (Open Food Facts y portal Precios Claros) con marcador de inicial (spec 17)
 - [x] Panel de gasto mensual por cadena o comercio y por medio de pago, desde Historial (spec 03)
+- [x] Lista de comercios cercanos por distancia con su mapa, desde la barra de ubicación (spec 20)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

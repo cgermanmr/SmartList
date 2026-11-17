@@ -8,6 +8,7 @@ import {
 } from '@/lib/location';
 import { branchLocalities, MAX_NEAR_BRANCHES, sepaEnabled, SepaLocality } from '@/lib/sepa';
 import { useStore } from '@/lib/store';
+import NearbyBranchesDialog from './NearbyBranchesDialog';
 import { useNearBranches, useSepaBranches } from './useNearby';
 
 const noSubscribe = () => () => {};
@@ -44,6 +45,8 @@ export default function LocationBar() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<LocationError | null>(null);
+  /** Lista de los comercios cercanos (spec 20) */
+  const [listOpen, setListOpen] = useState(false);
 
   if (!sepaEnabled) return null;
 
@@ -96,7 +99,9 @@ export default function LocationBar() {
         {/* La región queda montada para que se anuncie el cambio al mover el radio */}
         <div role="status">
           {near.status === 'ready' && near.branches.length > 0 && (
-            <p className="text-sm text-gray-600">{storeCount(near.branches.length)}</p>
+            <button type="button" onClick={() => setListOpen(true)} className={`${LINK_CLASS} font-normal`}>
+              {storeCount(near.branches.length)}
+            </button>
           )}
           {near.status === 'ready' && near.branches.length === 0 && (
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-amber-50 px-3 py-2">
@@ -111,6 +116,8 @@ export default function LocationBar() {
             </div>
           )}
         </div>
+
+        <NearbyBranchesDialog open={listOpen} onClose={() => setListOpen(false)} />
       </div>
     );
   }

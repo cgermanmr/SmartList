@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gpsLocation, nextRadius, NO_LOCATION, parseLocationState } from './location';
+import { gpsLocation, nearbyListSummary, nextRadius, NO_LOCATION, parseLocationState } from './location';
 
 describe('parseLocationState', () => {
   const location = { lat: -34.6037, lng: -58.3816, source: 'gps', label: 'Mi ubicación' };
@@ -50,5 +50,24 @@ describe('gpsLocation', () => {
     expect(gpsLocation({ lat: -34.603722123, lng: -58.381592987 })).toEqual({
       lat: -34.6037, lng: -58.3816, source: 'gps', label: 'Mi ubicación',
     });
+  });
+});
+
+describe('nearbyListSummary', () => {
+  it('cuenta los comercios dentro del radio', () => {
+    expect(nearbyListSummary({ count: 12, radiusKm: 3 })).toBe('12 comercios a menos de 3 km');
+  });
+
+  it('usa el singular con un comercio', () => {
+    expect(nearbyListSummary({ count: 1, radiusKm: 1 })).toBe('1 comercio a menos de 1 km');
+  });
+
+  it('nombra la localidad elegida a mano', () => {
+    expect(nearbyListSummary({ count: 12, radiusKm: 3, place: 'Caballito, CABA' }))
+      .toBe('12 comercios a menos de 3 km de Caballito, CABA');
+  });
+
+  it('aclara cuando la lista se corta en el máximo', () => {
+    expect(nearbyListSummary({ count: 40, radiusKm: 10, limited: true })).toBe('Los 40 más cercanos, a menos de 10 km');
   });
 });

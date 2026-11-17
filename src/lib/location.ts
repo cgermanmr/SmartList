@@ -67,6 +67,18 @@ export function nextRadius(radiusKm: RadiusKm): RadiusKm | null {
   return RADIUS_OPTIONS[RADIUS_OPTIONS.indexOf(radiusKm) + 1] ?? null;
 }
 
+/**
+ * Resumen de la lista de comercios cercanos: "12 comercios a menos de 3 km", con la localidad si se eligió a mano
+ * (`place`); `limited` cuando la lista se cortó en el máximo y puede haber más dentro del radio
+ */
+export function nearbyListSummary(
+  { count, radiusKm, place, limited = false }: { count: number; radiusKm: number; place?: string; limited?: boolean },
+): string {
+  const where = `a menos de ${radiusKm} km${place ? ` de ${place}` : ''}`;
+  if (limited) return `Los ${count} más cercanos, ${where}`;
+  return `${count} ${count === 1 ? 'comercio' : 'comercios'} ${where}`;
+}
+
 /** Posición del GPS redondeada a 4 decimales (~11 m): no hace falta guardar más precisión */
 export function gpsLocation(position: LatLng): UserLocation {
   return { lat: round4(position.lat), lng: round4(position.lng), source: 'gps', label: GPS_LABEL };
