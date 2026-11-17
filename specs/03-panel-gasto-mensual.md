@@ -1,6 +1,6 @@
 # SPEC 03 — Panel de gasto mensual
 
-> **Estado:** Borrador
+> **Estado:** Aprobado
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 19](19-restyling-base-y-navegacion.md)
 > **Fecha:** 2026-11-17
 > **Objetivo:** Agregar una página `/gastos`, a la que se llega desde Historial, que muestre a partir de las compras cuánto se gastó por mes, cómo se compara con el mes anterior y cómo se reparte por cadena o comercio y por medio de pago.
