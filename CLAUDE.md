@@ -21,7 +21,9 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
   ([SPEC 12](specs/12-precio-de-referencia-sepa.md)), y sus sucursales para mostrar el precio en los comercios
   cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage. El mapa
-  de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md))
+  de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md)). Las imágenes
+  de los productos con código de barras salen de Open Food Facts y del portal Precios Claros, resueltas por un script
+  semanal ([SPEC 17](specs/17-imagenes-de-productos.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -54,6 +56,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 ```
 .github/workflows/ci.yml        # lint + test + build en cada push a main/dev y en cada PR
 .github/workflows/sepa.yml      # ETL del SEPA: 15:30 y 21:30 hora argentina y a mano (opción force)
+.github/workflows/sepa-images.yml # Imágenes de productos: domingos 06:00 hora argentina y a mano
 docs/                           # Roadmap, features futuros (features/NN-*.md) e ideas
 specs/                          # Specs NN-*.md (una por cambio)
 .mcp.json                       # MCP de Supabase del proyecto (sin secretos)
@@ -66,10 +69,12 @@ scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar),
 ├── clean.ts                    # Limpieza pura de campos (EAN, precios, presentación, pie de archivo, sucursales)
 ├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales) y por sucursal
 ├── load.ts                     # Carga en una transacción con pg, bloqueo de sesión y registro en sepa_cargas
-└── summary.ts                  # Resumen Markdown de la ejecución para el job summary de GitHub
+├── summary.ts                  # Resumen Markdown de la ejecución para el job summary de GitHub
+└── images.ts                   # npm run sepa:images: imágenes por EAN de Open Food Facts y del portal → sepa_imagenes
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
-├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql
+├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
+│                               #   20261117000000_sepa_imagenes.sql
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #5b2a86, display standalone
@@ -114,14 +119,16 @@ src/
 │   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
 │   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; NearbyLine ("Desde $X…")
 │   ├── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
-│   └── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
-│                               #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
+│   ├── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
+│   │                           #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
+│   ├── useSepaImages.ts        # Hook: imágenes de varios EAN en una sola consulta (getSepaImages), acumuladas
+│   └── ProductImage.tsx        # Imagen del producto (40/48/64/160 px) o cuadro con la inicial si no hay o no carga
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
-    ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, ... (es-AR)
+    ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR)
     ├── ids.ts                  # newId() / uniqueId()
     ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
     ├── route.ts                # Ruta del mapa: getRoute (OSRM, caché y 8 s de límite), parseOsrmRoute, googleMapsUrl,
@@ -133,7 +140,8 @@ src/
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
     │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras;
     │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
-    │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch)
+    │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch); imágenes
+    │                           #   (getSepaImages, con caché; imageSource)
     ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges;
     │                           #   productFromSepa (producto propio desde el catálogo, sin categoría)
     └── *.test.ts               # Tests de Vitest junto a cada módulo
@@ -207,6 +215,19 @@ src/
   coordenadas viajan a ese servicio solo al abrir un mapa con ubicación de GPS, y el modal lo avisa. El link a
   Google Maps (`googleMapsUrl`) nunca lleva `origin`. Sin conexión (`navigator.onLine`) o si no carga Leaflet, el
   modal queda sin mapa
+- **Imágenes de productos** ([SPEC 17](specs/17-imagenes-de-productos.md)) — el SEPA no trae imágenes: el script
+  `sepa:images` guarda en `sepa_imagenes` la URL de la imagen de cada EAN (Open Food Facts primero, después el portal
+  Precios Claros). La app **no guarda imágenes en el dispositivo**: las busca por EAN al mostrar, así que los
+  productos creados antes también la tienen y vincular / quitar el vínculo la trae / la saca. La URL que se muestra
+  es `product.image ?? imágenes.get(product.ean)` (`image` queda reservado para una foto propia, Fase 2).
+  `getSepaImages(eans)` lee `sepa_imagenes` (`url` no nula) de a 100 EAN con `.retry(false)`, con caché de módulo por
+  EAN como `getSepaPrices` (también los "sin imagen"; un fallo no se guarda). Las pantallas usan `useSepaImages`:
+  **una consulta por pantalla** (Buscar: una para los propios y otra en `SepaResults` para el catálogo; el historial
+  solo pide las de la compra expandida). `ProductImage` es un `<img>` común (no `next/image`: el optimizador de
+  Vercel tiene cuota) con `loading="lazy"`, `decoding="async"`, `referrerPolicy="no-referrer"`, `alt=""` y tamaño fijo;
+  el marcador con la inicial (`initialOf`) está siempre debajo y la imagen se muestra al cargar: la fila no cambia de
+  alto ni con imagen rota (`onError` la quita; un `src` nuevo olvida el fallo). Las imágenes se piden al sitio de
+  origen: Open Food Facts o el portal ven la IP del dispositivo y la imagen pedida, sin `Referer`
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -271,7 +292,7 @@ interface Product {
   id: string;
   name: string;
   category?: string;  // opcional (spec 18): los creados desde el catálogo no tienen; vacía no se guarda
-  image?: string;
+  image?: string;     // reservado para una foto propia (Fase 2); la imagen del catálogo no se guarda (spec 17)
   ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
   brand?: string;
   size?: number;      // presentación: 500
@@ -380,7 +401,9 @@ interface CalculatorState {
   antes de agregar"); si no está o falla la consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`.
   Escribir en el buscador borra la oferta. Si el producto tiene precios, la oferta suma el resumen y el botón "Ver
   precios por cadena", que despliega la lista
-- Muestra categoría (si tiene), último precio y variación % respecto al precio anterior (`getPriceStats().previous`)
+- Muestra la imagen (64 px, o el cuadro con la inicial), categoría (si tiene), último precio y variación % respecto
+  al precio anterior (`getPriceStats().previous`). Los resultados del catálogo (también en Agregar producto y en el
+  modal de vincular) y la oferta del lector llevan la imagen de 48 px a la izquierda
 - "Añadir Carrito" con `initialCartPrice` (la referencia SEPA si tiene EAN y no tiene precio propio; nunca el `100`
   de antes) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
@@ -454,6 +477,8 @@ interface CalculatorState {
   comercio" ni desde el historial
 
 ### Detalle de producto (`/product/[id]`)
+- Imagen de 160 px junto al nombre (centrada arriba en el celular) o el cuadro con la inicial; si es de Open Food
+  Facts, debajo "Imagen: Open Food Facts (CC-BY-SA)" (`imageSource`)
 - Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista); "Categoría: X" solo si tiene
 - Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN, **Cambiar vínculo** y **Quitar vínculo**.
   Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
@@ -486,6 +511,7 @@ interface CalculatorState {
   coordenadas (los del SEPA) y, con 2 o más, **Ver recorrido** junto al total: todos esos comercios en el orden
   del carrito, hasta 9 ("Se muestran los primeros 9 comercios"). Los que no tienen coordenadas se aclaran en el
   mapa ("1 comercio sin ubicación no aparece en el mapa")
+- Imagen de 40 px a la izquierda del nombre de cada ítem (una consulta para todo el carrito)
 - Editar cantidad y precio de cada ítem; eliminar
 - **Ítem sin precio** (entró en $0 desde el catálogo, spec 18): campo en ámbar con "Completar precio" y sin
   comparaciones; el botón de compra de su grupo queda deshabilitado con "Completá los precios para comprar" hasta
@@ -503,7 +529,8 @@ interface CalculatorState {
 
 ### Historial de compras (`/purchases`)
 - Lista expandible de compras (`aria-expanded` / `aria-controls`)
-- Por ítem: variación % del precio pagado vs último precio registrado
+- Por ítem: imagen de 40 px (por el EAN del producto propio; si el producto ya no existe, la inicial del nombre
+  guardado) y variación % del precio pagado vs último precio registrado
 - "Repetir" (botón hermano del de expandir, con `aria-label` "Repetir compra del dd/MM/yyyy"): si el carrito tiene
   ítems abre un modal para **combinar o reemplazar** (`loadPurchaseToCart(purchase, merge)`); usa el precio actual
   registrado de cada producto y navega a `/cart`. Los ítems vuelven al comercio de la compra (el `StoreRef` guardado
@@ -555,6 +582,7 @@ npm run lint       # ESLint
 npm test           # Vitest (una pasada)
 npm run test:watch # Vitest en modo watch
 npm run sepa:etl   # ETL del SEPA: baja el ZIP del día y lo carga en Supabase (ver Base de precios SEPA)
+npm run sepa:images # Imágenes de productos → sepa_imagenes (ver Base de precios SEPA)
 ```
 
 ### Solución de problemas
@@ -609,6 +637,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_sucursales` | Sucursal (`id` = `comercio-bandera-sucursal`, p. ej. `10-1-123`): nombre, tipo, dirección, barrio, localidad, provincia (`AR-C`), `lat`/`lng` (null si no son válidas) y `pos` |
 | `sepa_precios_sucursal` | Por EAN × bandera: `precios` (distintos, de menor a mayor) e `indices` (uno por sucursal en el orden de `pos`: posición en `precios`, 0 = no informa) |
 | `sepa_cargas` | Registro de cada ejecución: estado `ok` / `omitida` / `error`, conteos, omitidos y detalle |
+| `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
 
 - **Precio por sucursal** (spec 13): `sepa_precios_en_sucursales(eans, sucursales)` devuelve `ean`, `sucursal` y
   `precio` de cada producto en cada sucursal que lo informa; ignora lo que pase de 20 EAN y 40 sucursales. Arreglos
@@ -642,6 +671,18 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
   237.562 arreglos con 21,8 millones de índices; `sepa_precios_sucursal` 73 MB, `sepa_sucursales` 1 MB, base de
   175 MB (freno de la spec 13: 300 MB) que no crece al repetir la carga; lectura 2 min 45 s con 820 MB de memoria y
   carga 7 min 25 s
+- **Imágenes** (spec 17, `npm run sepa:images`, con `SUPABASE_DB_URL`): 1) lee en streaming el **export diario de
+  Open Food Facts** (`en.openfoodfacts.org.products.csv.gz`, ~1,5 GB, separado por tabulaciones; no se guarda) con el
+  `User-Agent` `ElChanguito/2.0 (https://elchanguito.vercel.app)`, y guarda `image_small_url` (200 px) de los EAN del
+  catálogo, sin filtrar por país. No usa la API de búsqueda: tiene un límite global y devolvía 503 aun a un pedido
+  cada 6,5 s; 2) a los EAN sin imagen les hace un `HEAD` a
+  `imagenes.preciosclaros.gob.ar/productos/<ean>.jpg` (200 → URL; otro código → `null`), de mayor a menor cantidad
+  de banderas, **hasta 5.000 por ejecución**, 5 a la vez, guardando de a 500. Un EAN no se vuelve a revisar hasta
+  pasados 90 días; Open Food Facts reemplaza siempre al portal. Si el export no se puede leer entero (3 intentos), lo
+  leído se guarda y las imágenes de Open Food Facts que ya estaban no se tocan. Resumen en consola y en `GITHUB_STEP_SUMMARY`; código 1 solo
+  si no pudo conectarse a la base. Con el export (17/11/2026, en local, 10 min): 4,9 millones de filas leídas,
+  8.569 productos del catálogo con imagen de Open Food Facts; con 3 ejecuciones del portal (15.000 EAN, los de más
+  cadenas), 10.664 de 76.710 productos con imagen (13,9 %). El portal se termina de recorrer en unas 15 ejecuciones
 - **Migraciones:** `npx supabase db push --linked` (requiere `npx supabase login` y `link` la primera vez)
 - **Carga diaria:** workflow `SEPA` de GitHub Actions (ver *Build y Despliegue*); a mano sigue funcionando
   `npm run sepa:etl`, y el bloqueo evita que pise al workflow
@@ -723,6 +764,10 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
   - `concurrency: sepa` sin cancelar y `timeout-minutes: 30`; el resumen de cada ejecución queda en el *job summary*
   - Si falla, GitHub manda un mail a quien modificó por última vez el `cron`. Un repo público con 60 días sin
     actividad desactiva los workflows programados: reactivarlos desde *Actions*
+- **SEPA imágenes** — `.github/workflows/sepa-images.yml` (Node 24): `npm ci → npm run sepa:images` con el secret
+  `SUPABASE_DB_URL`; los **domingos a las 06:00 hora argentina** (`0 9 * * 0` UTC) y a mano (*Actions → SEPA
+  imágenes → Run workflow*, para adelantar el recorrido del portal); `concurrency: sepa-images` sin cancelar y
+  `timeout-minutes: 60`
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` cargadas **a mano** en Vercel
@@ -786,6 +831,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Precios y comercios cercanos con ubicación o localidad en Buscar, el detalle y el carrito (spec 15)
 - [x] Restyling: paleta berenjena y amarillo, Rubik + Nunito Sans, íconos de lucide y barra de navegación inferior (spec 19)
 - [x] Mapa del comercio con la ruta para llegar y recorrido del carrito (spec 16)
+- [x] Imágenes de productos por EAN (Open Food Facts y portal Precios Claros) con marcador de inicial (spec 17)
 - [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
 
 ---

@@ -1,7 +1,8 @@
 # 07 — Precios cercanos y extensiones del SEPA
 
-- **Estado:** En curso (spec 13: sucursales y precios por sucursal en la base; spec 15: comercios cercanos en la
-  app; spec 18: agregar al carrito sin alta; specs 16 y 17 en borrador)
+- **Estado:** Hecho (spec 13: sucursales y precios por sucursal en la base; spec 15: comercios cercanos en la
+  app; spec 16: mapa y cómo llegar; spec 17: imágenes de productos; spec 18: agregar al carrito sin alta). Queda la
+  evolución futura (historial de precios, Fase 2)
 - **Fase:** 1–2 (Supabase de solo lectura; los datos propios siguen en localStorage)
 
 > Separado del [feature 06](06-precios-sepa.md) el 16/11/2026, al cerrarlo con la

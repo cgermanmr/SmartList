@@ -1,6 +1,6 @@
 # SPEC 17 — Imágenes de productos
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 12](12-precio-de-referencia-sepa.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md), [SPEC 19](19-restyling-base-y-navegacion.md)
 > **Fecha:** 2026-11-17
 > **Objetivo:** Mostrar la imagen de cada producto con código de barras cuando existe, y un marcador con su inicial cuando no, en Buscar, el catálogo, el detalle, el carrito y el historial.
@@ -92,11 +92,16 @@ se muestra para un producto es `product.image ?? imágenes.get(product.ean)` (ho
 
 `npm run sepa:images` (con `SUPABASE_DB_URL`, como el ETL):
 
-1. **Open Food Facts, en bloque.** Recorre el listado de productos de Argentina
-   (`/api/v2/search?countries_tags_en=argentina&fields=code,image_front_small_url&page_size=100`, ~171 páginas),
-   con 1 pedido por segundo y el `User-Agent` `ElChanguito/2.0 (https://elchanguito.vercel.app)` (la API pide que
-   la app se identifique). Guarda `url` y `fuente = 'off'` para los códigos que están en `sepa_productos`
-   (normalizados con `toGtin13`).
+1. **Open Food Facts, del export.** Lee en streaming (sin guardarlo) el export diario de todos sus productos
+   (`https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz`, ~1,5 GB comprimido, separado por
+   tabulaciones), con el `User-Agent` `ElChanguito/2.0 (https://elchanguito.vercel.app)` (la API pide que la app se
+   identifique). De cada fila usa `code` e `image_small_url` (200 px) y guarda `url` y `fuente = 'off'` para los
+   códigos que están en `sepa_productos` (normalizados con `toGtin13`), sin filtrar por país. Hasta 3 intentos; si
+   no se puede leer entero, lo leído se guarda igual y las imágenes de Open Food Facts que ya estaban no se tocan.
+   *Cambio al implementar (17/11/2026):* el borrador recorría la búsqueda de la API (`/api/v2/search`, ~171 páginas).
+   La API admite 10 búsquedas por minuto por IP y tiene además un límite global: a un pedido por segundo y después a
+   uno cada 6,5 s devolvió 503 y la ejecución se cortó en la página 4 y en la 8. Su documentación pide usar el export
+   para más de unos cientos de productos.
 2. **Precios Claros, de a uno.** Para los EAN sin imagen todavía, pedido `HEAD` a la URL del portal, de mayor a
    menor cantidad de banderas. Hasta **5.000 por ejecución**, 5 a la vez. `200` → guarda la URL; otro código →
    `url = null`.
@@ -114,7 +119,7 @@ Workflow `.github/workflows/sepa-images.yml` (Node 24, secret `SUPABASE_DB_URL`)
 
 - **Prioridad de fuente:** Open Food Facts primero (imágenes más nuevas y con licencia clara); el portal completa
   lo que falta.
-- **Tamaño:** de Open Food Facts se guarda la versión chica (200 px). La del portal se usa como viene.
+- **Tamaño:** de Open Food Facts se guarda la versión chica (200 px, `image_small_url`). La del portal se usa como viene.
 - **Consulta:** `getSepaImages` lee `sepa_imagenes` (`ean`, `url`, con `url` no nula) con `in('ean', …)` de a 100
   EAN y `.retry(false)`. Caché de módulo por EAN durante la sesión, igual que `getSepaPrices`: guarda también los
   "sin imagen"; si la consulta falla, no se guarda. **Una consulta por pantalla**, no una por producto.
@@ -171,22 +176,22 @@ Workflow `.github/workflows/sepa-images.yml` (Node 24, secret `SUPABASE_DB_URL`)
 
 ## Criterios de aceptación
 
-- [ ] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
-- [ ] Después de la primera ejecución, `sepa_imagenes` tiene imagen para Coca-Cola (`7790895000997`) y el resumen informa cuántos productos tienen imagen.
-- [ ] Una segunda ejecución del script el mismo día no vuelve a pedir los EAN ya revisados.
-- [ ] Buscar "coca cola" muestra la imagen en los resultados del catálogo; buscar "pañal" muestra el cuadro con la inicial, sin íconos de imagen rota.
+- [x] `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] Después de la primera ejecución, `sepa_imagenes` tiene imagen para Coca-Cola (`7790895000997`) y el resumen informa cuántos productos tienen imagen.
+- [x] Una segunda ejecución del script el mismo día no vuelve a pedir los EAN ya revisados.
+- [x] Buscar "coca cola" muestra la imagen en los resultados del catálogo; buscar "pañal" muestra el cuadro con la inicial, sin íconos de imagen rota.
 - [ ] Los resultados de "Buscar en Precios Claros" en Agregar producto y en el modal de vincular muestran la imagen o el marcador.
 - [ ] Leer el código de barras de un producto del catálogo con imagen la muestra en la oferta.
-- [ ] Un producto propio con EAN creado **antes** de esta spec muestra su imagen en la tarjeta de Buscar, el detalle y el carrito, sin volver a vincularlo.
-- [ ] Vincular un producto propio con el catálogo hace aparecer su imagen; quitar el vínculo la saca (vuelve el marcador).
+- [x] Un producto propio con EAN creado **antes** de esta spec muestra su imagen en la tarjeta de Buscar, el detalle y el carrito, sin volver a vincularlo.
+- [x] Vincular un producto propio con el catálogo hace aparecer su imagen; quitar el vínculo la saca (vuelve el marcador).
 - [ ] Una compra expandida del historial muestra la imagen de cada ítem; un ítem cuyo producto se borró muestra el marcador.
-- [ ] El detalle de un producto con imagen de Open Food Facts dice "Imagen: Open Food Facts (CC-BY-SA)".
-- [ ] Con una URL de imagen rota se ve el marcador y la fila no cambia de alto.
-- [ ] Cada pantalla hace una sola consulta a `sepa_imagenes`; volver a la misma búsqueda no la repite (pestaña Network).
-- [ ] Las imágenes fuera de la pantalla no se piden hasta desplazarse, y el pedido no lleva `Referer` (pestaña Network).
-- [ ] Sin las variables de Supabase, todos los productos muestran el marcador y no hay errores en consola.
-- [ ] `localStorage` no cambia: ninguna clave `preciolocal_*` guarda URLs de imágenes.
-- [ ] En 375 px no hay scroll horizontal.
+- [x] El detalle de un producto con imagen de Open Food Facts dice "Imagen: Open Food Facts (CC-BY-SA)".
+- [x] Con una URL de imagen rota se ve el marcador y la fila no cambia de alto.
+- [x] Cada pantalla hace una sola consulta a `sepa_imagenes`; volver a la misma búsqueda no la repite (pestaña Network).
+- [x] Las imágenes fuera de la pantalla no se piden hasta desplazarse, y el pedido no lleva `Referer` (pestaña Network).
+- [x] Sin las variables de Supabase, todos los productos muestran el marcador y no hay errores en consola.
+- [x] `localStorage` no cambia: ninguna clave `preciolocal_*` guarda URLs de imágenes.
+- [x] En 375 px no hay scroll horizontal.
 
 ## Decisiones
 
@@ -194,6 +199,7 @@ Workflow `.github/workflows/sepa-images.yml` (Node 24, secret `SUPABASE_DB_URL`)
 - **Sí:** buscar la imagen por EAN al mostrar, sin copiarla al producto. Cubre los productos ya creados (los de la spec 18 incluidos), toma solas las imágenes que se suman cada semana y no deja URLs vencidas en `localStorage`.
 - **Sí:** una consulta aparte (`getSepaImages`) en lugar de una vista con `sepa_productos`. Sirve igual para el catálogo y para los productos propios, no toca `searchSepaProducts` ni su orden, y si falla no rompe la búsqueda.
 - **Sí:** enlazar a la imagen de origen con `no-referrer` en lugar de copiarla. Sin almacenamiento propio ni costo; el sitio de origen ve la IP y la imagen pedida, que se acepta y queda documentado. El marcador cubre el caso de que una deje de existir.
+- **Sí:** el export de Open Food Facts en lugar de su API de búsqueda (cambio al implementar). La búsqueda devuelve 503 por su límite global aun a un pedido cada 6,5 s; el export trae todo en una descarga y no compite con otros usuarios de la API. Cuesta ~1,5 GB de descarga por semana en Actions.
 - **Sí:** las dos fuentes. El portal no publica licencia, pero aporta productos que Open Food Facts no tiene; va segundo.
 - **Sí:** marcador con la inicial siempre, también sin EAN y sin Supabase. Las filas quedan alineadas y cada producto se distingue; un ícono genérico repetiría el mismo dibujo en casi toda la lista.
 - **Sí:** tabla aparte de `sepa_productos`. La carga diaria no la toca y las imágenes sobreviven a un producto que desaparece unos días.
@@ -213,6 +219,6 @@ Workflow `.github/workflows/sepa-images.yml` (Node 24, secret `SUPABASE_DB_URL`)
 | El portal no publica una licencia para sus imágenes y puede cerrar el acceso | Open Food Facts va primero; si el portal deja de responder, esas filas pasan a `null` en la revisión de los 90 días |
 | Imagen que no corresponde al producto (código reutilizado) | Imagen chica y secundaria; el nombre y la marca siguen siendo lo principal |
 | Una imagen pesada frena la lista | `loading="lazy"`, tamaño fijo y la versión de 200 px cuando existe |
-| Límite de uso de Open Food Facts | Un pedido por segundo, una vez por semana, con `User-Agent` propio |
+| Límite de uso de Open Food Facts | Se usa el export diario (lo que pide su documentación para pedidos masivos), no la API de búsqueda; una vez por semana, con `User-Agent` propio |
 | Una consulta más por pantalla | Una sola por pantalla, con caché por EAN; si falla, la pantalla queda con los marcadores |
 | El sitio de origen ve la IP y las imágenes que pide cada usuario | `no-referrer`; documentado en *Reglas* y en `CLAUDE.md`; si deja de ser aceptable, se copian a un almacenamiento propio sin tocar la app |

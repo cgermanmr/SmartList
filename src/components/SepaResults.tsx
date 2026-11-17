@@ -1,6 +1,8 @@
 import { ReactNode } from 'react';
 import { formatSize } from '@/lib/format';
 import { SepaProduct } from '@/lib/sepa';
+import ProductImage from './ProductImage';
+import { useSepaImages } from './useSepaImages';
 import { SepaSearchState } from './useSepaSearch';
 
 interface Props {
@@ -42,6 +44,8 @@ function ProductInfo({ product, extra }: { product: SepaProduct; extra?: ReactNo
 export default function SepaResults({ search, renderItem, renderDetails }: Props) {
   const message = statusMessage(search);
   const { results } = search;
+  // Imágenes de todos los resultados en una sola consulta (spec 17); sin imagen, el marcador con la inicial
+  const images = useSepaImages(results.map(product => product.ean));
 
   return (
     <div>
@@ -58,7 +62,14 @@ export default function SepaResults({ search, renderItem, renderDetails }: Props
         <>
           <ul className="mt-3 border border-gray-200 rounded-lg divide-y divide-gray-200 overflow-hidden bg-white">
             {results.map(product => (
-              <li key={product.ean}>{renderItem(product, <ProductInfo product={product} extra={renderDetails?.(product)} />)}</li>
+              <li key={product.ean}>
+                {renderItem(product, (
+                  <>
+                    <ProductImage src={images.get(product.ean)} name={product.description} size={48} />
+                    <ProductInfo product={product} extra={renderDetails?.(product)} />
+                  </>
+                ))}
+              </li>
             ))}
           </ul>
           <p className="mt-2 text-xs text-gray-500">Datos: Precios Claros — SEPA (CC-BY-4.0)</p>

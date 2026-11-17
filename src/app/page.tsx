@@ -8,10 +8,12 @@ import BranchMap from '@/components/BranchMap';
 import LocationBar from '@/components/LocationBar';
 import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import NumberInput from '@/components/NumberInput';
+import ProductImage from '@/components/ProductImage';
 import ScanButton from '@/components/ScanButton';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
 import { useNearbyPrices } from '@/components/useNearby';
+import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
@@ -73,6 +75,10 @@ export default function SearchPage() {
     ...filteredProducts.map(p => p.ean),
     ...catalogSearch.results.map(r => r.ean),
   ]);
+
+  // Imágenes de los productos propios con EAN, en una sola consulta; las del catálogo las pide SepaResults
+  const images = useSepaImages(filteredProducts.map(p => p.ean));
+  const imageOf = (product: Product) => product.image ?? (product.ean ? images.get(product.ean) : undefined);
 
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
@@ -193,9 +199,10 @@ export default function SearchPage() {
 
           return (
             <div key={product.id} className="card p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-bold text-lg">{product.name}</h3>
+              <div className="flex items-start gap-3 mb-3">
+                <ProductImage src={imageOf(product)} name={product.name} size={64} />
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-lg break-words">{product.name}</h3>
                   {product.category && <p className="text-sm text-gray-600">{product.category}</p>}
                 </div>
               </div>
@@ -457,6 +464,7 @@ function ScanOffer({ scan, onAdd }: ScanOfferProps) {
   const href = `/upload?tab=producto&ean=${scan.ean}`;
   const lookup = useSepaReferenceLookup(scan.status === 'found' ? [scan.ean] : []);
   const summary = lookup.references.get(scan.ean);
+  const images = useSepaImages(scan.status === 'found' ? [scan.ean] : []);
   const [pricesOpen, setPricesOpen] = useState(false);
   const panelId = `cadenas-lector-${scan.ean}`;
 
@@ -473,7 +481,12 @@ function ScanOffer({ scan, onAdd }: ScanOfferProps) {
   return (
     <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
       <div role="status" className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <p className="min-w-0 flex-1 text-sm text-gray-700 break-words">{text}</p>
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          {scan.status === 'found' && (
+            <ProductImage src={images.get(scan.ean)} name={scan.product.description} size={48} />
+          )}
+          <p className="min-w-0 flex-1 text-sm text-gray-700 break-words">{text}</p>
+        </div>
         {scan.status === 'found' ? (
           <div className="flex shrink-0 flex-col items-center sm:items-end">
             <AddToCartButton

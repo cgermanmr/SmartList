@@ -28,7 +28,7 @@ necesita backend.
 | 04 | [Promociones de comercios de cercanía](features/04-promociones-comercios.md) | 2–3 | Idea | 02, backend + roles, service worker |
 | 05 | [Pedidos a comercios](features/05-pedidos-a-comercios.md) | 3–4 | Idea | 03, 04 |
 | 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | Hecho (specs 08–12) | Supabase (solo lectura), ETL diario |
-| 07 | [Precios cercanos y extensiones del SEPA](features/07-precios-cercanos-sepa.md) | 1–2 | En curso (specs 13, 15, 16 y 18 hechas; 17 en borrador) | 06, geolocalización; historial: Fase 2 |
+| 07 | [Precios cercanos y extensiones del SEPA](features/07-precios-cercanos-sepa.md) | 1–2 | Hecho (specs 13 y 15–18) | 06, geolocalización; historial: Fase 2 |
 
 **Estados posibles:** Idea · Analizado · En curso · Parcial · Hecho.
 

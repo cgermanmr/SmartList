@@ -140,6 +140,53 @@ async function fetchSepaPrices(eans: string[]): Promise<Map<string, SepaPrice[]>
   return groupSepaPrices(data as unknown as SepaPriceRow[]);
 }
 
+// ── Imágenes ─────────────────────────────────────────
+// Spec 17. Caché de módulo por EAN, igual que la de precios: guarda la promesa y también los "sin imagen" (null).
+// Si una consulta falla, sus EAN salen de la caché.
+
+const IMAGE_BATCH = 100;
+const imageCache = new Map<string, Promise<string | null>>();
+
+/** URL de la imagen de cada EAN que tiene una (los que no tienen no están en el mapa). Con caché por EAN */
+export async function getSepaImages(eans: string[]): Promise<Map<string, string>> {
+  if (!supabase) return new Map();
+  const unique = [...new Set(eans)];
+  const missing = unique.filter(ean => !imageCache.has(ean));
+
+  for (let i = 0; i < missing.length; i += IMAGE_BATCH) {
+    const batch = missing.slice(i, i + IMAGE_BATCH);
+    const request = fetchSepaImages(batch);
+    for (const ean of batch) {
+      const entry = request.then(byEan => byEan.get(ean) ?? null);
+      imageCache.set(ean, entry);
+      entry.catch(() => {
+        if (imageCache.get(ean) === entry) imageCache.delete(ean);
+      });
+    }
+  }
+
+  const entries = await Promise.all(unique.map(async ean => [ean, await imageCache.get(ean)!] as const));
+  return new Map(entries.filter((entry): entry is readonly [string, string] => entry[1] !== null));
+}
+
+async function fetchSepaImages(eans: string[]): Promise<Map<string, string>> {
+  if (!supabase) return new Map();
+  const { data, error } = await supabase
+    .from('sepa_imagenes').select('ean, url').in('ean', eans).not('url', 'is', null).retry(false);
+  if (error) throw error;
+  return new Map((data as { ean: string; url: string }[]).map(row => [row.ean, row.url]));
+}
+
+/** 'off' si la URL es de Open Food Facts (lleva atribución); cualquier otra es del portal Precios Claros */
+export function imageSource(url: string): 'off' | 'preciosclaros' {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'openfoodfacts.org' || hostname.endsWith('.openfoodfacts.org') ? 'off' : 'preciosclaros';
+  } catch {
+    return 'preciosclaros';
+  }
+}
+
 // ── Funciones puras ─────────────────────────────────────────
 
 /** true si el texto alcanza para consultar el catálogo: al menos 3 caracteres sin contar espacios */

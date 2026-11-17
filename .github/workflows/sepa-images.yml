@@ -1,0 +1,26 @@
+name: SEPA imágenes
+
+# Imágenes de los productos del SEPA: Open Food Facts y el portal Precios Claros → sepa_imagenes (spec 17)
+on:
+  schedule:
+    - cron: '0 9 * * 0'   # domingo 06:00 hora argentina
+  workflow_dispatch:      # a mano, para adelantar el recorrido del portal (5.000 productos por ejecución)
+
+concurrency:
+  group: sepa-images
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run sepa:images
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

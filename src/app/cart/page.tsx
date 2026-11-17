@@ -8,7 +8,9 @@ import { ReactNode, useId, useState } from 'react';
 import BranchMap from '@/components/BranchMap';
 import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
+import ProductImage from '@/components/ProductImage';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
+import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
 import { newId } from '@/lib/ids';
@@ -105,6 +107,8 @@ export default function CartPage() {
   // Precio de referencia de los ítems con EAN, en una sola consulta
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
   const references = useSepaReferences(cart.map(item => eanOf(item.productId)));
+  // Imágenes de todo el carrito en una sola consulta (spec 17)
+  const images = useSepaImages(cart.map(item => eanOf(item.productId)));
 
   function clear() {
     if (confirm('¿Estás seguro de que quieres vaciar el carrito?')) {
@@ -185,6 +189,7 @@ export default function CartPage() {
             group={group}
             eanOf={eanOf}
             references={references}
+            images={images}
             onChangeStore={setStoreItemId}
             onMap={store => setMap({ stops: mapStops([store]) })}
             onCheckout={() => openCheckout(group.key)}
@@ -239,6 +244,7 @@ interface StoreGroupProps {
   group: CartGroup;
   eanOf: (productId: string) => string | undefined;
   references: Map<string, ReferenceSummary>;
+  images: Map<string, string>;
   onChangeStore: (itemId: string) => void;
   /** Ver el comercio en el mapa (solo se ofrece si tiene coordenadas) */
   onMap: (store: StoreRef) => void;
@@ -247,7 +253,7 @@ interface StoreGroupProps {
   payment: ReactNode;
 }
 
-function StoreGroup({ group, eanOf, references, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
+function StoreGroup({ group, eanOf, references, images, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
   const titleId = useId();
   const store = group.store;
   const detail = storeDetail(store);
@@ -291,6 +297,7 @@ function StoreGroup({ group, eanOf, references, onChangeStore, onMap, onCheckout
               key={item.id}
               item={item}
               reference={ean ? references.get(ean) : undefined}
+              image={ean ? images.get(ean) : undefined}
               onChangeStore={() => onChangeStore(item.id)}
             />
           );
@@ -325,10 +332,11 @@ function StoreGroup({ group, eanOf, references, onChangeStore, onMap, onCheckout
 interface CartRowProps {
   item: CartItem;
   reference: ReferenceSummary | undefined;
+  image: string | undefined;
   onChangeStore: () => void;
 }
 
-function CartRow({ item, reference, onChangeStore }: CartRowProps) {
+function CartRow({ item, reference, image, onChangeStore }: CartRowProps) {
   const purchases = useStore(s => s.purchases);
   const removeFromCart = useStore(s => s.removeFromCart);
   const updateQuantity = useStore(s => s.updateQuantity);
@@ -343,9 +351,10 @@ function CartRow({ item, reference, onChangeStore }: CartRowProps) {
 
   return (
     <li className="p-4">
-      <div className="flex justify-between items-start mb-3">
-        <div className="min-w-0">
-          <h3 className="font-bold">{item.productName}</h3>
+      <div className="flex items-start gap-3 mb-3">
+        <ProductImage src={image} name={item.productName} size={40} />
+        <div className="min-w-0 flex-1">
+          <h3 className="font-bold break-words">{item.productName}</h3>
           {last !== null && (
             <span className={`inline-flex items-center gap-0.5 text-xs font-semibold ${STATUS_CLASS[status]}`}>
               {item.price > last && <ArrowUp aria-hidden="true" className="size-3.5" />}

@@ -6,12 +6,14 @@ import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import NearbyStoresCard from '@/components/NearbyStoresCard';
 import PriceChart from '@/components/PriceChart';
+import ProductImage from '@/components/ProductImage';
 import ReferencePrice from '@/components/ReferencePrice';
 import SepaLinkDialog from '@/components/SepaLinkDialog';
+import { useSepaImages } from '@/components/useSepaImages';
 import { formatMoney, formatShortDateTime, formatSize } from '@/lib/format';
 import { newId } from '@/lib/ids';
 import { CartItem, Price, Product } from '@/lib/models';
-import { sepaEnabled } from '@/lib/sepa';
+import { imageSource, sepaEnabled } from '@/lib/sepa';
 import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
 export default function ProductDetail() {
@@ -30,6 +32,8 @@ export default function ProductDetail() {
   const linkActions = useRef<HTMLDivElement>(null);
   const ean = product?.ean;
   const previousEan = useRef(ean);
+  // La imagen se busca por EAN al mostrar (spec 17): quitar el vínculo la saca, vincular la trae
+  const images = useSepaImages([ean]);
   useEffect(() => {
     if (previousEan.current === ean) return;
     previousEan.current = ean;
@@ -47,6 +51,7 @@ export default function ProductDetail() {
   const prices = getPricesForProduct(allPrices, product.id);
   const stats = getPriceStats(allPrices, product.id);
   const details = productDetails(product);
+  const image = product.image ?? (product.ean ? images.get(product.ean) : undefined);
 
   function add() {
     if (!product || !stats) return;
@@ -88,10 +93,19 @@ export default function ProductDetail() {
       </div>
 
       <div className="card p-6 mb-6">
-        <h1 className="text-3xl font-bold mb-2">{product.name}</h1>
-        <div className="mb-4">
-          {details && <p className="text-gray-600 mb-1 break-words">{details}</p>}
-          {product.category && <p className="text-gray-600">Categoría: {product.category}</p>}
+        {/* Imagen junto al nombre; en el celular, centrada arriba */}
+        <div className="mb-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <div className="flex w-40 shrink-0 flex-col items-center">
+            <ProductImage src={image} name={product.name} size={160} />
+            {image && imageSource(image) === 'off' && (
+              <p className="mt-1 text-center text-xs text-gray-500">Imagen: Open Food Facts (CC-BY-SA)</p>
+            )}
+          </div>
+          <div className="min-w-0 w-full flex-1">
+            <h1 className="text-3xl font-bold mb-2 break-words">{product.name}</h1>
+            {details && <p className="text-gray-600 mb-1 break-words">{details}</p>}
+            {product.category && <p className="text-gray-600">Categoría: {product.category}</p>}
+          </div>
         </div>
 
         {sepaEnabled && (

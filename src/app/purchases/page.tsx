@@ -3,6 +3,8 @@
 import { ChevronDown, ChevronUp, ShoppingCart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import ProductImage from '@/components/ProductImage';
+import { useSepaImages } from '@/components/useSepaImages';
 import { formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { CartItem, Purchase } from '@/lib/models';
 import { getPriceStats, useStore } from '@/lib/store';
@@ -11,10 +13,21 @@ export default function PurchasesPage() {
   const router = useRouter();
   const purchases = useStore(s => s.purchases);
   const prices = useStore(s => s.prices);
+  const products = useStore(s => s.products);
   const loadPurchaseToCart = useStore(s => s.loadPurchaseToCart);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pendingPurchase, setPendingPurchase] = useState<Purchase | null>(null);
+
+  // Imágenes (spec 17): solo las de la compra expandida, por el EAN del producto propio de cada ítem.
+  // Si el producto se borró no hay EAN: queda el marcador con la inicial del nombre guardado en la compra
+  const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
+  const expandedPurchase = purchases.find(p => p.id === expandedId);
+  const images = useSepaImages(expandedPurchase?.items.map(item => eanOf(item.productId)) ?? []);
+  const imageOf = (productId: string) => {
+    const ean = eanOf(productId);
+    return ean ? images.get(ean) : undefined;
+  };
 
   function toggle(id: string) {
     setExpandedId(expandedId === id ? null : id);
@@ -98,7 +111,12 @@ export default function PurchasesPage() {
                 <div id={`compra-${purchase.id}`} className="border-t border-gray-100">
                   <div className="divide-y divide-gray-100">
                     {purchase.items.map((item, i) => (
-                      <PurchaseItemRow key={`${item.id}-${i}`} item={item} last={lastRegisteredPrice(item.productId)} />
+                      <PurchaseItemRow
+                        key={`${item.id}-${i}`}
+                        item={item}
+                        image={imageOf(item.productId)}
+                        last={lastRegisteredPrice(item.productId)}
+                      />
                     ))}
                   </div>
 
@@ -134,7 +152,7 @@ export default function PurchasesPage() {
   );
 }
 
-function PurchaseItemRow({ item, last }: { item: CartItem; last: number | null }) {
+function PurchaseItemRow({ item, image, last }: { item: CartItem; image: string | undefined; last: number | null }) {
   // Verde si pagó <= último precio registrado, rojo si pagó más
   const cheaperOrEqual = last !== null && item.price <= last;
   const expensive = last !== null && item.price > last;
@@ -144,9 +162,10 @@ function PurchaseItemRow({ item, last }: { item: CartItem; last: number | null }
   const pct = last !== null && last !== 0 ? ((item.price - last) / last) * 100 : null;
 
   return (
-    <div className="px-4 py-3 flex justify-between items-start">
-      <div className="flex-1">
-        <p className="font-semibold text-gray-800">{item.productName}</p>
+    <div className="px-4 py-3 flex items-start gap-3">
+      <ProductImage src={image} name={item.productName} size={40} />
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold text-gray-800 break-words">{item.productName}</p>
         {/* Precio pagado */}
         <div className="flex items-baseline gap-2 mt-0.5">
           <span className={`text-base font-bold ${priceColor}`}>${formatMoney(item.price)} c/u</span>

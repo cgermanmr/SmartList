@@ -23,6 +23,11 @@ export function formatSize(size: number, unit: string): string {
   return `${formatNumber(size, 0, 3)} ${unit}`;
 }
 
+/** Inicial de un nombre: su primera letra o número, en mayúscula ("¡Yerba!" → "Y"); '' si no tiene ninguno */
+export function initialOf(name: string): string {
+  return name.match(/[\p{L}\p{N}]/u)?.[0].toLocaleUpperCase('es-AR') ?? '';
+}
+
 /** Variación porcentual con signo y 1 decimal: "+5,3%" */
 export function formatPctChange(current: number, previous: number): string {
   const pct = ((current - previous) / previous) * 100;

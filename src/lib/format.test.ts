@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateTime, formatIsoDate, formatMoney, formatNumber, formatPct, formatPctChange, formatSize } from './format';
+import { formatDateTime, formatIsoDate, formatMoney, formatNumber, formatPct, formatPctChange, formatSize, initialOf } from './format';
 
 describe('format', () => {
   it('usa separadores es-AR', () => {
@@ -26,6 +26,15 @@ describe('format', () => {
     expect(formatSize(500, 'g')).toBe('500 g');
     expect(formatSize(1000, 'ml')).toBe('1.000 ml');
     expect(formatSize(1.5, 'l')).toBe('1,5 l');
+  });
+
+  it('inicial: la primera letra o número, en mayúscula', () => {
+    expect(initialOf('yerba Playadito')).toBe('Y');
+    expect(initialOf('  ¡ñoquis!')).toBe('Ñ');
+    expect(initialOf('árbol')).toBe('Á');
+    expect(initialOf('7 Up 500 ml')).toBe('7');
+    expect(initialOf('— ·')).toBe('');
+    expect(initialOf('')).toBe('');
   });
 
   it('fecha y hora dd/MM/yyyy HH:mm', () => {
