@@ -164,8 +164,9 @@ site_url = "https://elchanguito.vercel.app"
 additional_redirect_urls = [
   "http://localhost:4200/**",
   "https://elchanguito.vercel.app/**",
-  # Previews de Vercel: solo con el sufijo del equipo, que nadie más puede crear
-  "https://elchanguito-*-cgermanmrs-projects.vercel.app/**",
+  # Preview de la rama dev, con su URL exacta. Sin comodines: cualquiera puede crear en Vercel un proyecto llamado
+  # "elchanguito-x-cgermanmrs-projects" y recibir el código del login. Las demás previews vuelven a la Site URL
+  "https://elchanguito-git-dev-cgermanmrs-projects.vercel.app/**",
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600

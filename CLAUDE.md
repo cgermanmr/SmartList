@@ -869,7 +869,8 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - **Cuenta (spec 21), configuración de Auth en `supabase/config.toml`** (se aplica con `npx supabase config diff` y
   `npx supabase config push`): Site URL `https://elchanguito.vercel.app`; Redirect URLs `http://localhost:4200/**`,
-  la de producción y las previews de Vercel solo con el sufijo `-cgermanmrs-projects.vercel.app`; código de 6
+  la de producción y la preview de `dev` (`elchanguito-git-dev-cgermanmrs-projects.vercel.app`; **sin comodines**:
+  cualquiera puede crear en Vercel un proyecto cuyo dominio encaje y recibir el código del login); código de 6
   dígitos; Google con el cliente web del proyecto "El Changuito" de Google Cloud (cuenta `elchanguito.app@gmail.com`,
   app **en producción**, redirect `https://bjzeknajhrbtormkuunj.supabase.co/auth/v1/callback`). Los secretos van en
   `supabase/.env` (ignorado), que la CLI lee sola: `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`. **Pendiente:** SMTP propio
