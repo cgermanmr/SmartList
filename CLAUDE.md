@@ -17,7 +17,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 - Fase actual: **Fase 1 — Frontend Next.js con localStorage**, publicado en Vercel, y comienzo de la **Fase 2**:
   cuenta optativa (Google o código por mail) que sincroniza los datos propios con Supabase
   ([SPEC 21](specs/21-cuenta-y-sincronizacion.md)); sin cuenta, todo queda en el teléfono. Aparte, una base
-  Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions
+  Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por una tarea programada
+  de Windows en una PC con IP argentina (el portal bloquea a GitHub Actions desde el 17/11/2026)
   ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md)). La app consulta
   su catálogo de productos para cargar y vincular productos por código de barras
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
@@ -57,7 +58,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 
 ```
 .github/workflows/ci.yml        # lint + test + build en cada push a main/dev y en cada PR
-.github/workflows/sepa.yml      # ETL del SEPA: 15:30 y 21:30 hora argentina y a mano (opción force)
+.github/workflows/sepa.yml      # ETL del SEPA: 15:30 y 21:30 hora argentina y a mano (opción force); desactivado
+                                #   desde el 21/11/2026 (403 del portal), ver Build y Despliegue
 .github/workflows/sepa-images.yml # Imágenes de productos: domingos 06:00 hora argentina y a mano
 docs/                           # Roadmap, features futuros (features/NN-*.md) e ideas
 specs/                          # Specs NN-*.md (una por cambio)
@@ -72,7 +74,11 @@ scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar),
 ├── aggregate.ts                # Agregación por EAN × bandera (mínimo, mediana, máximo, sucursales) y por sucursal
 ├── load.ts                     # Carga en una transacción con pg, bloqueo de sesión y registro en sepa_cargas
 ├── summary.ts                  # Resumen Markdown de la ejecución para el job summary de GitHub
-└── images.ts                   # npm run sepa:images: imágenes por EAN de Open Food Facts y del portal → sepa_imagenes
+├── images.ts                   # npm run sepa:images: imágenes por EAN de Open Food Facts y del portal → sepa_imagenes
+├── run-local.ps1               # Corre sepa:etl o sepa:images, guarda el log en %LOCALAPPDATA%\el-changuito\logs
+│                               #   y manda el mail con el resultado
+├── install-tasks.ps1           # Registra las tareas programadas de Windows (ETL diario, imágenes los domingos)
+└── set-mail.ps1                # Guarda (cifrada) la contraseña de aplicación de Gmail para los avisos
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
@@ -703,10 +709,22 @@ npm run sepa:images # Imágenes de productos → sepa_imagenes (ver Base de prec
   revocada): revisar la URL y la clave en *Project Settings → API*
 - **`sepa:etl` da `ENOTFOUND db.<ref>.supabase.co`** — la conexión directa es solo IPv6: usar la cadena del *Session pooler*
 - **`sepa:etl` da `SELF_SIGNED_CERT_IN_CHAIN`** — falta o cambió `supabase/prod-ca-2021.crt` (Project Settings → Database → SSL Configuration)
-- **`sepa:etl` termina con "Más de 3 días sin precios nuevos"** — no hubo carga `ok` reciente: revisar las últimas
-  ejecuciones en *Actions → SEPA* y las filas de `sepa_cargas`
-- **`sepa:etl` termina como `omitida — otra carga en curso`** — otra carga (el workflow u otra local) tiene el
-  bloqueo: esperar a que termine; si el proceso murió, Postgres lo suelta al cerrarse la conexión
+- **`sepa:etl` termina con "Más de 3 días sin precios nuevos"** — no hubo carga `ok` reciente: revisar los logs de
+  la tarea programada (`%LOCALAPPDATA%\el-changuito\logs\sepa-etl-*.log`) y las filas de `sepa_cargas`
+- **`sepa:etl` termina como `omitida — otra carga en curso`** — otra carga (la tarea programada u otra a mano) tiene
+  el bloqueo: esperar a que termine; si el proceso murió, Postgres lo suelta al cerrarse la conexión
+- **El workflow SEPA de GitHub falla con `package_show … respondió 403 Forbidden`** — el portal
+  `datos.produccion.gob.ar` bloquea las IP de los runners (desde el 17/11/2026; desde una conexión argentina responde
+  200 con el mismo código y `User-Agent`). Por eso el workflow está desactivado y la carga corre en la tarea
+  programada local (ver *Build y Despliegue*). Una nube cualquiera (routines, Edge Functions, un VPS) probablemente
+  reciba el mismo 403: hace falta una IP argentina
+- **La tarea programada no corrió** — necesita la sesión de Windows iniciada (bloqueada sirve). Ver la última
+  ejecución: `Get-ScheduledTask 'El Changuito - SEPA*' | Get-ScheduledTaskInfo`; correrla ya:
+  `Start-ScheduledTask 'El Changuito - SEPA ETL'`. Si `npm` no se encuentra, Node tiene que estar en el `PATH` del
+  usuario o del sistema (no en el perfil de PowerShell)
+- **No llega el mail de la tarea** — el final del log del día dice por qué: "Sin aviso por mail: falta …" (correr
+  `scripts\sepa\set-mail.ps1`) o "No se pudo mandar el mail: …" (contraseña de aplicación revocada o cambiada:
+  generar otra y volver a correr `set-mail.ps1`). Revisar también la carpeta de spam
 
 ---
 
@@ -781,8 +799,9 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
   8.569 productos del catálogo con imagen de Open Food Facts; con 3 ejecuciones del portal (15.000 EAN, los de más
   cadenas), 10.664 de 76.710 productos con imagen (13,9 %). El portal se termina de recorrer en unas 15 ejecuciones
 - **Migraciones:** `npx supabase db push --linked` (requiere `npx supabase login` y `link` la primera vez)
-- **Carga diaria:** workflow `SEPA` de GitHub Actions (ver *Build y Despliegue*); a mano sigue funcionando
-  `npm run sepa:etl`, y el bloqueo evita que pise al workflow
+- **Carga diaria:** tarea programada de Windows "El Changuito - SEPA ETL", todos los días a las 04:00 (carga el
+  archivo publicado el día anterior); el workflow `SEPA` de GitHub Actions está desactivado por el 403 del portal
+  (ver *Build y Despliegue*). A mano sigue funcionando `npm run sepa:etl`, y el bloqueo evita que pise a la tarea
 
 ---
 
@@ -854,7 +873,36 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 ## Build y Despliegue
 
 - **CI** — `.github/workflows/ci.yml` (Node 24): `npm ci → lint → test → build` en cada push a `main`/`dev` y en cada PR
-- **SEPA** — `.github/workflows/sepa.yml` (Node 24): `npm ci → npm run sepa:etl` con el secret `SUPABASE_DB_URL`
+- **SEPA en una PC local (vigente desde el 21/11/2026)** — el portal `datos.produccion.gob.ar` responde **403** a
+  los runners de GitHub Actions desde el 17/11/2026, así que la carga corre en una PC con IP argentina que queda
+  encendida, con dos tareas programadas de Windows del usuario:
+
+| Tarea | Cuándo | Qué corre | Estado |
+|---|---|---|---|
+| El Changuito - SEPA ETL | Todos los días, 04:00 | `npm run sepa:etl` | Habilitada |
+| El Changuito - SEPA imagenes | Domingos, 06:00 | `npm run sepa:images` | Deshabilitada: se habilita si el workflow de imágenes también recibe 403 |
+
+  - Las registra (o actualiza) `scripts/sepa/install-tasks.ps1`; con `-EnableImages` deja habilitada también la de
+    imágenes: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sepa\install-tasks.ps1 [-EnableImages]`
+  - Las dos llaman a `scripts/sepa/run-local.ps1 -Script <sepa:etl|sepa:images>`, que corre el script en el repo
+    con las variables de `.env.local` (`SUPABASE_DB_URL`) y guarda un log por día en
+    `%LOCALAPPDATA%\el-changuito\logs\<sepa-etl|sepa-images>-AAAA-MM-DD.log` (se borran a los 30 días)
+  - Despiertan la PC si está suspendida y, si estaba apagada, corren apenas se prende; límite de 1 hora y nunca dos
+    a la vez. Necesitan la sesión de Windows iniciada
+  - **Aviso por mail de cada corrida**, salga bien o mal: `run-local.ps1` manda desde `elchanguito.app@gmail.com`
+    a la misma casilla (SMTP de Gmail, `smtp.gmail.com:587`) un mail con asunto
+    `[El Changuito] SEPA ETL: <ok | omitida | sin archivo nuevo | FALLÓ> · dd/mm/aaaa hh:mm` y la salida de la
+    corrida en el cuerpo. `FALLÓ` es cualquier código distinto de 0 (403 del portal, error de carga, regla de "más
+    de 3 días"). La cuenta se configura una vez con `scripts/sepa/set-mail.ps1`, en una ventana de PowerShell
+    propia: pide una **contraseña de aplicación** de Google (myaccount.google.com/apppasswords, con verificación en
+    dos pasos), manda un mail de prueba y solo si llega la guarda en `%LOCALAPPDATA%\el-changuito\mail.xml`, cifrada
+    con DPAPI (solo la lee ese usuario en esa PC; nada en el repo). Sin ese archivo no hay mail y el log lo dice;
+    si el envío falla, queda "No se pudo mandar el mail: …" en el log y el código de salida no cambia
+  - Los `.ps1` se guardan en **UTF-8 con BOM**: sin BOM, PowerShell 5.1 los lee como ANSI y rompe los acentos
+  - A mano: `Start-ScheduledTask 'El Changuito - SEPA ETL'`, o `npm run sepa:etl` como siempre
+- **SEPA en GitHub Actions (desactivado)** — `.github/workflows/sepa.yml` (Node 24): `npm ci → npm run sepa:etl` con
+  el secret `SUPABASE_DB_URL`. Desactivado con `gh workflow disable sepa.yml` (el archivo queda igual); si el portal
+  vuelve a responderles a los runners, se reactiva con `gh workflow enable sepa.yml` y se deshabilita la tarea local
   - Programado a las **15:30 y 21:30 hora argentina** (`30 18` y `30 0` UTC; el portal publica ~13:20). Los cron
     solo corren desde `main`; la segunda corrida suele terminar en segundos con "sin archivo nuevo"
   - A mano: *Actions → SEPA → Run workflow*, con la opción `force` para volver a cargar un archivo ya cargado
@@ -864,7 +912,9 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 - **SEPA imágenes** — `.github/workflows/sepa-images.yml` (Node 24): `npm ci → npm run sepa:images` con el secret
   `SUPABASE_DB_URL`; los **domingos a las 06:00 hora argentina** (`0 9 * * 0` UTC) y a mano (*Actions → SEPA
   imágenes → Run workflow*, para adelantar el recorrido del portal); `concurrency: sepa-images` sin cancelar y
-  `timeout-minutes: 60`
+  `timeout-minutes: 60`. Consulta `imagenes.preciosclaros.gob.ar`, que puede tener el mismo bloqueo que el ETL: si
+  falla con 403, `gh workflow disable sepa-images.yml` y
+  `Enable-ScheduledTask 'El Changuito - SEPA imagenes'` (o `install-tasks.ps1 -EnableImages`)
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - **Cuenta (spec 21), configuración de Auth en `supabase/config.toml`** (se aplica con `npx supabase config diff` y
@@ -885,7 +935,7 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 | Variable | Dónde | Uso |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App: lectura del catálogo y los precios SEPA (specs 10 y 12) |
-| `SUPABASE_DB_URL` | `.env.local` y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
+| `SUPABASE_DB_URL` | `.env.local` (lo usan las tareas programadas) y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
 
 - El build no necesita ninguna variable de entorno: sin las de Supabase, la app funciona sin el catálogo
 
@@ -928,7 +978,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Next.js 16 + Vercel con CI (lint, tests, build)
 - [ ] Service worker / modo offline
 - [x] Base de precios SEPA en Supabase con carga manual (`npm run sepa:etl`)
-- [x] Actualización diaria del SEPA en GitHub Actions (spec 09)
+- [x] Actualización diaria del SEPA (spec 09); desde el 21/11/2026 en una tarea programada local, por el 403 del portal a GitHub Actions
 - [x] Sucursales y precios por sucursal en la base SEPA (spec 13)
 - [x] Productos con código de barras, marca y presentación; búsqueda y vínculo con el catálogo SEPA (spec 10)
 - [x] Lector de códigos de barras con la cámara en Buscar, Cargar precio y Agregar producto (spec 11)
