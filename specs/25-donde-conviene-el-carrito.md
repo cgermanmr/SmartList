@@ -1,6 +1,6 @@
 # SPEC 25 — ¿Dónde conviene el carrito?
 
-> **Estado:** Aprobada
+> **Estado:** Implementado
 > **Depende de:** [SPEC 12](12-precio-de-referencia-sepa.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 16](16-mapa-y-como-llegar.md), [SPEC 20](20-lista-de-comercios-cercanos.md)
 > **Fecha:** 2026-11-21
 > **Objetivo:** Comparar el carrito entero contra los comercios cercanos (o contra las cadenas, sin ubicación) para ver cuál tiene más productos y más baratos, y pasar el carrito a ese comercio con un toque.

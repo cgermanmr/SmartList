@@ -134,6 +134,10 @@ src/
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
 │   ├── ScanButton.tsx          # Botón que abre el lector; solo si el navegador puede pedir la cámara
 │   ├── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito; sección "Cerca tuyo"
+│   ├── CartCompareCard.tsx     # Tarjeta "¿Dónde conviene?" del carrito: la mejor opción y "Comparar N comercios"
+│   ├── CartCompareDialog.tsx   # Modal con las opciones (sucursales o cadenas), medidor de cobertura, faltantes,
+│   │                           #   "Pasar todo a este comercio" y Mapa; OptionSummary compartido con la tarjeta
+│   ├── useBasketComparison.ts  # Hook: elige sucursales (useNearbyPrices) o cadenas (referencias) y ordena las opciones
 │   ├── useNearby.ts            # Hooks: useSepaBranches (todas las sucursales), useNearBranches (las del radio) y
 │   │                           #   useNearbyPrices (precio de varios EAN en los comercios cercanos, una consulta)
 │   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
@@ -150,6 +154,8 @@ src/
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
+    ├── basket.ts               # ¿Dónde conviene el carrito?: basketLines, compareNearby, compareChains, savingsLine,
+    │                           #   withoutEanLabel (spec 25)
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR);
     │                           #   meses con nombres propios: formatMonth, monthName, shortMonth
     ├── payment-methods.ts      # PAYMENT_METHODS (sin íconos), NO_PAYMENT y paymentLabel (id o label → label)
@@ -241,6 +247,14 @@ src/
   con nombre, dirección y distancia ("aprox." con localidad), de la más cercana a la más lejana; la primera en
   `primary-700`. Tocar una fila abre `BranchMap` encima (con ruta si la ubicación es de GPS); al cerrarlo se
   vuelve a la lista. Sin consultas nuevas: sale de `useNearBranches`. También en la tarjeta del detalle
+- **¿Dónde conviene el carrito?** ([SPEC 25](specs/25-donde-conviene-el-carrito.md)): `basketLines` toma los ítems
+  con EAN (en cualquier grupo). `useBasketComparison` usa las sucursales del radio con `useNearbyPrices` (mismas
+  llamadas y caché de la spec 15) y, sin ubicación, sin sucursales o si esa consulta falla, las cadenas con las
+  referencias que el carrito ya pidió (`useSepaReferenceLookup`; sin consulta nueva). `compareNearby` /
+  `compareChains` arman una opción por sucursal o cadena con al menos un producto: total = precio × cantidad de los
+  que tiene; ahorro = precio actual − precio de la opción, solo de los que tienen precio en el carrito (los de $0 no
+  cuentan; `null` si no queda ninguno); orden por cantidad de productos, total, distancia y nombre. "Pasar todo"
+  llama a `moveCartItems(store, moves)`: un solo `set` (un cambio para la persistencia y la sincronización)
 - **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**
   (única excepción: la ruta del mapa, ver *Mapa y ruta*):
   `getSepaBranches()` baja todas las sucursales una vez por sesión (de a 1.000 filas, caché de módulo) y
@@ -564,6 +578,21 @@ interface CalculatorState {
   dirección o barrio, cantidad de productos y subtotal; pie "Total: $X en N comercios" y "Vaciar carrito" (con `confirm`)
 - `storeKey` identifica el comercio: `sepaId` si existe; si no, nombre + barrio sin mayúsculas ni espacios de más
   ("Coto" y " coto" son el mismo grupo, con el nombre del primer ítem)
+- **¿Dónde conviene?** ([SPEC 25](specs/25-donde-conviene-el-carrito.md), `CartCompareCard`, arriba de los grupos;
+  con 2 o más ítems con EAN y Supabase): la mejor opción con nombre, distancia ("aprox." con localidad), un medidor
+  de cobertura (un segmento por producto), "Tiene N de M · $total" y el ahorro: "$X menos que ahora" en verde, "$X
+  más que ahora" en rojo (", en los N que tiene" si no tiene todos), "Tu carrito ya está en este comercio" o nada sin
+  diferencia. Sin ubicación compara por cadena ("Precio promedio de la cadena en todo el país…"). "Buscando precios
+  cerca…" mientras carga; "N productos sin código no se pueden comparar"; sin opciones, "Ningún comercio cercano
+  tiene tus productos" y el botón abre igual el modal
+  - **Comparar N comercios** abre `CartCompareDialog` (pantalla completa en el celular, tarjeta desde `sm`): la
+    `LocationBar` (cambiar el radio recalcula), "N comercios a menos de R km" o "N cadenas", 10 opciones y "Ver N
+    más"; la primera con el badge "Conviene". Cada fila despliega (una a la vez) "No tiene: …" y, en sucursales,
+    **Pasar todo a este comercio** (`aria-label="Pasar N productos a <comercio>"`) y **Mapa** (encima del modal).
+    Pie: "N comercios cercanos no tienen ninguno de tus productos" y la fecha de los datos (ámbar con más de 7 días)
+  - **Pasar todo** (`moveCartItems`): los ítems que esa sucursal informa pasan a ella con su precio (misma cantidad;
+    un ítem en $0 queda con precio); los demás no cambian. Sin confirmación: cierra el modal y muestra el aviso fijo
+    "N productos pasaron a <comercio>" (`role="status"`, 3 s). No registra precios
 - **Un producto, un comercio**: un producto está una sola vez; `addToCart` de uno que ya está suma 1 y, si el ítem
   nuevo trae comercio, lo pasa a ese comercio y precio
 - **Cerca tuyo** en "Cambiar comercio" (ítems con EAN, con ubicación): las sucursales cercanas con su precio; al
@@ -999,6 +1028,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Imágenes de productos por EAN (Open Food Facts y portal Precios Claros) con marcador de inicial (spec 17)
 - [x] Panel de gasto mensual por cadena o comercio y por medio de pago, desde Historial (spec 03)
 - [x] Lista de comercios cercanos por distancia con su mapa, desde la barra de ubicación (spec 20)
+- [x] ¿Dónde conviene el carrito? Comparación contra las sucursales cercanas o las cadenas y "Pasar todo" (spec 25)
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
 - [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 

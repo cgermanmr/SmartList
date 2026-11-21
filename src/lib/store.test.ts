@@ -213,6 +213,56 @@ describe('setCartItemStore', () => {
   });
 });
 
+describe('moveCartItems', () => {
+  const coto: StoreRef = { name: 'Coto — Caballito', sepaId: '10-1-123', chain: 'Coto', lat: -34.61, lng: -58.44 };
+
+  beforeEach(() => {
+    useStore.getState().hydrate();
+    const s = useStore.getState();
+    s.addToCart(item('1', 100, 2));
+    s.addToCart(item('2', 0, 3));
+    s.addToCart(item('3', 50, 1, { name: 'Almacén Juan' }));
+  });
+
+  it('pasa los ítems pedidos al comercio con su precio, misma cantidad y subtotal recalculado', () => {
+    useStore.getState().moveCartItems(coto, [{ itemId: 'item-1', price: 90 }, { itemId: 'item-2', price: 40 }]);
+    const [first, second, third] = useStore.getState().cart;
+    expect(first).toMatchObject({ store: coto, price: 90, quantity: 2, subtotal: 180 });
+    // El ítem en $0 queda con precio
+    expect(second).toMatchObject({ store: coto, price: 40, quantity: 3, subtotal: 120 });
+    // Los demás no cambian
+    expect(third).toMatchObject({ store: { name: 'Almacén Juan' }, price: 50, subtotal: 50 });
+    expect(saved<CartItem[]>(CART_KEY)[0].store).toEqual(coto);
+  });
+
+  it('es un solo cambio del carrito y no muta los ítems anteriores', () => {
+    const before = useStore.getState().cart;
+    let changes = 0;
+    const unsubscribe = useStore.subscribe((state, prev) => { if (state.cart !== prev.cart) changes++; });
+    useStore.getState().moveCartItems(coto, [{ itemId: 'item-1', price: 90 }, { itemId: 'item-3', price: 45 }]);
+    unsubscribe();
+    expect(changes).toBe(1);
+    expect(before[0]).toMatchObject({ price: 100 });
+    expect(before[0].store).toBeUndefined();
+    expect(useStore.getState().cart[1]).toBe(before[1]);
+  });
+
+  it('ignora los precios ≤ 0: ese ítem no cambia', () => {
+    useStore.getState().moveCartItems(coto, [{ itemId: 'item-1', price: 0 }, { itemId: 'item-3', price: -5 }]);
+    const [first, , third] = useStore.getState().cart;
+    expect(first.store).toBeUndefined();
+    expect(first.price).toBe(100);
+    expect(third).toMatchObject({ store: { name: 'Almacén Juan' }, price: 50 });
+  });
+
+  it('sin movimientos válidos no cambia el carrito', () => {
+    const before = useStore.getState().cart;
+    useStore.getState().moveCartItems(coto, [{ itemId: 'item-1', price: 0 }]);
+    useStore.getState().moveCartItems(coto, []);
+    expect(useStore.getState().cart).toBe(before);
+  });
+});
+
 describe('loadPurchaseToCart', () => {
   const purchase: Purchase = {
     id: 'c1', date: '2026-01-01T10:00:00.000Z', total: 330,

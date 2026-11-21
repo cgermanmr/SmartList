@@ -1,18 +1,20 @@
 'use client';
 
 import {
-  ArrowDown, ArrowUp, Banknote, CalendarDays, CreditCard, FilePen, LucideIcon, Map as MapIcon, QrCode,
+  ArrowDown, ArrowUp, Banknote, CalendarDays, Check, CreditCard, FilePen, LucideIcon, Map as MapIcon, QrCode,
   Route as RouteIcon, X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { ReactNode, useId, useState } from 'react';
+import { ReactNode, useEffect, useId, useRef, useState } from 'react';
 import BranchMap from '@/components/BranchMap';
+import CartCompareCard from '@/components/CartCompareCard';
 import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
 import ProductImage from '@/components/ProductImage';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
 import { useSepaImages } from '@/components/useSepaImages';
-import { useSepaReferences } from '@/components/useSepaReferences';
+import { useSepaReferenceLookup } from '@/components/useSepaReferences';
+import { basketLines } from '@/lib/basket';
 import { formatMoney } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
 import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
@@ -108,7 +110,20 @@ export default function CartPage() {
 
   // Precio de referencia de los ítems con EAN, en una sola consulta
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
-  const references = useSepaReferences(cart.map(item => eanOf(item.productId)));
+  const { references, isLoading: referenceLoading } = useSepaReferenceLookup(cart.map(item => eanOf(item.productId)));
+  // ¿Dónde conviene? (spec 25): los ítems con EAN entran en la comparación
+  const basket = basketLines(cart, products);
+
+  // ── Aviso "N productos pasaron a …": fijo abajo, 3 s ──────
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+
+  function showMoved(count: number, storeName: string) {
+    setNotice(count === 1 ? `1 producto pasó a ${storeName}` : `${count} productos pasaron a ${storeName}`);
+    clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3000);
+  }
   // Imágenes de todo el carrito en una sola consulta (spec 17)
   const images = useSepaImages(cart.map(item => eanOf(item.productId)));
 
@@ -183,6 +198,14 @@ export default function CartPage() {
     <div>
       <h1 className="text-3xl font-bold mb-6">Mi Carrito</h1>
 
+      <CartCompareCard
+        lines={basket.lines}
+        withoutEan={basket.withoutEan}
+        references={references}
+        referencesLoading={basket.lines.some(line => referenceLoading(line.ean))}
+        onMoved={showMoved}
+      />
+
       {/* Una tarjeta por comercio */}
       <div className="grid grid-cols-1 gap-6 mb-6">
         {groups.map(group => (
@@ -237,6 +260,16 @@ export default function CartPage() {
 
       <CartStoreDialog item={storeItem} stores={getCartStores(cart)} onClose={() => setStoreItemId(null)} />
       <BranchMap stops={map?.stops ?? null} notes={map?.notes} onClose={() => setMap(null)} />
+
+      {/* Aviso de "Pasar todo a este comercio": fijo abajo, como el de Buscar. La región queda montada */}
+      <div role="status" className="pointer-events-none fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 flex justify-center md:bottom-14">
+        {notice && (
+          <p className="flex max-w-sm items-start gap-2 rounded-xl bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg">
+            <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent-400" />
+            <span className="min-w-0 break-words">{notice}</span>
+          </p>
+        )}
+      </div>
     </div>
   );
 }

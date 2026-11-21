@@ -46,6 +46,11 @@ export interface AppState {
   removeCartItems: (itemIds: string[]) => void;
   /** Cambia el comercio (undefined → "Sin comercio"); el precio solo cambia si se pasa `price` */
   setCartItemStore: (itemId: string, store?: StoreRef, price?: number) => void;
+  /**
+   * Pasa esos ítems a ese comercio con su precio (cantidad igual, subtotal recalculado), en un solo cambio (spec 25).
+   * Un movimiento con precio ≤ 0 se ignora: ese ítem no cambia
+   */
+  moveCartItems: (store: StoreRef, moves: { itemId: string; price: number }[]) => void;
   updateQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, price: number) => void;
   clearCart: () => void;
@@ -139,6 +144,17 @@ export const useStore = create<AppState>()((set, get) => ({
       return price !== undefined && price > 0 ? { ...moved, price, subtotal: price * i.quantity } : moved;
     }),
   })),
+
+  moveCartItems: (store, moves) => {
+    const prices = new Map(moves.filter(m => m.price > 0).map(m => [m.itemId, m.price]));
+    if (prices.size === 0) return;
+    set(s => ({
+      cart: s.cart.map(i => {
+        const price = prices.get(i.id);
+        return price === undefined ? i : { ...i, store, price, subtotal: price * i.quantity };
+      }),
+    }));
+  },
 
   updateQuantity: (itemId, qty) => set(s => ({
     cart: s.cart.map(i => i.id === itemId ? withQuantity(i, qty) : i),
