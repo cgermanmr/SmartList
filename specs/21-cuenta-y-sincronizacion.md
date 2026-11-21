@@ -31,8 +31,7 @@ Es la base de las dos que siguen, que **no** forman parte de esta:
 - Primera sesión: lo que el teléfono tiene se sube a la cuenta y se junta con lo que la cuenta ya tenía.
 - Cerrar sesión (borra los datos del teléfono) y **Borrar mi cuenta** (borra la cuenta y todos sus datos).
 - Página `/privacidad` con qué se guarda, dónde y cómo borrarlo (la pide la pantalla de consentimiento de Google).
-  Responsable y mail de contacto: **pendientes**, en una constante (`PRIVACY_CONTACT`); se completan antes de pasar a
-  producción y de configurar la pantalla de Google.
+  Responsable y mail de contacto en una constante (`PRIVACY_CONTACT`): El Changuito, `elchanguito.app@gmail.com`.
 - **Sacar los datos de ejemplo**: una instalación nueva arranca vacía.
 
 **Fuera de alcance:**

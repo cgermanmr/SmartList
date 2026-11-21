@@ -14,7 +14,7 @@ import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatMoney } from '@/lib/format';
-import { newId } from '@/lib/ids';
+import { uniqueId } from '@/lib/ids';
 import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { mapStops, MapStop, MAX_STOPS } from '@/lib/route';
@@ -138,7 +138,7 @@ export default function CartPage() {
     // La compra lleva barrio solo si se conoce; el precio lo necesita siempre
     const barrio = knownBarrio ?? NO_BARRIO;
     const purchase: Purchase = {
-      id: newId(),
+      id: uniqueId(),
       date: new Date().toISOString(),
       items: group.items.map(i => ({ ...i })),
       total: group.total,
@@ -150,7 +150,7 @@ export default function CartPage() {
     const now = new Date();
     group.items.forEach((item, idx) => {
       const price: Price = {
-        id: `${newId()}-${idx}`,
+        id: `${uniqueId()}-${idx}`,
         productId: item.productId,
         amount: item.price,
         date: now,

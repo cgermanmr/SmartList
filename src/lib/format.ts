@@ -49,6 +49,16 @@ export function formatDateTime(date: Date | string): string {
   return dateTimeFormat.format(new Date(date)).replace(',', '');
 }
 
+/** Tiempo desde una fecha ISO: "recién", "hace 5 min", "hace 3 h" o, con un día o más, "el dd/MM/yyyy HH:mm" */
+export function formatTimeAgo(iso: string, now: Date): string {
+  const minutes = Math.floor((now.getTime() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return 'recién';
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  return `el ${formatDateTime(iso)}`;
+}
+
 /** dd/MM/yy HH:mm */
 export function formatShortDateTime(date: Date | string): string {
   return shortDateTimeFormat.format(new Date(date)).replace(',', '');

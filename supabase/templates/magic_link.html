@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+  <body style="margin:0;padding:24px;background:#faf8fc;font-family:Arial,Helvetica,sans-serif;color:#1f1630">
+    <div style="max-width:480px;margin:0 auto;background:#ffffff;border:1px solid #e7e2ee;border-radius:16px;padding:28px">
+      <p style="margin:0 0 4px;font-size:20px;font-weight:bold;color:#5b2a86">El Changuito</p>
+      <p style="margin:0 0 20px;font-size:16px">Tu código para entrar:</p>
+      <p style="margin:0 0 20px;font-size:34px;font-weight:bold;letter-spacing:8px;color:#1f1630">{{ .Token }}</p>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.5">
+        Escribilo en la app. Si estás en el navegador de este teléfono, también podés tocar el botón:
+      </p>
+      <p style="margin:0 0 24px">
+        <a href="{{ .ConfirmationURL }}"
+           style="display:inline-block;background:#5b2a86;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 20px;border-radius:12px">
+          Entrar a El Changuito
+        </a>
+      </p>
+      <p style="margin:0;font-size:13px;line-height:1.5;color:#6f6780">
+        El código vence en 1 hora. Si no pediste entrar, ignorá este mail.
+      </p>
+    </div>
+  </body>
+</html>

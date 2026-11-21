@@ -1,5 +1,5 @@
 import { LocationState, parseLocationState } from './location';
-import { Product, Price, CalculatorState, Magnitude, PromoType } from './models';
+import { CalculatorState, Magnitude, PromoType } from './models';
 import { UNITS_BY_MAGNITUDE } from './unit-price';
 
 export const PRODUCTS_KEY   = 'preciolocal_products';
@@ -8,25 +8,13 @@ export const CART_KEY       = 'preciolocal_cart';
 export const PURCHASES_KEY  = 'preciolocal_purchases';
 export const CALCULATOR_KEY = 'preciolocal_calculator';
 export const LOCATION_KEY   = 'preciolocal_location';
+export const OUTBOX_KEY     = 'preciolocal_outbox';  // cambios sin subir a la cuenta (spec 21)
+export const SYNC_KEY       = 'preciolocal_sync';    // { userId, cursor } de la sincronización (spec 21)
 
-export const DEFAULT_PRODUCTS: Product[] = [
-  { id: '1', name: 'Leche 1L',          category: 'Lacteos'   },
-  { id: '2', name: 'Pan Frances',        category: 'Almacen'   },
-  { id: '3', name: 'Aceite Oliva 500ml', category: 'Aceites'   },
-  { id: '4', name: 'Queso 500g',         category: 'Lacteos'   },
-  { id: '5', name: 'Huevos Docena',      category: 'Proteina'  },
-  { id: '6', name: 'Fideos 500g',        category: 'Almacen'   },
-  { id: '7', name: 'Cafe 500g',          category: 'Bebidas'   },
-  { id: '8', name: 'Yogur 500ml',        category: 'Lacteos'   },
-];
-
-/** Función y no constante: las fechas se calculan al usarlas, nunca durante el prerender */
-export function defaultPrices(): Price[] {
-  return [
-    { id: '1', productId: '1', amount: 185, date: new Date(), barrio: 'Almagro',   store: 'Almacen'   },
-    { id: '2', productId: '1', amount: 178, date: new Date(Date.now() - 86400000), barrio: 'Caballito', store: 'Coto' },
-    { id: '3', productId: '2', amount: 45,  date: new Date(), barrio: 'Almagro',   store: 'Panaderia' },
-  ];
+export function removeFromStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch { /* sin localStorage */ }
 }
 
 const DEFAULT_CALCULATOR: CalculatorState = {

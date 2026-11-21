@@ -17,7 +17,7 @@ import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
-import { newId } from '@/lib/ids';
+import { uniqueId } from '@/lib/ids';
 import { CartItem, Product, StoreRef } from '@/lib/models';
 import { mapStops, MapStop } from '@/lib/route';
 import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
@@ -103,7 +103,7 @@ export default function SearchPage() {
 
   function addAt(product: Product, store: StoreRef, price: number) {
     addToCart({
-      id: newId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price, store,
+      id: uniqueId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price, store,
     });
     showNotice(product.name);
   }
@@ -138,7 +138,7 @@ export default function SearchPage() {
     const reference = product.ean ? ownLookup.references.get(product.ean)?.reference : undefined;
     const price = initialCartPrice(prices, product.id, reference);
     const item: CartItem = {
-      id: newId(),
+      id: uniqueId(),
       productId: product.id,
       productName: product.name,
       price,
@@ -313,7 +313,14 @@ export default function SearchPage() {
         })}
       </div>
 
-      {filteredProducts.length === 0 && (
+      {products.length === 0 && searchQuery.trim() === '' && (
+        <div className="py-12 text-center">
+          <p className="text-lg font-semibold text-gray-900">Todavía no tenés productos</p>
+          <p className="mt-1 text-gray-600">Buscá un producto en Precios Claros o leé su código de barras</p>
+        </div>
+      )}
+
+      {filteredProducts.length === 0 && (products.length > 0 || searchQuery.trim() !== '') && (
         <div className={`text-center ${showCatalog ? 'py-6' : 'py-12'}`}>
           <p className="text-gray-500 text-lg">
             {showCatalog ? 'No tenés productos con ese nombre' : 'No se encontraron productos'}

@@ -5,9 +5,10 @@ import { DEFAULT_RADIUS, RadiusKm, UserLocation } from './location';
 import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
 import { productFromSepa } from './product-form';
 import type { SepaProduct } from './sepa';
+import type { SyncData } from './sync';
 import {
   PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY, LOCATION_KEY,
-  DEFAULT_PRODUCTS, defaultPrices, defaultCalculator,
+  defaultCalculator,
   loadFromStorage, saveToStorage, loadCalculator, loadLocation,
 } from './storage';
 
@@ -55,6 +56,8 @@ export interface AppState {
   /** null quita la ubicación y vuelve el radio a 3 km */
   setLocation: (location: UserLocation | null) => void;
   setRadius: (radiusKm: RadiusKm) => void;
+  /** Vacía los datos del usuario (cerrar sesión, spec 21): productos, precios, carrito, compras y calculadora; la ubicación queda */
+  resetUserData: () => void;
 }
 
 export const useStore = create<AppState>()((set, get) => ({
@@ -71,8 +74,9 @@ export const useStore = create<AppState>()((set, get) => ({
     if (get().hydrated) return;
     set({
       hydrated: true,
-      products:   loadFromStorage(PRODUCTS_KEY,  DEFAULT_PRODUCTS),
-      prices:     loadFromStorage(PRICES_KEY,    defaultPrices()),
+      // Sin datos de ejemplo (spec 21): una instalación nueva arranca vacía
+      products:   loadFromStorage<Product[]>(PRODUCTS_KEY, []),
+      prices:     loadFromStorage<Price[]>(PRICES_KEY,     []),
       cart:       loadFromStorage(CART_KEY,      []),
       purchases:  loadFromStorage(PURCHASES_KEY, []),
       calculator: loadCalculator(),
@@ -183,6 +187,8 @@ export const useStore = create<AppState>()((set, get) => ({
   setLocation: location => set(location ? { location } : { location: null, radiusKm: DEFAULT_RADIUS }),
 
   setRadius: radiusKm => set({ radiusKm }),
+
+  resetUserData: () => set({ products: [], prices: [], cart: [], purchases: [], calculator: defaultCalculator() }),
 }));
 
 function withQuantity(item: CartItem, quantity: number): CartItem {
@@ -198,9 +204,28 @@ function purchaseStoreRef(purchase: Purchase): StoreRef | undefined {
 }
 
 // ── Persistencia ──────────────────────────────────────────
+
+/** Lo que se sincroniza con la cuenta (spec 21); la ubicación no */
+export function syncDataOf(state: AppState): SyncData {
+  const { products, prices, cart, purchases, calculator } = state;
+  return { products, prices, cart, purchases, calculator };
+}
+
+type UserDataListener = (prev: SyncData, next: SyncData) => void;
+let userDataListener: UserDataListener | null = null;
+
+/** El motor de sincronización se anota acá para enterarse de cada cambio de los datos del usuario */
+export function onUserDataChange(listener: UserDataListener | null): void {
+  userDataListener = listener;
+}
+
 // Cada colección se guarda en su clave cuando cambia, con el mismo formato JSON de siempre
 useStore.subscribe((state, prev) => {
   if (!state.hydrated || !prev.hydrated) return;
+  if (userDataListener && (state.products !== prev.products || state.prices !== prev.prices || state.cart !== prev.cart
+    || state.purchases !== prev.purchases || state.calculator !== prev.calculator)) {
+    userDataListener(syncDataOf(prev), syncDataOf(state));
+  }
   if (state.products   !== prev.products)   saveToStorage(PRODUCTS_KEY,   state.products);
   if (state.prices     !== prev.prices)     saveToStorage(PRICES_KEY,     state.prices);
   if (state.cart       !== prev.cart)       saveToStorage(CART_KEY,       state.cart);

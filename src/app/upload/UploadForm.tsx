@@ -8,7 +8,7 @@ import DuplicateProduct from '@/components/DuplicateProduct';
 import ScanButton from '@/components/ScanButton';
 import SepaSearch from '@/components/SepaSearch';
 import { toGtin13 } from '@/lib/gtin';
-import { newId } from '@/lib/ids';
+import { uniqueId } from '@/lib/ids';
 import { Price, Unit } from '@/lib/models';
 import { checkEan, EanCheck, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, ProductForm, SIZE_UNITS } from '@/lib/product-form';
 import { getSepaProduct, SepaProduct, sepaEnabled } from '@/lib/sepa';
@@ -102,7 +102,7 @@ export default function UploadForm() {
     }
 
     const price: Price = {
-      id: newId(),
+      id: uniqueId(),
       productId: priceForm.productId,
       amount,
       date: new Date(),
@@ -129,7 +129,7 @@ export default function UploadForm() {
       return;
     }
 
-    addProduct(productFromForm(productForm, newId(), check.status === 'ok' ? check.ean : undefined));
+    addProduct(productFromForm(productForm, uniqueId(), check.status === 'ok' ? check.ean : undefined));
     showMessage('Producto agregado exitosamente!', 'ok');
     setProductForm(EMPTY_PRODUCT_FORM);
     // Sin el ean en la URL, recargar no vuelve a completar el formulario con el producto recién guardado

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { newId } from '@/lib/ids';
+import { uniqueId } from '@/lib/ids';
 import { Product, StoreRef } from '@/lib/models';
 import { sepaEnabled } from '@/lib/sepa';
 import { mapStops, MapStop } from '@/lib/route';
@@ -31,7 +31,7 @@ export default function NearbyStoresCard({ product }: { product: Product }) {
 
   function add(store: StoreRef, price: number) {
     addToCart({
-      id: newId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price, store,
+      id: uniqueId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price, store,
     });
     setAdded(store.name);
   }

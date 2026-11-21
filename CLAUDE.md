@@ -14,7 +14,9 @@ Roadmap, features futuros e ideas viven en [`docs/`](docs/README.md).
 comercios/barrios, armen un carrito de compras comparando contra precios anteriores y lleven un historial de compras.
 
 - UI completamente en **español** (números y fechas en `es-AR`: `1.234,56`, `28/10/2026 16:05`; moneda `$`)
-- Fase actual: **Fase 1 — Frontend Next.js con localStorage (sin backend)**, publicado en Vercel. Aparte, una base
+- Fase actual: **Fase 1 — Frontend Next.js con localStorage**, publicado en Vercel, y comienzo de la **Fase 2**:
+  cuenta optativa (Google o código por mail) que sincroniza los datos propios con Supabase
+  ([SPEC 21](specs/21-cuenta-y-sincronizacion.md)); sin cuenta, todo queda en el teléfono. Aparte, una base
   Supabase de solo lectura con los precios de Precios Claros (SEPA), actualizada a diario por GitHub Actions
   ([SPEC 08](specs/08-base-sepa-supabase.md), [SPEC 09](specs/09-actualizacion-diaria-sepa.md)). La app consulta
   su catálogo de productos para cargar y vincular productos por código de barras
@@ -40,7 +42,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | TypeScript | ^5 | Lenguaje (strict + `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`) |
 | Tailwind CSS | ^4 | Estilos (utility-first, mobile-first; loader `@tailwindcss/turbopack`, sin `tailwind.config.js`) |
 | Zustand | ^5 | Estado global |
-| @supabase/supabase-js | ^2.119 | Lectura del catálogo SEPA desde el navegador (clave publishable, sin sesión) |
+| @supabase/supabase-js | ^2.119 | Catálogo SEPA desde el navegador (clave publishable) y, con cuenta, auth y sincronización de `user_records` (spec 21) |
 | barcode-detector | ^3.2 | Ponyfill de `BarcodeDetector` (ZXing en WebAssembly) para el lector de códigos de barras |
 | leaflet | ^1.9 | Mapa del comercio con teselas de OpenStreetMap; se carga con `import()` al abrir el primer mapa |
 | lucide-react | ^1.73 | Íconos SVG (solo entran al bundle los que se usan); no se usan emojis como ícono |
@@ -93,6 +95,9 @@ src/
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
 │   ├── gastos/page.tsx         # Panel de gasto mensual: selector de mes, resumen, gráfico y desgloses
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
+│   ├── cuenta/                 # page.tsx (sesión, estado de la sincronización, cerrar sesión, borrar la cuenta) +
+│   │                           #   SignInForm.tsx (Google o mail → código de 6 dígitos)
+│   ├── privacidad/page.tsx     # Qué se guarda, dónde y cómo borrarlo (Server Component)
 │   └── not-found.tsx           # Redirige a /
 ├── components/
 │   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname (y las rutas
@@ -101,6 +106,11 @@ src/
 │   ├── CartSummary.tsx         # Total del carrito en el header, link a /cart
 │   ├── Logo.tsx                # Changuito de la marca en SVG (el mismo de icon.svg)
 │   ├── StoreHydrator.tsx       # Carga localStorage en el cliente antes de mostrar las páginas
+│   ├── SyncManager.tsx         # Arranca/para la sincronización según la sesión; online y visibilitychange
+│   ├── useAuth.ts              # Hook: sesión de Supabase (off / loading / out / in)
+│   ├── useNow.ts               # Reloj compartido cada 30 s (0 en el prerender) para "hace N min"
+│   ├── AccountButton.tsx       # Ícono de cuenta del header (inicial con sesión; punto ámbar si falla hace > 1 h)
+│   ├── ConfirmDialog.tsx       # <dialog> de confirmación (cerrar sesión con pendientes, borrar la cuenta)
 │   ├── NumberInput.tsx         # Input numérico sobre un valor del store (conserva el texto mientras se edita)
 │   ├── PriceChart.tsx          # Gráfico de tendencia en SVG propio
 │   ├── SpendingChart.tsx       # Gasto de 6 meses en barras de HTML; cada mes con compras es un botón que lo elige
@@ -139,14 +149,21 @@ src/
     ├── payment-methods.ts      # PAYMENT_METHODS (sin íconos), NO_PAYMENT y paymentLabel (id o label → label)
     ├── spending.ts             # Gasto mensual desde Purchase: monthKey, availableMonths, monthSummary,
     │                           #   lastMonthsTotals, monthVariation, byStore (por cadena o comercio), byPayment
-    ├── ids.ts                  # newId() / uniqueId()
+    ├── ids.ts                  # newId() / uniqueId() (los registros nuevos usan uniqueId: spec 21)
     ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
     ├── route.ts                # Ruta del mapa: getRoute (OSRM, caché y 8 s de límite), parseOsrmRoute, googleMapsUrl,
     │                           #   formatDuration, mapStops (paradas a partir de comercios con coordenadas)
     ├── location.ts             # UserLocation, RADIUS_OPTIONS, parseLocationState, gpsLocation, requestPosition
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
-    ├── supabase.ts             # Cliente de Supabase de solo lectura; null si faltan las variables
+    ├── supabase.ts             # Cliente de Supabase con sesión (PKCE); null si faltan las variables
+    ├── auth.ts                 # Google, código por mail, borrar la cuenta; displayName, validEmail, validCode
+    ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
+    ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
+    │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
+    ├── sync-remote.ts          # Llamadas a user_records: pushRecords (upsert de a 500), pullRows (de a 1.000)
+    ├── sync-engine.ts          # Motor: cola persistida, startSync/stopSync/syncNow, primera sesión, cerrar sesión,
+    │                           #   cuenta borrada; useSyncStatus para la UI
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
     │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras;
     │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
@@ -183,7 +200,21 @@ src/
   Fuera de React: `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
-- **Punto de integración con backend** — las acciones del store; cuando llegue Supabase, ahí van las llamadas.
+- **Cuenta y sincronización** ([SPEC 21](specs/21-cuenta-y-sincronizacion.md)) — **local primero**: el store sigue
+  siendo la fuente de la UI y sigue guardando en `localStorage`. La suscripción de persistencia avisa cada cambio
+  de productos, precios, carrito, compras o calculadora (`onUserDataChange`); el motor (`sync-engine.ts`) calcula
+  los registros cambiados por referencia (`changesToRecords`: las acciones nunca mutan) y los encola en
+  `preciolocal_outbox` (uno por `collection + id`), solo si el teléfono tiene cuenta (`preciolocal_sync.userId`),
+  también con la sesión vencida. Con sesión, `syncNow` sube la cola (`upsert` a `user_records`; `acknowledge` solo
+  saca lo enviado con el mismo `modifiedAt`) y baja las filas con `synced_at` posterior al cursor menos 5 min
+  (`pullSince`); `mergeRemote` gana la fila salvo un pendiente local más nuevo (fechas comparadas como fechas), y
+  después `dedupeByEan` (queda el producto de `id` menor) y `dedupeCart` (un ítem por producto: el más reciente);
+  lo que cambian los dedupe se encola. Lo bajado se aplica sin volver a la cola. Nunca dos vueltas a la vez.
+  Disparadores: al iniciar sesión, `online`, `visibilitychange` y 2 s después del último cambio. Primera sesión
+  en el teléfono: sube todo salvo los datos de ejemplo sin usar (`withoutSamples`) y baja la cuenta; otro usuario
+  que el guardado: descarta lo local. Cerrar sesión vacía el teléfono (la ubicación queda); una cuenta borrada desde
+  otro dispositivo (`user_not_found` al retomar o FK `23503`) deja los datos sin cuenta. **La ubicación no se
+  sincroniza.** Sin Supabase no hay cuenta
 - **Catálogo SEPA (solo lectura)** — `lib/supabase.ts` crea el cliente con `NEXT_PUBLIC_SUPABASE_URL` y
   `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave publishable `sb_publishable_…`), sin sesión. Si falta alguna, `supabase` es
   `null`, `sepaEnabled` es `false` y la UI no muestra nada del catálogo (el resto funciona igual). `lib/sepa.ts`
@@ -260,6 +291,7 @@ src/
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
+  `ConfirmDialog` (`<dialog>`) en `/cuenta`;
   `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco), en el
   carrito (`CartStoreDialog`, se cierra también al ocultarse la página con `<Activity>`) y en el lector de códigos
   de barras (`BarcodeScanner`, a pantalla completa).
@@ -268,12 +300,18 @@ src/
 
 | Clave | Contenido | Valor inicial |
 |---|---|---|
-| `preciolocal_products` | `Product[]` | 8 productos de ejemplo (`DEFAULT_PRODUCTS`) |
-| `preciolocal_prices` | `Price[]` | 3 precios de ejemplo (`defaultPrices()`) |
+| `preciolocal_products` | `Product[]` | `[]` (sin datos de ejemplo desde la spec 21) |
+| `preciolocal_prices` | `Price[]` | `[]` |
 | `preciolocal_cart` | `CartItem[]` | `[]` |
 | `preciolocal_purchases` | `Purchase[]` (más reciente primero) | `[]` |
 | `preciolocal_calculator` | `CalculatorState` (última comparación) | Peso, 2 presentaciones vacías en `g` (`defaultCalculator()`) |
 | `preciolocal_location` | `{ location: UserLocation \| null, radiusKm }` | Sin ubicación, 3 km |
+| `preciolocal_outbox` | `SyncRecord[]`: cambios sin subir a la cuenta (spec 21) | sin clave |
+| `preciolocal_sync` | `{ userId, cursor }`: dueño de los datos del teléfono y último `synced_at` bajado | sin clave |
+
+La sesión de Supabase la guarda supabase-js en su propia clave (`sb-<ref>-auth-token`). Los datos de ejemplo de
+antes (`id` `'1'`–`'8'` y precios `'1'`–`'3'`) se conservan si ya estaban guardados, pero no suben a la cuenta salvo
+que algo propio los use.
 
 El formato es el mismo que usaba la versión Angular: no hace falta migrar datos. Los campos de `Product` de la
 spec 10 (`ean`, `brand`, `size`, `sizeUnit`) son opcionales: los productos guardados antes siguen sirviendo. Lo
@@ -298,6 +336,8 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/gastos` | `app/gastos/page.tsx` | Historial | Panel de gasto mensual (se abre desde Historial) |
 | `/calculadora` | `app/calculadora/page.tsx` | Calculadora | Comparar presentaciones por precio unitario |
 | `/product/[id]` | `app/product/[id]/page.tsx` | — | Detalle del producto |
+| `/cuenta` | `app/cuenta/page.tsx` | — (ícono del header) | Entrar, estado de la sincronización, salir, borrar la cuenta |
+| `/privacidad` | `app/privacidad/page.tsx` | — | Qué se guarda y cómo borrarlo |
 | otra | `app/not-found.tsx` | — | Redirige a `/` |
 
 ---
@@ -579,6 +619,19 @@ interface CalculatorState {
 - Mes actual sin compras: $0,00, 0 compras, "—" y "Todavía no compraste este mes" con "Ir al carrito" en lugar de
   los desgloses. Sin ninguna compra: "Todavía no hay compras" con "Ir al carrito", sin selector
 
+### Cuenta (`/cuenta`, [SPEC 21](specs/21-cuenta-y-sincronizacion.md))
+- Optativa; se llega con el ícono de cuenta del header (sin sesión `CircleUser`; con sesión, la inicial)
+- Sin sesión: **Continuar con Google** o "Tu mail" + **Enviarme el código**; después, "Te mandamos un mail a …" con
+  el campo **Código** (6 dígitos, `one-time-code`), **Entrar** (`verifyOtp`), "Reenviar el mail" a los 60 s y "Usar
+  otro mail". El mail trae el código y el link: en la app instalada del iPhone (no comparte datos con Safari) solo
+  sirve el código, y debajo de Google dice "Si no vuelve a la app, entrá con tu mail". Con la sesión vencida, aviso
+  "Tu sesión venció. Entrá de nuevo para sincronizar"
+- Con sesión: nombre y mail; "Sincronizado hace N min" / "Sincronizando…" / "N cambios sin subir · Sin conexión" /
+  "No se pudo sincronizar" con **Reintentar**; **Cerrar sesión** (sincroniza antes; con pendientes, confirma "Hay N
+  cambios sin subir. Si cerrás sesión, se pierden."); **Borrar mi cuenta** con confirmación (`delete_my_account`)
+- Buscar sin productos propios: "Todavía no tenés productos" / "Buscá un producto en Precios Claros o leé su código
+  de barras"
+
 ### Calculadora de precio unitario (`/calculadora`)
 - Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
 - Magnitud fija por comparación: **Peso** (`g`, `kg`), **Volumen** (`ml`, `l`) o **Unidades** (`u`); al cambiarla, todas las unidades pasan a la de defecto (`g`, `ml`, `u`) y se conservan precios, cantidades y promos
@@ -681,6 +734,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_precios_sucursal` | Por EAN × bandera: `precios` (distintos, de menor a mayor) e `indices` (uno por sucursal en el orden de `pos`: posición en `precios`, 0 = no informa) |
 | `sepa_cargas` | Registro de cada ejecución: estado `ok` / `omitida` / `error`, conteos, omitidos y detalle |
 | `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
+| `user_records` | Datos de cada usuario (spec 21): `user_id`, `collection` (`products` / `prices` / `cart` / `purchases` / `settings`), `id`, `data` (JSON del registro), `deleted`, `modified_at` (dispositivo; gana el último) y `synced_at` (servidor; cursor). RLS: cada usuario lee, crea y modifica solo sus filas; sin delete. Trigger `user_records_touch`; `delete_my_account()` borra el usuario y sus filas en cascada |
 
 - **Precio por sucursal** (spec 13): `sepa_precios_en_sucursales(eans, sucursales)` devuelve `ean`, `sucursal` y
   `precio` de cada producto en cada sucursal que lo informa; ignora lo que pase de 20 EAN y 40 sucursales. Arreglos
@@ -813,6 +867,14 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
   `timeout-minutes: 60`
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
+- **Cuenta (spec 21), configuración de Auth en `supabase/config.toml`** (se aplica con `npx supabase config diff` y
+  `npx supabase config push`): Site URL `https://elchanguito.vercel.app`; Redirect URLs `http://localhost:4200/**`,
+  la de producción y las previews de Vercel solo con el sufijo `-cgermanmrs-projects.vercel.app`; código de 6
+  dígitos; Google con el cliente web del proyecto "El Changuito" de Google Cloud (cuenta `elchanguito.app@gmail.com`,
+  app **en producción**, redirect `https://bjzeknajhrbtormkuunj.supabase.co/auth/v1/callback`). Los secretos van en
+  `supabase/.env` (ignorado), que la CLI lee sola: `SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET`. **Pendiente:** SMTP propio
+  (sin él, Supabase manda el mail en inglés, solo con el link y solo a miembros de la organización, y el plan
+  gratis no deja cambiar las plantillas); con él se descomentan las plantillas de `supabase/templates/`
 - Supabase: `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` cargadas **a mano** en Vercel
   (*Settings → Environment Variables*), no con la integración del Marketplace, que crearía un proyecto nuevo; en
   local, `.env.local` (ignorado por git). La clave es la **publishable** (`sb_publishable_…`), la que Supabase
@@ -835,7 +897,8 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 
 ## Deuda Técnica Conocida
 
-- `localStorage` sin cifrado ni validación de esquema (salvo la calculadora); sin sincronización entre dispositivos.
+- `localStorage` sin cifrado ni validación de esquema (salvo la calculadora); la sincronización entre dispositivos
+  necesita cuenta (spec 21).
 - Sin tests de componentes ni end-to-end (solo lógica pura en `src/lib`).
 - Sin service worker.
 - `alert()` / `confirm()` nativos en carrito y detalle.
@@ -877,7 +940,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Imágenes de productos por EAN (Open Food Facts y portal Precios Claros) con marcador de inicial (spec 17)
 - [x] Panel de gasto mensual por cadena o comercio y por medio de pago, desde Historial (spec 03)
 - [x] Lista de comercios cercanos por distancia con su mapa, desde la barra de ubicación (spec 20)
-- [ ] Supabase: base de datos, autenticación y tiempo real (Fase 2)
+- [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
+- [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 
 ---
 

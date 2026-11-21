@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatDateTime, formatIsoDate, formatMoney, formatMonth, formatNumber, formatPct, formatPctChange, formatSize, initialOf,
+  formatDateTime, formatIsoDate, formatTimeAgo, formatMoney, formatMonth, formatNumber, formatPct, formatPctChange, formatSize, initialOf,
   monthName, shortMonth,
 } from './format';
 
@@ -51,5 +51,23 @@ describe('format', () => {
     expect(monthName('2026-12')).toBe('diciembre');
     expect(shortMonth('2026-09')).toBe('sep');
     expect(shortMonth('2026-06')).toBe('jun');
+  });
+});
+
+describe('formatTimeAgo', () => {
+  const now = new Date('2026-11-17T15:00:00.000Z');
+
+  it('con menos de un minuto dice recién', () => {
+    expect(formatTimeAgo('2026-11-17T14:59:30.000Z', now)).toBe('recién');
+  });
+
+  it('en minutos y en horas', () => {
+    expect(formatTimeAgo('2026-11-17T14:59:00.000Z', now)).toBe('hace 1 min');
+    expect(formatTimeAgo('2026-11-17T14:25:00.000Z', now)).toBe('hace 35 min');
+    expect(formatTimeAgo('2026-11-17T12:00:00.000Z', now)).toBe('hace 3 h');
+  });
+
+  it('con más de un día, la fecha y la hora', () => {
+    expect(formatTimeAgo('2026-11-15T10:00:00.000Z', now)).toBe(`el ${formatDateTime('2026-11-15T10:00:00.000Z')}`);
   });
 });

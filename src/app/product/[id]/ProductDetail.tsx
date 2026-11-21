@@ -11,7 +11,7 @@ import ReferencePrice from '@/components/ReferencePrice';
 import SepaLinkDialog from '@/components/SepaLinkDialog';
 import { useSepaImages } from '@/components/useSepaImages';
 import { formatMoney, formatShortDateTime, formatSize } from '@/lib/format';
-import { newId } from '@/lib/ids';
+import { uniqueId } from '@/lib/ids';
 import { CartItem, Price, Product } from '@/lib/models';
 import { imageSource, sepaEnabled } from '@/lib/sepa';
 import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
@@ -56,7 +56,7 @@ export default function ProductDetail() {
   function add() {
     if (!product || !stats) return;
     const item: CartItem = {
-      id: newId(),
+      id: uniqueId(),
       productId: product.id,
       productName: product.name,
       price: stats.current,

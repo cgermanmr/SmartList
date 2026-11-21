@@ -38,12 +38,12 @@ beforeEach(() => {
 });
 
 describe('hydrate', () => {
-  it('sin datos guardados usa los productos y precios de ejemplo', () => {
+  it('sin datos guardados arranca vacío, sin datos de ejemplo', () => {
     useStore.getState().hydrate();
     const s = useStore.getState();
     expect(s.hydrated).toBe(true);
-    expect(s.products).toHaveLength(8);
-    expect(s.prices).toHaveLength(3);
+    expect(s.products).toEqual([]);
+    expect(s.prices).toEqual([]);
     expect(s.cart).toEqual([]);
     expect(s.calculator).toEqual(defaultCalculator());
   });
@@ -222,12 +222,16 @@ describe('loadPurchaseToCart', () => {
   beforeEach(() => useStore.getState().hydrate());
 
   it('reemplaza el carrito usando el precio actual registrado', () => {
+    useStore.setState({ prices: [
+      { id: 'r1', productId: '1', amount: 185, date: new Date('2026-11-10T10:00:00.000Z'), barrio: 'Almagro' },
+      { id: 'r2', productId: '2', amount: 45, date: new Date('2026-11-10T10:00:00.000Z'), barrio: 'Almagro' },
+    ] });
     const s = useStore.getState();
     s.addToCart(item('9', 10));
     s.loadPurchaseToCart(purchase);
     const cart = useStore.getState().cart;
     expect(cart.map(i => i.productId)).toEqual(['1', '2']);
-    // Producto 1 tiene precio registrado de ejemplo (185); el 2 también (45)
+    // Producto 1 tiene precio registrado (185); el 2 también (45)
     expect(cart[0]).toMatchObject({ price: 185, quantity: 2, subtotal: 370 });
     expect(cart[1]).toMatchObject({ price: 45, quantity: 1 });
   });
@@ -292,6 +296,9 @@ describe('compras y precios', () => {
   });
 
   it('edita el monto de un precio sin mutar el original', () => {
+    useStore.setState({ prices: [
+      { id: '1', productId: '1', amount: 185, date: new Date('2026-11-10T10:00:00.000Z'), barrio: 'Almagro' },
+    ] });
     const before = useStore.getState().prices.find(p => p.id === '1')!;
     useStore.getState().updatePrice('1', 999);
     expect(useStore.getState().prices.find(p => p.id === '1')!.amount).toBe(999);

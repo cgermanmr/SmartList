@@ -19,7 +19,11 @@ Pendiente dentro de la fase:
   que estaba previsto. Se usa desde el cliente con `supabase-js`; el código de servidor de Next.js (route
   handlers, server actions) queda para lo que necesite secretos (p. ej. Web Push)
 - Variables `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` vía la integración de Vercel
-- Migrar localStorage → API, sincronización en nube, datos compartidos entre dispositivos, backups
+- ~~Migrar localStorage → API, sincronización en nube, datos compartidos entre dispositivos~~ → hecho en la
+  [SPEC 21](../specs/21-cuenta-y-sincronizacion.md): cuenta optativa (Google o código por mail) y sincronización
+  local primero en `user_records`; las variables se cargan a mano en Vercel, no con la integración
+- Grupos y precios compartidos con el grupo (spec 22) y validación de precios por varias personas (spec 23)
+- Backups
 - Analytics: búsquedas, reportes de precios, estadísticas de uso
 - Comunidad: calificaciones de comercios, comentarios en precios, reputación de usuarios
 - Habilita: [03 — Lista compartida](features/03-lista-compartida.md),

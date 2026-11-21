@@ -2,10 +2,12 @@ import type { Metadata, Viewport } from 'next';
 import { Nunito_Sans, Rubik } from 'next/font/google';
 import Link from 'next/link';
 import { Suspense } from 'react';
+import AccountButton from '@/components/AccountButton';
 import CartSummary from '@/components/CartSummary';
 import Logo from '@/components/Logo';
 import NavBar, { NavLinks } from '@/components/NavBar';
 import StoreHydrator from '@/components/StoreHydrator';
+import SyncManager from '@/components/SyncManager';
 import './globals.css';
 
 // Fuentes servidas desde el propio dominio: Rubik para títulos y precios, Nunito Sans para el texto
@@ -39,7 +41,10 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
                 <Logo className="h-7 w-7 shrink-0 text-accent-400" />
                 <span className="truncate">El Changuito</span>
               </Link>
-              <CartSummary />
+              <div className="flex shrink-0 items-center gap-1">
+                <AccountButton />
+                <CartSummary />
+              </div>
             </div>
           </header>
 
@@ -49,7 +54,10 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           </Suspense>
 
           <main className="flex-1 overflow-y-auto max-w-6xl mx-auto w-full px-4 py-6">
-            <StoreHydrator>{children}</StoreHydrator>
+            <StoreHydrator>
+              <SyncManager />
+              {children}
+            </StoreHydrator>
           </main>
 
           <footer className="hidden bg-gray-800 py-3 text-center text-xs text-white md:block">
