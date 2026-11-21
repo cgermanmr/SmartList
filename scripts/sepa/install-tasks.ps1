@@ -2,7 +2,7 @@
 # Registra (o actualiza) las dos tareas del usuario actual, que corren run-local.ps1 desde este repo:
 #   - "El Changuito - SEPA ETL":      todos los días a las 04:00, npm run sepa:etl (habilitada)
 #   - "El Changuito - SEPA imagenes": domingos a las 06:00, npm run sepa:images (deshabilitada salvo -EnableImages;
-#     se habilita si el workflow "SEPA imagenes" de GitHub Actions también recibe 403)
+#     de reserva: el workflow "SEPA imágenes" de GitHub Actions funciona)
 # Si la PC está suspendida la despiertan; si estaba apagada, corren apenas se prende. Necesitan la sesión iniciada.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sepa\install-tasks.ps1 [-EnableImages]

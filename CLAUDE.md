@@ -78,7 +78,7 @@ scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar),
 ├── run-local.ps1               # Corre sepa:etl o sepa:images, guarda el log en %LOCALAPPDATA%\el-changuito\logs
 │                               #   y manda el mail con el resultado
 ├── install-tasks.ps1           # Registra las tareas programadas de Windows (ETL diario, imágenes los domingos)
-└── set-mail.ps1                # Guarda (cifrada) la contraseña de aplicación de Gmail para los avisos
+└── set-mail.ps1                # Configura el SMTP de los avisos (Gmail por defecto); contraseña cifrada con DPAPI
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
@@ -723,8 +723,9 @@ npm run sepa:images # Imágenes de productos → sepa_imagenes (ver Base de prec
   `Start-ScheduledTask 'El Changuito - SEPA ETL'`. Si `npm` no se encuentra, Node tiene que estar en el `PATH` del
   usuario o del sistema (no en el perfil de PowerShell)
 - **No llega el mail de la tarea** — el final del log del día dice por qué: "Sin aviso por mail: falta …" (correr
-  `scripts\sepa\set-mail.ps1`) o "No se pudo mandar el mail: …" (contraseña de aplicación revocada o cambiada:
-  generar otra y volver a correr `set-mail.ps1`). Revisar también la carpeta de spam
+  `scripts\sepa\set-mail.ps1`) o "No se pudo mandar el mail: …" (contraseña revocada o cambiada, o el servidor
+  rechaza al remitente: volver a correr `set-mail.ps1`). Revisar también la carpeta de spam; con un SMTP que no es
+  el de la casilla del remitente, el dominio del remitente tiene que estar verificado en ese proveedor
 
 ---
 
@@ -880,7 +881,7 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 | Tarea | Cuándo | Qué corre | Estado |
 |---|---|---|---|
 | El Changuito - SEPA ETL | Todos los días, 04:00 | `npm run sepa:etl` | Habilitada |
-| El Changuito - SEPA imagenes | Domingos, 06:00 | `npm run sepa:images` | Deshabilitada: se habilita si el workflow de imágenes también recibe 403 |
+| El Changuito - SEPA imagenes | Domingos, 06:00 | `npm run sepa:images` | Deshabilitada: el workflow de imágenes de GitHub funciona; de reserva |
 
   - Las registra (o actualiza) `scripts/sepa/install-tasks.ps1`; con `-EnableImages` deja habilitada también la de
     imágenes: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\sepa\install-tasks.ps1 [-EnableImages]`
@@ -889,15 +890,20 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
     `%LOCALAPPDATA%\el-changuito\logs\<sepa-etl|sepa-images>-AAAA-MM-DD.log` (se borran a los 30 días)
   - Despiertan la PC si está suspendida y, si estaba apagada, corren apenas se prende; límite de 1 hora y nunca dos
     a la vez. Necesitan la sesión de Windows iniciada
-  - **Aviso por mail de cada corrida**, salga bien o mal: `run-local.ps1` manda desde `elchanguito.app@gmail.com`
-    a la misma casilla (SMTP de Gmail, `smtp.gmail.com:587`) un mail con asunto
-    `[El Changuito] SEPA ETL: <ok | omitida | sin archivo nuevo | FALLÓ> · dd/mm/aaaa hh:mm` y la salida de la
-    corrida en el cuerpo. `FALLÓ` es cualquier código distinto de 0 (403 del portal, error de carga, regla de "más
-    de 3 días"). La cuenta se configura una vez con `scripts/sepa/set-mail.ps1`, en una ventana de PowerShell
-    propia: pide una **contraseña de aplicación** de Google (myaccount.google.com/apppasswords, con verificación en
-    dos pasos), manda un mail de prueba y solo si llega la guarda en `%LOCALAPPDATA%\el-changuito\mail.xml`, cifrada
-    con DPAPI (solo la lee ese usuario en esa PC; nada en el repo). Sin ese archivo no hay mail y el log lo dice;
-    si el envío falla, queda "No se pudo mandar el mail: …" en el log y el código de salida no cambia
+  - **Aviso por mail de cada corrida**, salga bien o mal: `run-local.ps1` manda a `elchanguito.app@gmail.com` un
+    mail con asunto `[El Changuito] SEPA ETL: <ok | omitida | sin archivo nuevo | FALLÓ> · dd/mm/aaaa hh:mm` y la
+    salida de la corrida en el cuerpo. `FALLÓ` es cualquier código distinto de 0 (403 del portal, error de carga,
+    regla de "más de 3 días")
+  - **Servidor SMTP genérico**, configurado una vez con `scripts/sepa/set-mail.ps1` en una ventana de PowerShell
+    propia (`Get-Credential` abre el cuadro de la contraseña). Por defecto Gmail (`smtp.gmail.com:587`, usuario y
+    remitente `elchanguito.app@gmail.com`, con una **contraseña de aplicación** de myaccount.google.com/apppasswords,
+    que pide verificación en dos pasos); con `-SmtpHost`, `-Port`, `-User`, `-From` y `-To`, cualquier otro (Brevo,
+    Mailgun, SendGrid o el del proveedor de internet), `-NoAuth` sin usuario y `-NoSsl` sin STARTTLS. **Solo
+    STARTTLS (587 o 25)**: `System.Net.Mail` no soporta el TLS directo del 465. Manda un mail de prueba y solo si
+    sale guarda servidor, puerto, remitente, destinatario y credencial en `%LOCALAPPDATA%\el-changuito\mail.xml`,
+    con la contraseña cifrada con DPAPI (solo la lee ese usuario en esa PC; nada en el repo). Sin ese archivo no
+    hay mail y el log lo dice; si el envío falla, queda "No se pudo mandar el mail: …" en el log y el código de
+    salida no cambia
   - Los `.ps1` se guardan en **UTF-8 con BOM**: sin BOM, PowerShell 5.1 los lee como ANSI y rompe los acentos
   - A mano: `Start-ScheduledTask 'El Changuito - SEPA ETL'`, o `npm run sepa:etl` como siempre
 - **SEPA en GitHub Actions (desactivado)** — `.github/workflows/sepa.yml` (Node 24): `npm ci → npm run sepa:etl` con
@@ -912,8 +918,10 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 - **SEPA imágenes** — `.github/workflows/sepa-images.yml` (Node 24): `npm ci → npm run sepa:images` con el secret
   `SUPABASE_DB_URL`; los **domingos a las 06:00 hora argentina** (`0 9 * * 0` UTC) y a mano (*Actions → SEPA
   imágenes → Run workflow*, para adelantar el recorrido del portal); `concurrency: sepa-images` sin cancelar y
-  `timeout-minutes: 60`. Consulta `imagenes.preciosclaros.gob.ar`, que puede tener el mismo bloqueo que el ETL: si
-  falla con 403, `gh workflow disable sepa-images.yml` y
+  `timeout-minutes: 60`. **Sigue funcionando desde GitHub** (corrida a mano del 21/11/2026: 173 imágenes del portal,
+  0 sin respuesta): `imagenes.preciosclaros.gob.ar` no bloquea a los runners. Ese portal responde **403 cuando la
+  imagen no existe** (y 200 cuando existe), así que un 403 ahí no es un bloqueo. Si algún día el workflow falla por
+  el portal o deja de encontrar imágenes, `gh workflow disable sepa-images.yml` y
   `Enable-ScheduledTask 'El Changuito - SEPA imagenes'` (o `install-tasks.ps1 -EnableImages`)
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)

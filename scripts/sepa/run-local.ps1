@@ -58,23 +58,23 @@ if ($code -ne 0) {
 $mailConfig = Join-Path $baseDir 'mail.xml'
 if (Test-Path $mailConfig) {
   try {
-    $cred = Import-Clixml $mailConfig   # PSCredential cifrado con DPAPI: solo lo lee este usuario en esta PC
-    $msg = New-Object Net.Mail.MailMessage
-    $msg.From = $cred.UserName
-    $msg.To.Add($cred.UserName)
+    # Servidor, remitente, destinatario y credencial; la contraseña va cifrada con DPAPI (este usuario, esta PC)
+    $mail = Import-Clixml $mailConfig
+    $msg = New-Object Net.Mail.MailMessage($mail.From, $mail.To)
     $msg.SubjectEncoding = [Text.Encoding]::UTF8
     $msg.BodyEncoding = [Text.Encoding]::UTF8
     $msg.Subject = '[El Changuito] {0}: {1} · {2:dd/MM/yyyy HH:mm}' -f $tarea, $resultado, $inicio
     $duracion = [math]::Round(($fin - $inicio).TotalMinutes, 1).ToString([Globalization.CultureInfo]'es-AR')
     $msg.Body = "Resultado: $resultado (código $code) · $duracion min`r`nEquipo: $env:COMPUTERNAME`r`nLog: $log`r`n`r`n" +
       ($run -join "`r`n")
-    $smtp = New-Object Net.Mail.SmtpClient('smtp.gmail.com', 587)
-    $smtp.EnableSsl = $true
-    $smtp.Credentials = $cred.GetNetworkCredential()
+    $smtp = New-Object Net.Mail.SmtpClient($mail.Host, [int]$mail.Port)
+    $smtp.EnableSsl = [bool]$mail.EnableSsl
+    if ($mail.Credential) { $smtp.Credentials = $mail.Credential.GetNetworkCredential() }
     $smtp.Send($msg)
-    Write-Log "Mail enviado a $($cred.UserName)"
+    Write-Log "Mail enviado a $($mail.To) por $($mail.Host)"
   } catch {
-    Write-Log "No se pudo mandar el mail: $($_.Exception.Message)"
+    $detail = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+    Write-Log "No se pudo mandar el mail: $detail"
   }
 } else {
   Write-Log "Sin aviso por mail: falta $mailConfig (crearlo con scripts\sepa\set-mail.ps1)"

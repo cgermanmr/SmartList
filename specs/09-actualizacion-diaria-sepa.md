@@ -9,8 +9,8 @@
 > runners de GitHub Actions (`package_show` falla en los 4 intentos), mientras que desde una conexión argentina
 > responde 200 con el mismo código y `User-Agent`. El workflow `SEPA` quedó desactivado (`gh workflow disable`, el
 > archivo no cambió) y la carga corre a las 04:00 en una tarea programada de Windows de una PC con IP argentina
-> (`scripts/sepa/run-local.ps1` + `install-tasks.ps1`), con un mail por corrida desde `elchanguito.app@gmail.com`
-> en lugar del aviso de GitHub. El resto de la spec (reglas, chequeo previo, bloqueo, regla de 3 días) sigue igual.
+> (`scripts/sepa/run-local.ps1` + `install-tasks.ps1`), con un mail por corrida a `elchanguito.app@gmail.com` por
+> un SMTP configurable (`set-mail.ps1`, Gmail por defecto) en lugar del aviso de GitHub. El resto de la spec (reglas, chequeo previo, bloqueo, regla de 3 días) sigue igual.
 > Detalle en *Build y Despliegue* de la documentación del proyecto.
 
 ## Por qué existe esta spec
