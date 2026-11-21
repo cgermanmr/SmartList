@@ -29,6 +29,7 @@ necesita backend.
 | 05 | [Pedidos a comercios](features/05-pedidos-a-comercios.md) | 3–4 | Idea | 03, 04 |
 | 06 | [Precios de referencia (SEPA)](features/06-precios-sepa.md) | 1–2 | Hecho (specs 08–12) | Supabase (solo lectura), ETL diario |
 | 07 | [Precios cercanos y extensiones del SEPA](features/07-precios-cercanos-sepa.md) | 1–2 | Hecho (specs 13 y 15–18) | 06, geolocalización; historial: Fase 2 |
+| 08 | [Consulta de precios y aportes de los usuarios](features/08-consulta-y-aportes.md) | 1–2 | Analizado (specs 24–28) | 07; fotos: cuenta (spec 21) y Storage |
 
 **Estados posibles:** Idea · Analizado · En curso · Parcial · Hecho.
 

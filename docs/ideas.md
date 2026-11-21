@@ -25,6 +25,16 @@ enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se imple
 
 ## Comercios y comunidad
 
+- **Comunidad abierta:** precios públicos para todos los usuarios, no solo para un grupo, después de la validación.
+  Se construye sobre las specs 22 y 23. Requiere:
+  - tabla pública aparte de `user_records`, solo con precios que tengan EAN y un comercio identificable;
+  - validación por usuarios cercanos al comercio (alguien de otra ciudad no puede confirmar un precio);
+  - controles contra el abuso: límite por día, nadie valida lo propio, reputación simple y vencimiento del precio
+    validado;
+  - autor oculto o con alias, y texto nuevo en `/privacidad`;
+  - en la UI, una tercera fuente junto al SEPA: "Informado por vecinos · validado · hace 2 días".
+
+  Contexto en [08 — Consulta y aportes](features/08-consulta-y-aportes.md).
 - Cupones y promociones (ver [04 — Promociones](features/04-promociones-comercios.md))
 - Recomendaciones personalizadas
 - Billeteras digitales / pagos integrados

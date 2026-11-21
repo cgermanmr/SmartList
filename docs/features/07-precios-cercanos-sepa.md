@@ -53,7 +53,9 @@ Sin spec todavía:
 
 - **Comparar el precio propio contra las sucursales cercanas** en vez de la referencia nacional (detalle y
   carrito). La spec 12 deja la referencia nacional aunque haya ubicación.
-- **Comparar la canasta** de una compra entera contra cada cadena ("en Coto te salía $X").
+- **Comparar la canasta** de una compra entera contra cada cadena ("en Coto te salía $X"). Para el carrito, contra
+  las sucursales cercanas o las cadenas: [spec 25](../../specs/25-donde-conviene-el-carrito.md) (feature
+  [08](08-consulta-y-aportes.md)). Comparar las compras pasadas sigue pendiente.
 - **Promociones de las cadenas** (`promo1` / `promo2` y sus leyendas del SEPA): mostrarlas junto al precio de lista
   y usarlas en la calculadora de precio unitario.
 - **Historial de precios SEPA.** Criterio propuesto después de medir la base en la spec 08 (98 MB con el agregado

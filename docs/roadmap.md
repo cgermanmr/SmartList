@@ -22,7 +22,11 @@ Pendiente dentro de la fase:
 - ~~Migrar localStorage → API, sincronización en nube, datos compartidos entre dispositivos~~ → hecho en la
   [SPEC 21](../specs/21-cuenta-y-sincronizacion.md): cuenta optativa (Google o código por mail) y sincronización
   local primero en `user_records`; las variables se cargan a mano en Vercel, no con la integración
-- Grupos y precios compartidos con el grupo (spec 22) y validación de precios por varias personas (spec 23)
+- [08 — Consulta de precios y aportes](features/08-consulta-y-aportes.md), en este orden: ¿dónde conviene el
+  carrito? (spec 25), comercios cercanos en el lector (spec 24), cargar precio en el comercio (spec 26), fotos
+  propias (spec 27), grupos (spec 22), validación (spec 23) y supervisión de fotos (spec 28)
+- Grupos y precios compartidos con el grupo (spec 22) y validación de precios por varias personas (spec 23); siguen
+  vigentes, y la comunidad abierta queda para después (ver [ideas](ideas.md))
 - Backups
 - Analytics: búsquedas, reportes de precios, estadísticas de uso
 - Comunidad: calificaciones de comercios, comentarios en precios, reputación de usuarios
