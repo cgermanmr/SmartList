@@ -1,6 +1,6 @@
 # SPEC 29 — Buscador fijo arriba en Buscar
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 19](19-restyling-base-y-navegacion.md)
 > **Fecha:** 2026-11-22
 > **Objetivo:** Que en el celular, con el teclado abierto, los resultados se vean apenas debajo del buscador, sin tener que cerrar el teclado.
@@ -51,7 +51,7 @@ decirlo, y los resultados del catálogo están debajo.
   mueve nada. Se desplaza al enfocar el campo y cuando el texto pasa de vacío a tener algo (por si al enfocar no
   había contenido suficiente para desplazarse). Solo hacia abajo: si el buscador ya está arriba, no hace nada.
   Sin el título visible, lo único que sale de la vista es la barra de ubicación.
-  Suave, salvo con `prefers-reduced-motion`.
+  Instantáneo (ver *Decisiones*).
 - **Alto mínimo con texto:** mientras hay texto en el buscador, el área de resultados tiene al menos el alto de la
   pantalla (`min-h-dvh`), para que siempre se pueda desplazar hasta dejar el buscador arriba aunque haya pocos
   resultados.
@@ -95,13 +95,14 @@ Sin escribir (arriba de todo):
    **Verificar:** buscar un texto sin propios que coincidan y ver la sección "En Precios Claros" pegada al buscador.
 2. **Reordenar y fijar el buscador** — el `<h1>` pasa a `sr-only` y el placeholder del campo a "Buscar
    productos"; `LocationBar` pasa arriba del buscador; el contenedor del campo y del
-   `ScanButton` pasa a `sticky top-0 z-10 -mx-4 bg-gray-50 px-4 py-2`; la `ScanOffer` queda debajo.
+   `ScanButton` pasa a `sticky -top-6 z-10 -mx-4 bg-gray-50 px-4 py-2`, como hijo directo de la página; la
+   `ScanOffer` queda debajo.
    **Verificar:** a 375 px, al desplazar la lista, el buscador queda arriba sin que se vean los resultados por
    detrás; desde `md` también queda fijo.
 3. **Desplazar al tocar el campo** — un elemento marcador (`ref`) justo antes del buscador; `onFocus` del campo y
    el paso de vacío a texto llaman a `scrollIntoView({ block: 'start' })` sobre el marcador, solo con
-   `(pointer: coarse)` y si el marcador está por debajo del borde de arriba de `<main>`; `behavior: 'smooth'` salvo
-   con `prefers-reduced-motion`. El área de resultados lleva `min-h-dvh` mientras hay texto.
+   `(pointer: coarse)` y si el marcador está por debajo del borde de arriba de `<main>`; instantáneo. El área de
+   resultados lleva `min-h-dvh` mientras hay texto.
    **Verificar:** con la emulación táctil de 375 px, al tocar el campo el título y la barra de ubicación salen de
    la vista; con pocos resultados también; en la computadora no se mueve.
 4. **Docs** — `CLAUDE.md`, Funcionalidades → Búsqueda: el título como placeholder, el mensaje sin propios, el
@@ -139,5 +140,11 @@ pelee con el que hace el propio navegador al enfocar; leer un código con la cá
 - **El título como placeholder:** "Buscar Productos" repetía lo que ya dicen la pestaña activa de la barra y el
   propio campo; como placeholder ocupa cero lugar. El `<h1>` queda oculto a la vista para no perder el título de la
   página en los lectores de pantalla.
+- **`-top-6` en lugar de `top-0`** (al implementar): `sticky` cuenta desde el padding de `<main>` (`py-6`); con
+  `top-0` el buscador se fijaba 24 px más abajo y la lista se veía por encima. Además, el buscador es hijo directo
+  de la página: dentro de un contenedor con la oferta del lector dejaba de estar fijo al salir de ese contenedor.
+- **Desplazamiento instantáneo** (cambiado al implementar; la spec pedía suave salvo con `prefers-reduced-motion`):
+  cada tecla corta un desplazamiento suave y, escribiendo seguido, el buscador quedaba a mitad de camino (en 3 de 4
+  pruebas subió 4 a 6 px). Instantáneo subió bien siempre, y como pasa mientras se abre el teclado casi no se nota.
 - **Desplazar solo en pantallas táctiles:** en la computadora no hay teclado que tape y mover la página al hacer
   clic sorprende.

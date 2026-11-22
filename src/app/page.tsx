@@ -46,6 +46,21 @@ export default function SearchPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  const searchAnchor = useRef<HTMLDivElement>(null);
+
+  /**
+   * En el celular, sube el buscador arriba de todo para que el teclado no tape los resultados (spec 29). Solo con
+   * puntero táctil y solo hacia abajo: si ya está arriba, no se mueve. Instantáneo: cada tecla corta un
+   * desplazamiento suave y el buscador quedaba a mitad de camino
+   */
+  function raiseSearch() {
+    const anchor = searchAnchor.current;
+    const main = anchor?.closest('main');
+    if (!anchor || !main || !window.matchMedia('(pointer: coarse)').matches) return;
+    if (anchor.getBoundingClientRect().top <= main.getBoundingClientRect().top + 1) return;
+    anchor.scrollIntoView({ block: 'start' });
+  }
+
   const filteredProducts = filterProducts(products, searchQuery);
 
   // Catálogo: aparte del filtro propio, que sigue siendo instantáneo. Sin los productos que ya tienen un propio
@@ -144,263 +159,273 @@ export default function SearchPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">Buscar Productos</h1>
+      {/* El título queda para los lectores de pantalla; a la vista lo reemplaza el placeholder (spec 29) */}
+      <h1 className="sr-only">Buscar productos</h1>
 
-      <div className="mb-6">
-        <div className="flex gap-2">
-          <input
-            value={searchQuery}
-            onChange={e => {
-              setSearchQuery(e.target.value);
-              setScan(null);
-              setExpandedEan(null);
-            }}
-            type="text"
-            placeholder="Busca un producto..."
-            aria-label="Buscar producto por nombre, categoría o código de barras"
-            className="input-field min-w-0 flex-1"
-          />
-          <ScanButton onDetected={scanned} />
-        </div>
-        <LocationBar />
-        {scan && (
-          <ScanOffer
-            key={scan.ean}
-            scan={scan}
-            onAdded={name => {
-              setScan(null);
-              showNotice(name);
-            }}
-            onMap={showMap}
-          />
-        )}
+      <LocationBar />
+
+      {/* Marcador para subir el buscador al tocarlo en el celular */}
+      <div ref={searchAnchor} />
+      {/* Buscador fijo arriba de <main> (el que hace scroll): los resultados pasan por debajo. Es hijo directo de
+          la página para que quede fijo en todo el largo de la lista (sticky no sale de su contenedor). -top-6
+          compensa el py-6 de <main>: sticky cuenta desde el padding y la lista se vería por encima */}
+      <div className="sticky -top-6 z-10 -mx-4 mt-1 flex gap-2 bg-gray-50 px-4 py-2">
+        <input
+          value={searchQuery}
+          onFocus={raiseSearch}
+          onChange={e => {
+            // Después de que se aplique el alto mínimo de los resultados; antes no habría lugar para subir
+            if (searchQuery === '' && e.target.value !== '') requestAnimationFrame(raiseSearch);
+            setSearchQuery(e.target.value);
+            setScan(null);
+            setExpandedEan(null);
+          }}
+          type="text"
+          placeholder="Buscar productos"
+          aria-label="Buscar producto por nombre, categoría o código de barras"
+          className="input-field min-w-0 flex-1"
+        />
+        <ScanButton onDetected={scanned} />
       </div>
+      {scan && (
+        <ScanOffer
+          key={scan.ean}
+          scan={scan}
+          onAdded={name => {
+            setScan(null);
+            showNotice(name);
+          }}
+          onMap={showMap}
+        />
+      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredProducts.map(product => {
-          const stats = getPriceStats(prices, product.id);
-          const cartItem = cart.find(i => i.productId === product.id);
-          // Comercios cercanos: solo con EAN y con ubicación; los precios cargados a mano van al final de la lista
-          const near = nearby.get(product.ean);
-          const ownStorePrices = near === undefined ? [] : getRecentStorePrices(prices, product.id, now);
-          const hasStores = Array.isArray(near) && near.length + ownStorePrices.length > 0;
-          const storesOpen = storesOpenId === product.id && hasStores;
-          const storesId = 'comercios-' + product.id;
-          const priceColor = stats && stats.previous !== null && stats.current > stats.previous
-            ? 'text-red-600'
-            : stats && stats.previous !== null && stats.current < stats.previous
-              ? 'text-green-600'
-              : 'text-primary-700';
+      {/* Con texto, al menos el alto de la pantalla: así siempre se puede subir el buscador arriba (spec 29) */}
+      <div className={searchQuery !== '' ? 'min-h-dvh' : undefined}>
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredProducts.map(product => {
+            const stats = getPriceStats(prices, product.id);
+            const cartItem = cart.find(i => i.productId === product.id);
+            // Comercios cercanos: solo con EAN y con ubicación; los precios cargados a mano van al final de la lista
+            const near = nearby.get(product.ean);
+            const ownStorePrices = near === undefined ? [] : getRecentStorePrices(prices, product.id, now);
+            const hasStores = Array.isArray(near) && near.length + ownStorePrices.length > 0;
+            const storesOpen = storesOpenId === product.id && hasStores;
+            const storesId = 'comercios-' + product.id;
+            const priceColor = stats && stats.previous !== null && stats.current > stats.previous
+              ? 'text-red-600'
+              : stats && stats.previous !== null && stats.current < stats.previous
+                ? 'text-green-600'
+                : 'text-primary-700';
 
-          return (
-            <div key={product.id} className="card p-4">
-              <div className="flex items-start gap-3 mb-3">
-                <ProductImage src={imageOf(product)} name={product.name} size={64} />
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-bold text-lg break-words">{product.name}</h3>
-                  {product.category && <p className="text-sm text-gray-600">{product.category}</p>}
+            return (
+              <div key={product.id} className="card p-4">
+                <div className="flex items-start gap-3 mb-3">
+                  <ProductImage src={imageOf(product)} name={product.name} size={64} />
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-bold text-lg break-words">{product.name}</h3>
+                    {product.category && <p className="text-sm text-gray-600">{product.category}</p>}
+                  </div>
                 </div>
-              </div>
 
-              {stats && (
-                <div className="mb-4">
-                  <div className="flex items-baseline gap-2 mb-1">
-                    <p className={`text-2xl font-bold ${priceColor}`}>${formatMoney(stats.current)}</p>
-                    {stats.previous !== null && stats.current !== stats.previous && (
-                      <span className={`text-sm font-semibold ${stats.current > stats.previous ? 'text-red-500' : 'text-green-500'}`}>
-                        ({formatPctChange(stats.current, stats.previous)})
-                      </span>
+                {stats && (
+                  <div className="mb-4">
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <p className={`text-2xl font-bold ${priceColor}`}>${formatMoney(stats.current)}</p>
+                      {stats.previous !== null && stats.current !== stats.previous && (
+                        <span className={`text-sm font-semibold ${stats.current > stats.previous ? 'text-red-500' : 'text-green-500'}`}>
+                          ({formatPctChange(stats.current, stats.previous)})
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-3 text-xs text-gray-500">
+                      {stats.previous !== null && <span>Anterior: ${formatMoney(stats.previous)}</span>}
+                      <span>Promedio: ${formatMoney(stats.avg)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {near !== undefined && (
+                  <div className="mb-4">
+                    <NearbyLine prices={near} approx={nearby.approx} />
+                    {hasStores && (
+                      <button
+                        type="button"
+                        onClick={() => setStoresOpenId(storesOpen ? null : product.id)}
+                        aria-expanded={storesOpen}
+                        aria-controls={storesId}
+                        className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
+                        Ver comercios
+                        <Chevron open={storesOpen} />
+                      </button>
+                    )}
+                    {storesOpen && Array.isArray(near) && (
+                      <NearbyStores
+                        id={storesId}
+                        productName={product.name}
+                        prices={near}
+                        approx={nearby.approx}
+                        ownPrices={ownStorePrices}
+                        onChoose={(store, price) => addAt(product, store, price)}
+                        onMap={showMap}
+                      />
                     )}
                   </div>
-                  <div className="flex gap-3 text-xs text-gray-500">
-                    {stats.previous !== null && <span>Anterior: ${formatMoney(stats.previous)}</span>}
-                    <span>Promedio: ${formatMoney(stats.avg)}</span>
-                  </div>
-                </div>
-              )}
+                )}
 
-              {near !== undefined && (
-                <div className="mb-4">
-                  <NearbyLine prices={near} approx={nearby.approx} />
-                  {hasStores && (
-                    <button
-                      type="button"
-                      onClick={() => setStoresOpenId(storesOpen ? null : product.id)}
-                      aria-expanded={storesOpen}
-                      aria-controls={storesId}
-                      className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
-                      Ver comercios
-                      <Chevron open={storesOpen} />
-                    </button>
-                  )}
-                  {storesOpen && Array.isArray(near) && (
-                    <NearbyStores
-                      id={storesId}
-                      productName={product.name}
-                      prices={near}
-                      approx={nearby.approx}
-                      ownPrices={ownStorePrices}
-                      onChoose={(store, price) => addAt(product, store, price)}
-                      onMap={showMap}
-                    />
-                  )}
-                </div>
-              )}
-
-              {cartItem ? (
-                <>
-                  {/* Producto ya en carrito: controles de cantidad y borrado */}
-                  <div className="flex items-center gap-2 mb-2">
-                    <button
-                      onClick={() => removeFromCart(cartItem.id)}
-                      className="text-red-400 hover:text-red-600 transition-colors flex size-11 shrink-0 items-center justify-center rounded-lg -ml-2"
-                      title="Quitar del carrito"
-                      aria-label={`Quitar ${product.name} del carrito`}>
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none"
-                           stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                        <path d="M10 11v6M14 11v6" />
-                        <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                      </svg>
-                    </button>
-                    <div className="flex items-center border border-primary-300 rounded-xl overflow-hidden flex-1">
+                {cartItem ? (
+                  <>
+                    {/* Producto ya en carrito: controles de cantidad y borrado */}
+                    <div className="flex items-center gap-2 mb-2">
                       <button
-                        onClick={() => changeQuantity(cartItem.id, cartItem.quantity - 1)}
-                        aria-label="Restar uno"
-                        className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">−</button>
-                      <NumberInput
-                        value={cartItem.quantity}
-                        onValueChange={qty => changeQuantity(cartItem.id, qty)}
-                        min="1"
-                        aria-label={`Cantidad de ${product.name}`}
-                        className="w-12 text-center text-sm font-semibold border-x border-primary-300 min-h-11 focus:outline-none"
-                      />
-                      <button
-                        onClick={() => changeQuantity(cartItem.id, cartItem.quantity + 1)}
-                        aria-label="Sumar uno"
-                        className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">+</button>
-                    </div>
-                    <span className="text-sm font-bold text-primary-700 whitespace-nowrap">
-                      ${formatMoney(cartItem.subtotal)}
-                    </span>
-                  </div>
-                  <Link href={`/product/${product.id}`} className="btn-secondary w-full block text-center">
-                    Ver Detalles
-                  </Link>
-                </>
-              ) : (
-                <div className="flex gap-2">
-                  <Link href={`/product/${product.id}`} className="btn-secondary flex-1 text-center">
-                    Ver Detalles
-                  </Link>
-                  <AddToCartButton
-                    name={product.name}
-                    loading={ownLookup.isLoading(product.ean)}
-                    onClick={() => add(product)}
-                    className="flex-1">
-                    Añadir Carrito
-                  </AddToCartButton>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {products.length === 0 && searchQuery.trim() === '' && (
-        <div className="py-12 text-center">
-          <p className="text-lg font-semibold text-gray-900">Todavía no tenés productos</p>
-          <p className="mt-1 text-gray-600">Buscá un producto en Precios Claros o leé su código de barras</p>
-        </div>
-      )}
-
-      {filteredProducts.length === 0 && (products.length > 0 || searchQuery.trim() !== '') && (
-        <div className={`text-center ${showCatalog ? 'py-6' : 'py-12'}`}>
-          <p className="text-gray-500 text-lg">
-            {showCatalog ? 'No tenés productos con ese nombre' : 'No se encontraron productos'}
-          </p>
-        </div>
-      )}
-
-      {showCatalog && (
-        <section aria-labelledby="catalog-title" className="mt-8">
-          <h2 id="catalog-title" className="text-xl font-bold">En Precios Claros</h2>
-          <SepaResults
-            search={catalogSearch}
-            renderDetails={product => {
-              // Con ubicación, el mejor precio cercano; si no (o si falla), el resumen por cadena
-              const near = nearby.get(product.ean);
-              if (near !== undefined) return <NearbyLine prices={near} approx={nearby.approx} />;
-              const summary = references.get(product.ean);
-              return summary && <ReferenceLine summary={summary} />;
-            }}
-            renderItem={(product, info) => {
-              const summary = references.get(product.ean);
-              const loading = catalogLookup.isLoading(product.ean);
-              const near = nearby.get(product.ean);
-              const stores = Array.isArray(near) && near.length > 0 ? near : null;
-              // Sin precios (o mientras cargan): datos y, a la derecha, el botón y el link al formulario
-              if (!summary && !stores) {
-                return (
-                  <div className="flex items-center gap-3 px-3 py-2">
-                    {info}
-                    <div className="flex shrink-0 flex-col items-end">
-                      <AddToCartButton
-                        name={product.description}
-                        loading={loading}
-                        onClick={() => addSepa(product, undefined)}
-                        className="min-h-11 px-3 text-sm"
-                      />
-                      <EditLink ean={product.ean} />
-                    </div>
-                  </div>
-                );
-              }
-              const open = expandedEan === product.ean;
-              const panelId = `cadenas-${product.ean}`;
-              return (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setExpandedEan(open ? null : product.ean)}
-                    aria-expanded={open}
-                    aria-controls={panelId}
-                    className="list-row">
-                    {info}
-                    <Chevron open={open} />
-                  </button>
-                  {open && (
-                    <div id={panelId} className="border-t border-gray-200 bg-gray-50 px-3 py-3">
-                      {/* Con comercios cercanos, la lista por sucursal; si no, el precio por cadena */}
-                      {stores ? (
-                        <NearbyStores
-                          productName={product.description}
-                          prices={stores}
-                          approx={nearby.approx}
-                          onChoose={(store, price) => addSepaAt(product, store, price)}
-                          onMap={showMap}
+                        onClick={() => removeFromCart(cartItem.id)}
+                        className="text-red-400 hover:text-red-600 transition-colors flex size-11 shrink-0 items-center justify-center rounded-lg -ml-2"
+                        title="Quitar del carrito"
+                        aria-label={`Quitar ${product.name} del carrito`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                          <path d="M10 11v6M14 11v6" />
+                          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                        </svg>
+                      </button>
+                      <div className="flex items-center border border-primary-300 rounded-xl overflow-hidden flex-1">
+                        <button
+                          onClick={() => changeQuantity(cartItem.id, cartItem.quantity - 1)}
+                          aria-label="Restar uno"
+                          className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">−</button>
+                        <NumberInput
+                          value={cartItem.quantity}
+                          onValueChange={qty => changeQuantity(cartItem.id, qty)}
+                          min="1"
+                          aria-label={`Cantidad de ${product.name}`}
+                          className="w-12 text-center text-sm font-semibold border-x border-primary-300 min-h-11 focus:outline-none"
                         />
-                      ) : summary && <SepaPriceTable summary={summary} />}
-                      <AddToCartButton
-                        name={product.description}
-                        loading={loading}
-                        onClick={() => addSepa(product, summary)}
-                        secondary={stores !== null}
-                        className="mt-3 min-h-11 w-full">
-                        {stores ? 'Agregar sin comercio' : undefined}
-                      </AddToCartButton>
-                      <div className="text-center">
+                        <button
+                          onClick={() => changeQuantity(cartItem.id, cartItem.quantity + 1)}
+                          aria-label="Sumar uno"
+                          className="min-h-11 min-w-11 px-3 text-primary-700 hover:bg-primary-50 font-bold text-lg leading-none">+</button>
+                      </div>
+                      <span className="text-sm font-bold text-primary-700 whitespace-nowrap">
+                        ${formatMoney(cartItem.subtotal)}
+                      </span>
+                    </div>
+                    <Link href={`/product/${product.id}`} className="btn-secondary w-full block text-center">
+                      Ver Detalles
+                    </Link>
+                  </>
+                ) : (
+                  <div className="flex gap-2">
+                    <Link href={`/product/${product.id}`} className="btn-secondary flex-1 text-center">
+                      Ver Detalles
+                    </Link>
+                    <AddToCartButton
+                      name={product.name}
+                      loading={ownLookup.isLoading(product.ean)}
+                      onClick={() => add(product)}
+                      className="flex-1">
+                      Añadir Carrito
+                    </AddToCartButton>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {products.length === 0 && searchQuery.trim() === '' && (
+          <div className="py-12 text-center">
+            <p className="text-lg font-semibold text-gray-900">Todavía no tenés productos</p>
+            <p className="mt-1 text-gray-600">Buscá un producto en Precios Claros o leé su código de barras</p>
+          </div>
+        )}
+
+        {/* Con catálogo no hay mensaje: la lista vacía ya lo dice y "En Precios Claros" está debajo (spec 29) */}
+        {!sepaEnabled && filteredProducts.length === 0 && (products.length > 0 || searchQuery.trim() !== '') && (
+          <div className="py-12 text-center">
+            <p className="text-gray-500 text-lg">No se encontraron productos</p>
+          </div>
+        )}
+
+        {showCatalog && (
+          <section aria-labelledby="catalog-title" className={filteredProducts.length > 0 ? 'mt-6' : undefined}>
+            <h2 id="catalog-title" className="text-lg font-bold">En Precios Claros</h2>
+            <SepaResults
+              search={catalogSearch}
+              renderDetails={product => {
+                // Con ubicación, el mejor precio cercano; si no (o si falla), el resumen por cadena
+                const near = nearby.get(product.ean);
+                if (near !== undefined) return <NearbyLine prices={near} approx={nearby.approx} />;
+                const summary = references.get(product.ean);
+                return summary && <ReferenceLine summary={summary} />;
+              }}
+              renderItem={(product, info) => {
+                const summary = references.get(product.ean);
+                const loading = catalogLookup.isLoading(product.ean);
+                const near = nearby.get(product.ean);
+                const stores = Array.isArray(near) && near.length > 0 ? near : null;
+                // Sin precios (o mientras cargan): datos y, a la derecha, el botón y el link al formulario
+                if (!summary && !stores) {
+                  return (
+                    <div className="flex items-center gap-3 px-3 py-2">
+                      {info}
+                      <div className="flex shrink-0 flex-col items-end">
+                        <AddToCartButton
+                          name={product.description}
+                          loading={loading}
+                          onClick={() => addSepa(product, undefined)}
+                          className="min-h-11 px-3 text-sm"
+                        />
                         <EditLink ean={product.ean} />
                       </div>
                     </div>
-                  )}
-                </>
-              );
-            }}
-          />
-        </section>
-      )}
+                  );
+                }
+                const open = expandedEan === product.ean;
+                const panelId = `cadenas-${product.ean}`;
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedEan(open ? null : product.ean)}
+                      aria-expanded={open}
+                      aria-controls={panelId}
+                      className="list-row">
+                      {info}
+                      <Chevron open={open} />
+                    </button>
+                    {open && (
+                      <div id={panelId} className="border-t border-gray-200 bg-gray-50 px-3 py-3">
+                        {/* Con comercios cercanos, la lista por sucursal; si no, el precio por cadena */}
+                        {stores ? (
+                          <NearbyStores
+                            productName={product.description}
+                            prices={stores}
+                            approx={nearby.approx}
+                            onChoose={(store, price) => addSepaAt(product, store, price)}
+                            onMap={showMap}
+                          />
+                        ) : summary && <SepaPriceTable summary={summary} />}
+                        <AddToCartButton
+                          name={product.description}
+                          loading={loading}
+                          onClick={() => addSepa(product, summary)}
+                          secondary={stores !== null}
+                          className="mt-3 min-h-11 w-full">
+                          {stores ? 'Agregar sin comercio' : undefined}
+                        </AddToCartButton>
+                        <div className="text-center">
+                          <EditLink ean={product.ean} />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              }}
+            />
+          </section>
+        )}
+      </div>
 
       {/* Aviso al agregar: fijo abajo para que se vea desde cualquier parte de la lista. La región queda montada */}
       <div role="status" className="pointer-events-none fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 flex justify-center md:bottom-14">

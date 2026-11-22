@@ -456,6 +456,12 @@ interface CalculatorState {
 ## Funcionalidades (Fase 1)
 
 ### Búsqueda (`/`)
+- **Orden y buscador fijo** ([SPEC 29](specs/29-buscador-fijo-en-buscar.md)): sin título a la vista (el `<h1>` es
+  `sr-only`; el campo dice "Buscar productos" como placeholder), la barra de ubicación, el buscador y los
+  resultados. El buscador (campo + lector) es `sticky` arriba de `<main>` (`-top-6`, por su `py-6`) con el fondo de la
+  app. Con puntero táctil, al enfocar el campo o al escribir la primera letra la página sube de golpe hasta dejarlo
+  arriba (solo hacia abajo), para que el teclado no tape los resultados; mientras hay texto, el área de resultados
+  tiene `min-h-dvh` para que siempre se pueda subir. En la computadora no se mueve
 - Filtro en tiempo real (`filterProducts`): cada palabra del texto tiene que estar en el nombre, la **marca** o la
   categoría, sin distinguir mayúsculas ni acentos ("playadito" encuentra la yerba y el mate cocido de esa marca;
   "yerba playadito", la "Yerba" de marca PLAYADITO). Si el texto sin espacios son solo dígitos, también los
@@ -465,8 +471,8 @@ interface CalculatorState {
   (catálogo, lector y "Añadir Carrito" de un propio con EAN sin precio propio) dice "Buscando precio…",
   deshabilitado (`aria-busy`); si la consulta falla, se habilita
 - Sección **En Precios Claros** debajo de los productos propios (con al menos 3 caracteres y Supabase configurado):
-  hasta 20 resultados del catálogo sin los que ya tienen un producto propio. Sin propios que coincidan, el mensaje
-  es "No tenés productos con ese nombre"
+  hasta 20 resultados del catálogo sin los que ya tienen un producto propio. Sin propios que coincidan no hay
+  mensaje (la sección queda pegada al buscador); sin Supabase, "No se encontraron productos"
   - Cuando llegan los resultados, una sola consulta de precios para todos; cada uno con precios suma la línea
     "Promedio $X · más barato en <cadena> $Y" y la fila es un botón (`aria-expanded`, chevron) que despliega la
     lista por cadena (`SepaPriceTable`) con el botón **Agregar al carrito**. Uno desplegado a la vez; escribir lo cierra
@@ -504,7 +510,7 @@ interface CalculatorState {
 - "Añadir Carrito" con `initialCartPrice` (la referencia SEPA si tiene EAN y no tiene precio propio; nunca el `100`
   de antes) y ajustar cantidad / quitar desde la misma tarjeta
 - Navegación al detalle del producto
-- **Barra de ubicación** (`LocationBar`, debajo del buscador, solo con Supabase): sin ubicación, "Activá tu
+- **Barra de ubicación** (`LocationBar`, arriba del buscador, solo con Supabase): sin ubicación, "Activá tu
   ubicación para ver comercios cercanos" con **Usar mi ubicación** y "Elegir localidad" (buscador de barrios y
   localidades con sucursales); con ubicación, su nombre, el `select` de radio, "Cambiar" y "Quitar" (borra
   ubicación y radio), y la cantidad de comercios cerca. Sin comercios en el radio: "No hay comercios de Precios
@@ -1049,6 +1055,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Lista de comercios cercanos por distancia con su mapa, desde la barra de ubicación (spec 20)
 - [x] ¿Dónde conviene el carrito? Comparación contra las sucursales cercanas o las cadenas y "Pasar todo" (spec 25)
 - [x] Comercios cercanos en el lector, producto propio sin salir de Buscar y "¿Cuánto sale acá?" (spec 24)
+- [x] Buscador fijo arriba en Buscar, sin título a la vista ni mensaje sin propios (spec 29)
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
 - [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 
