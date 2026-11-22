@@ -1,6 +1,7 @@
 import { distanceKm, LatLng } from './geo';
 import { toGtin13 } from './gtin';
 import { Price, Product, Purchase, StoreRef } from './models';
+import type { PhotoDraft } from './photo';
 import { productFromSepa } from './product-form';
 import { NearBranch, nearestBranches, SepaBranch, SepaProduct } from './sepa';
 import { NO_BARRIO, priceStoreRef, storeKey } from './store';
@@ -11,7 +12,7 @@ import { NO_BARRIO, priceStoreRef, storeKey } from './store';
 export type PriceProductChoice =
   | { kind: 'own'; product: Product }
   | { kind: 'sepa'; sepa: SepaProduct }                         // caso A
-  | { kind: 'new'; ean?: string; name: string; brand: string }; // casos B (con ean) y C
+  | { kind: 'new'; ean?: string; name: string; brand: string; photo?: PhotoDraft }; // casos B (con ean) y C; foto: spec 27
 
 /** Radio para ofrecer "¿Estás en…?" con la posición del GPS */
 const AT_POINT_KM = 0.2;

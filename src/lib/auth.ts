@@ -1,3 +1,4 @@
+import { deleteAllRemotePhotos } from './photo-sync';
 import { supabase } from './supabase';
 
 // ── Cuenta (spec 21) ─────────────────────────────────────────
@@ -64,8 +65,15 @@ export async function verifyEmailCode(email: string, code: string): Promise<void
   if (error) throw error;
 }
 
-/** Borra la cuenta y, en cascada, todas sus filas de user_records */
+/**
+ * Borra la cuenta y, en cascada, todas sus filas de user_records. Antes borra sus fotos del bucket (spec 27): Postgres
+ * no puede borrar archivos de Storage, y si eso falla la cuenta no se borra, para no dejar fotos sin dueño
+ */
 export async function deleteAccountData(): Promise<void> {
+  const { data, error: sessionError } = await client().auth.getSession();
+  const userId = data.session?.user.id;
+  if (sessionError || !userId) throw sessionError ?? new Error('Sin sesión');
+  await deleteAllRemotePhotos(userId);
   const { error } = await client().rpc('delete_my_account');
   if (error) throw error;
 }

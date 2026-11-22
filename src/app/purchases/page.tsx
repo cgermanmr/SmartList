@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import { ReactNode, useState } from 'react';
 import ProductImage from '@/components/ProductImage';
 import SpendingVariation from '@/components/SpendingVariation';
+import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { formatDateTime, formatMoney, formatNumber, monthName } from '@/lib/format';
 import { CartItem, Purchase } from '@/lib/models';
 import { paymentLabel } from '@/lib/payment-methods';
+import { productImageSrc } from '@/lib/photo';
 import { monthKey, monthSummary, monthVariation, previousMonth } from '@/lib/spending';
 import { getPriceStats, useStore } from '@/lib/store';
 
@@ -30,9 +32,12 @@ export default function PurchasesPage() {
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
   const expandedPurchase = purchases.find(p => p.id === expandedId);
   const images = useSepaImages(expandedPurchase?.items.map(item => eanOf(item.productId)) ?? []);
+  // La foto propia va antes que la del catálogo (spec 27)
+  const photoUrl = useProductPhotos(expandedPurchase?.items.map(item => products.find(p => p.id === item.productId)) ?? []);
   const imageOf = (productId: string) => {
-    const ean = eanOf(productId);
-    return ean ? images.get(ean) : undefined;
+    const product = products.find(p => p.id === productId);
+    if (!product) return undefined;
+    return productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined);
   };
 
   function toggle(id: string) {

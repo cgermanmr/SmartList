@@ -24,6 +24,12 @@ vi.mock('./sync-remote', () => ({
   },
 }));
 
+vi.mock('./photo-sync', () => ({
+  syncPhotos: vi.fn(),
+  clearLocalPhotos: vi.fn(),
+  releaseLocalPhotos: vi.fn(),
+}));
+
 const OUTBOX = 'preciolocal_outbox';
 const SYNC = 'preciolocal_sync';
 const LOCATION = 'preciolocal_location';
@@ -32,14 +38,18 @@ const LOCATION = 'preciolocal_location';
 async function load() {
   vi.resetModules();
   const remote = await import('./sync-remote');
+  const photos = await import('./photo-sync');
   const { useStore } = await import('./store');
   const engine = await import('./sync-engine');
   vi.mocked(remote.pushRecords).mockReset().mockResolvedValue(undefined);
   vi.mocked(remote.pullRows).mockReset().mockResolvedValue([]);
   vi.mocked(remote.accountGone).mockReset().mockResolvedValue(false);
   vi.mocked(remote.signOutHere).mockReset().mockResolvedValue(undefined);
+  vi.mocked(photos.syncPhotos).mockReset().mockResolvedValue(undefined);
+  vi.mocked(photos.clearLocalPhotos).mockReset().mockResolvedValue(undefined);
+  vi.mocked(photos.releaseLocalPhotos).mockReset().mockResolvedValue(undefined);
   useStore.getState().hydrate();
-  return { remote, useStore, engine };
+  return { remote, photos, useStore, engine };
 }
 
 function saved<T>(key: string): T | null {
@@ -262,5 +272,83 @@ describe('cerrar sesión y cuenta borrada', () => {
     expect(engine.useSyncStatus.getState().status.state).toBe('expired');
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(remote.pushRecords).not.toHaveBeenCalled(); // sin sesión no sube
+  });
+});
+
+describe('fotos propias (spec 27)', () => {
+  it('después de subir y bajar los registros, sincroniza las fotos con los productos de ahora', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([product('a')]));
+    const { remote, photos, engine } = await load();
+    vi.mocked(remote.pullRows).mockResolvedValue([row('products', 'b', product('b'))]);
+
+    await engine.startSync('u1');
+
+    expect(photos.syncPhotos).toHaveBeenCalledTimes(1);
+    const [userId, products] = vi.mocked(photos.syncPhotos).mock.calls[0];
+    expect(userId).toBe('u1');
+    expect(products.map(p => p.id).sort()).toEqual(['a', 'b']);
+    const pulled = vi.mocked(remote.pullRows).mock.invocationCallOrder[0];
+    expect(vi.mocked(photos.syncPhotos).mock.invocationCallOrder[0]).toBeGreaterThan(pulled);
+  });
+
+  it('un error de las fotos no deja la sincronización en error', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { photos, engine } = await load();
+    vi.mocked(photos.syncPhotos).mockRejectedValue(new Error('storage caído'));
+
+    await engine.startSync('u1');
+
+    expect(engine.useSyncStatus.getState().status.state).toBe('idle');
+  });
+
+  it('si fallan los registros, no sincroniza las fotos', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { remote, photos, engine } = await load();
+    vi.mocked(remote.pullRows).mockRejectedValue(new remote.SyncCallError('offline'));
+
+    await engine.startSync('u1');
+
+    expect(photos.syncPhotos).not.toHaveBeenCalled();
+  });
+
+  it('cerrar sesión vacía las fotos del teléfono', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { photos, engine } = await load();
+    await engine.startSync('u1');
+
+    await engine.signOutEverywhere();
+
+    expect(photos.clearLocalPhotos).toHaveBeenCalled();
+  });
+
+  it('otro usuario que el guardado: vacía las fotos del teléfono', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { photos, engine } = await load();
+
+    await engine.startSync('u2');
+
+    expect(photos.clearLocalPhotos).toHaveBeenCalled();
+  });
+
+  it('cuenta borrada desde otro dispositivo: las fotos quedan sin subir', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { remote, photos, engine } = await load();
+    vi.mocked(remote.accountGone).mockResolvedValue(true);
+
+    await engine.startSync('u1');
+
+    expect(photos.releaseLocalPhotos).toHaveBeenCalled();
+    expect(photos.clearLocalPhotos).not.toHaveBeenCalled();
+  });
+
+  it('syncUserId es el usuario de la sesión, o null sin sesión', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { engine } = await load();
+    expect(engine.syncUserId()).toBeNull();
+    await engine.startSync('u1');
+    expect(engine.syncUserId()).toBe('u1');
+    engine.stopSync();
+    expect(engine.syncUserId()).toBeNull();
   });
 });

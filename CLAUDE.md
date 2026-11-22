@@ -26,7 +26,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage. El mapa
   de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md)). Las imágenes
   de los productos con código de barras salen de Open Food Facts y del portal Precios Claros, resueltas por un script
-  semanal ([SPEC 17](specs/17-imagenes-de-productos.md))
+  semanal ([SPEC 17](specs/17-imagenes-de-productos.md)); cada producto propio puede llevar una foto propia, privada,
+  en el teléfono y con cuenta en un bucket privado ([SPEC 27](specs/27-fotos-propias.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -43,7 +44,7 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
 | TypeScript | ^5 | Lenguaje (strict + `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`) |
 | Tailwind CSS | ^4 | Estilos (utility-first, mobile-first; loader `@tailwindcss/turbopack`, sin `tailwind.config.js`) |
 | Zustand | ^5 | Estado global |
-| @supabase/supabase-js | ^2.119 | Catálogo SEPA desde el navegador (clave publishable) y, con cuenta, auth y sincronización de `user_records` (spec 21) |
+| @supabase/supabase-js | ^2.119 | Catálogo SEPA desde el navegador (clave publishable) y, con cuenta, auth, sincronización de `user_records` (spec 21) y fotos propias en Storage (spec 27) |
 | barcode-detector | ^3.2 | Ponyfill de `BarcodeDetector` (ZXing en WebAssembly) para el lector de códigos de barras |
 | leaflet | ^1.9 | Mapa del comercio con teselas de OpenStreetMap; se carga con `import()` al abrir el primer mapa |
 | lucide-react | ^1.73 | Íconos SVG (solo entran al bundle los que se usan); no se usan emojis como ícono |
@@ -82,7 +83,8 @@ scripts/sepa/                   # ETL del SEPA (Node + TypeScript sin compilar),
 supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
-│                               #   20261117000000_sepa_imagenes.sql
+│                               #   20261117000000_sepa_imagenes.sql, 20261118000000_user_records.sql,
+│                               #   20261122000000_fotos_propias.sql (bucket privado, spec 27)
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #5b2a86, display standalone
@@ -139,7 +141,9 @@ src/
 │   ├── PriceStorePicker.tsx    # Bloque "Comercio" de Cargar precio: GPS (sucursales a menos de 200 m), comercios
 │   │                           #   usados, "Otro comercio" / "Otro comercio acá"; elegido con "Cambiar"
 │   ├── PriceProductPicker.tsx  # Bloque "Producto" de Cargar precio: propios y del catálogo, lector, "No tiene código
-│   │                           #   de barras", casos B y C; useEanLookup (resuelve un código leído o de la URL)
+│   │                           #   de barras", casos B y C (con foto); useEanLookup (resuelve un código leído o de la URL)
+│   ├── PhotoField.tsx          # Campo "Foto (opcional)" (spec 27): botón, input file oculto, compresión, vista previa,
+│   │                           #   Cambiar, Quitar, "Solo la ves vos."; usePhotoPicker y PhotoStatus (también el detalle)
 │   ├── CatalogActions.tsx      # AddToCartButton ("Buscando precio…") y EditLink, de Buscar y de la oferta del lector
 │   ├── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito; sección "Cerca tuyo"
 │   ├── CartCompareCard.tsx     # Tarjeta "¿Dónde conviene?" del carrito: la mejor opción y "Comparar N comercios"
@@ -157,6 +161,8 @@ src/
 │   ├── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
 │   │                           #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
 │   ├── useSepaImages.ts        # Hook: imágenes de varios EAN en una sola consulta (getSepaImages), acumuladas
+│   ├── useProductPhotos.ts     # Hook: object URL de la foto propia de cada producto (caché de módulo por id); baja
+│   │                           #   las que faltan con sesión; forgetPhotoUrl
 │   └── ProductImage.tsx        # Imagen del producto (40/48/64/160 px) o cuadro con la inicial si no hay o no carga
 └── lib/                        # Sin dependencias de React salvo store.ts (zustand)
     ├── models.ts               # Interfaces: Product, Price, CartItem, Purchase + tipos de la calculadora
@@ -182,13 +188,19 @@ src/
     ├── gtin.ts                 # Validar y normalizar códigos de barras a GTIN-13 (también lo usa el ETL)
     ├── barcode.ts              # Lector: cameraAvailable, createDetector (nativo o ponyfill), createConfirmer
     ├── supabase.ts             # Cliente de Supabase con sesión (PKCE); null si faltan las variables
-    ├── auth.ts                 # Google, código por mail, borrar la cuenta; displayName, validEmail, validCode
+    ├── auth.ts                 # Google, código por mail, borrar la cuenta (antes, sus fotos del bucket); displayName,
+    │                           #   validEmail, validCode
+    ├── photo.ts                # Fotos propias (spec 27): fitWithin, photoPath, unreferencedPhotos, pendingUploads,
+    │                           #   productImageSrc (qué imagen se muestra), compressPhoto (canvas → JPEG sin EXIF)
+    ├── photo-store.ts          # IndexedDB `el-changuito`: almacenes photos ({ id, blob, uploaded }) y photo_deletes
+    ├── photo-sync.ts           # savePhoto, discardPhoto, syncPhotos (subir, borrar del bucket, limpiar), downloadPhoto,
+    │                           #   deleteAllRemotePhotos, clearLocalPhotos, releaseLocalPhotos
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
     │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
     ├── sync-remote.ts          # Llamadas a user_records: pushRecords (upsert de a 500), pullRows (de a 1.000)
     ├── sync-engine.ts          # Motor: cola persistida, startSync/stopSync/syncNow, primera sesión, cerrar sesión,
-    │                           #   cuenta borrada; useSyncStatus para la UI
+    │                           #   cuenta borrada; vuelta de fotos (syncPhotos) y syncUserId; useSyncStatus para la UI
     ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
     │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras;
     │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
@@ -299,7 +311,8 @@ src/
   `sepa:images` guarda en `sepa_imagenes` la URL de la imagen de cada EAN (Open Food Facts primero, después el portal
   Precios Claros). La app **no guarda imágenes en el dispositivo**: las busca por EAN al mostrar, así que los
   productos creados antes también la tienen y vincular / quitar el vínculo la trae / la saca. La URL que se muestra
-  es `product.image ?? imágenes.get(product.ean)` (`image` queda reservado para una foto propia, Fase 2).
+  sale de `productImageSrc(product, foto, imágenes.get(product.ean))`: la foto propia (spec 27), `product.image`
+  (reservado, sin uso) y la del catálogo.
   `getSepaImages(eans)` lee `sepa_imagenes` (`url` no nula) de a 100 EAN con `.retry(false)`, con caché de módulo por
   EAN como `getSepaPrices` (también los "sin imagen"; un fallo no se guarda). Las pantallas usan `useSepaImages`:
   **una consulta por pantalla** (Buscar: una para los propios y otra en `SepaResults` para el catálogo; el historial
@@ -308,6 +321,23 @@ src/
   el marcador con la inicial (`initialOf`) está siempre debajo y la imagen se muestra al cargar: la fila no cambia de
   alto ni con imagen rota (`onError` la quita; un `src` nuevo olvida el fallo). Las imágenes se piden al sitio de
   origen: Open Food Facts o el portal ven la IP del dispositivo y la imagen pedida, sin `Referer`
+- **Fotos propias** ([SPEC 27](specs/27-fotos-propias.md)) — una foto opcional por producto propio, **privada**:
+  "Solo la ves vos" (la supervisión y el compartir son de la spec 28). `compressPhoto` decodifica con
+  `createImageBitmap(file, { imageOrientation: 'from-image' })`, dibuja en un canvas con fondo blanco y el lado mayor
+  en 800 px como máximo (`fitWithin`) y exporta JPEG con calidad 0,82, 0,7, 0,6 y 0,5 hasta quedar en 200 KB (acepta
+  hasta 300 KB; si no, repite a 600 px): volver a codificar descarta todo el EXIF. En los formularios la foto vive en
+  memoria (`PhotoDraft`) hasta guardar: primero `savePhoto` (IndexedDB) y después el producto con `photo`; si
+  IndexedDB falla, el producto se guarda sin foto y el aviso lo dice. **Cada foto nueva tiene un `id` nuevo**
+  (`uniqueId()`): cambiarla crea otro archivo y `discardPhoto` borra el anterior del teléfono (y, si ya estaba en la
+  cuenta, lo anota en `photo_deletes`). `Product.photo` viaja dentro del producto en `user_records`; los archivos
+  van aparte: en cada vuelta de `syncNow`, después de los registros, `syncPhotos` sube las fotos sin subir que usa
+  algún producto a `fotos-propias/<userId>/<id>.jpg`, borra del bucket las de `photo_deletes` y borra del teléfono
+  las que ya no usa ningún producto (salvo las recién guardadas). Un error de Storage no cambia el estado de la
+  sincronización: se reintenta en la vuelta siguiente. Otro teléfono de la cuenta baja la foto al mostrarla
+  (`useProductPhotos`: URL firmada de 60 s, solo con sesión; un fallo no se guarda y se reintenta en cada cambio de
+  estado de la sincronización). Cerrar sesión u otro usuario vacían IndexedDB; una cuenta borrada desde otro
+  dispositivo deja las fotos sin subir; **Borrar mi cuenta** borra antes los archivos de la carpeta del usuario y,
+  si eso falla, no borra la cuenta
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -341,6 +371,10 @@ src/
 | `preciolocal_location` | `{ location: UserLocation \| null, radiusKm }` | Sin ubicación, 3 km |
 | `preciolocal_outbox` | `SyncRecord[]`: cambios sin subir a la cuenta (spec 21) | sin clave |
 | `preciolocal_sync` | `{ userId, cursor }`: dueño de los datos del teléfono y último `synced_at` bajado | sin clave |
+
+Las fotos propias (spec 27) no van en `localStorage`: están en **IndexedDB**, base `el-changuito`, almacén `photos`
+(`{ id, blob, uploaded }`, un JPEG por foto) y almacén `photo_deletes` (ids de fotos de la cuenta que hay que borrar
+del bucket). Sin IndexedDB, la app sigue sin fotos.
 
 La sesión de Supabase la guarda supabase-js en su propia clave (`sb-<ref>-auth-token`). Los datos de ejemplo de
 antes (`id` `'1'`–`'8'` y precios `'1'`–`'3'`) se conservan si ya estaban guardados, pero no suben a la cuenta salvo
@@ -382,11 +416,17 @@ interface Product {
   id: string;
   name: string;
   category?: string;  // opcional (spec 18): los creados desde el catálogo no tienen; vacía no se guarda
-  image?: string;     // reservado para una foto propia (Fase 2); la imagen del catálogo no se guarda (spec 17)
+  image?: string;     // reservado (spec 17); no se usa para la foto propia; la imagen del catálogo no se guarda
   ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
   brand?: string;
   size?: number;      // presentación: 500
   sizeUnit?: Unit;    // va junto con size: los dos o ninguno
+  photo?: ProductPhoto;  // foto propia (spec 27): el archivo está en IndexedDB y, con cuenta, en el bucket privado
+}
+
+interface ProductPhoto {
+  id: string;        // uniqueId(); cambia con cada foto nueva
+  takenAt: string;   // ISO, al elegirla
 }
 
 interface Price {
@@ -571,20 +611,22 @@ interface CalculatorState {
     escrito como nombre). Un código leído (`useEanLookup`): propio → ese; en el catálogo → caso A; fuera, con error
     o sin Supabase → caso B ("El código … no está en Precios Claros." / "No se pudo consultar Precios Claros.");
     "Buscando el código…" mientras tanto y una respuesta vieja se descarta. Elegido: imagen, nombre (del catálogo, el
-    sugerido), marca y presentación, "Precios Claros" si es del catálogo y **Cambiar**; en B y C, Nombre (obligatorio)
-    y Marca (opcional) con el código arriba en B
+    sugerido), marca y presentación, "Precios Claros" si es del catálogo y **Cambiar**; en B y C, Nombre (obligatorio),
+    Marca (opcional) y **Foto (opcional)** (`PhotoField`, spec 27) con el código arriba en B. Cambiar de producto
+    descarta la foto elegida
   - **Precio**: "Precio ($)" con teclado decimal; con precios propios, "Último precio $Y · dd/mm"
   - **Guardar**: el producto se resuelve recién ahí (`resolvePriceProduct`: propio; A → el propio con ese EAN si
     apareció mientras tanto, si no `productFromSepa`; B y C → nuevo, sin categoría), y se registra `priceAt`
     (`storeRef`, `store` = su nombre, `barrio` = el suyo o "Sin especificar"). Aviso fijo abajo "Precio guardado:
-    <producto> $X en <comercio>. Solo lo ves vos." (3 s). **Queda el comercio**; producto y monto se limpian y el
-    foco vuelve al buscador
+    <producto> $X en <comercio>. Solo lo ves vos." (3 s; con " No se pudo guardar la foto." si falló IndexedDB).
+    **Queda el comercio**; producto, foto y monto se limpian y el foco vuelve al buscador
   - `?tab=precio&ean=…&monto=…` abre la pestaña con el producto resuelto como al leer el código y el monto (> 0),
     cuando cambia la URL (el código, una sola vez aunque la página vuelva a mostrarse); al guardar, la URL queda en
     `?tab=precio`. La oferta del lector de Buscar lleva ahí con **Cargar precio acá** (suma `&monto=` si hay algo en
     "¿Cuánto sale acá?")
-- Tab **producto**: nombre (requerido, "Completá el nombre"); "Categoría (opcional)", código de barras, marca y
-  presentación (número + unidad), opcionales. Sin categoría, el producto se guarda sin `category`
+- Tab **producto**: nombre (requerido, "Completá el nombre"); "Categoría (opcional)", código de barras, marca,
+  **foto** (`PhotoField`, spec 27) y presentación (número + unidad), opcionales. Sin categoría, el producto se guarda
+  sin `category`
 - Buscador **Buscar en Precios Claros** (espera de 300 ms, "Buscando…", "Sin resultados", error): al elegir un
   resultado completa nombre sugerido (descripción en formato título sin la marca repetida), marca, presentación y
   EAN, todo editable; la categoría es manual (opcional) y el foco pasa a ella
@@ -626,8 +668,13 @@ interface CalculatorState {
   comercio" ni desde el historial
 
 ### Detalle de producto (`/product/[id]`)
-- Imagen de 160 px junto al nombre (centrada arriba en el celular) o el cuadro con la inicial; si es de Open Food
-  Facts, debajo "Imagen: Open Food Facts (CC-BY-SA)" (`imageSource`)
+- Imagen de 160 px junto al nombre (centrada arriba en el celular) o el cuadro con la inicial: la foto propia
+  primero, si no la del catálogo
+- **Foto propia** ([SPEC 27](specs/27-fotos-propias.md)), debajo de la imagen y guardada enseguida: con foto, "Tu
+  foto · Solo la ves vos", **Cambiar foto** y **Quitar foto** (`confirm('¿Quitar la foto?')`; vuelve la del catálogo
+  o la inicial); sin foto, la atribución "Imagen: Open Food Facts (CC-BY-SA)" si la imagen es de ahí (`imageSource`)
+  y **Agregar foto**. "Preparando la foto…" mientras se comprime; un archivo que no es una imagen → "No se pudo leer
+  la imagen. Probá con otra." y no cambia nada
 - Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista); "Categoría: X" solo si tiene
 - Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN, **Cambiar vínculo** y **Quitar vínculo**.
   Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
@@ -735,7 +782,8 @@ interface CalculatorState {
   "Tu sesión venció. Entrá de nuevo para sincronizar"
 - Con sesión: nombre y mail; "Sincronizado hace N min" / "Sincronizando…" / "N cambios sin subir · Sin conexión" /
   "No se pudo sincronizar" con **Reintentar**; **Cerrar sesión** (sincroniza antes; con pendientes, confirma "Hay N
-  cambios sin subir. Si cerrás sesión, se pierden."); **Borrar mi cuenta** con confirmación (`delete_my_account`)
+  cambios sin subir. Si cerrás sesión, se pierden."; también borra las fotos del teléfono); **Borrar mi cuenta** con
+  confirmación (borra antes las fotos del bucket y después `delete_my_account`)
 - Buscar sin productos propios: "Todavía no tenés productos" / "Buscá un producto en Precios Claros o leé su código
   de barras"
 
@@ -856,6 +904,11 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
 | `user_records` | Datos de cada usuario (spec 21): `user_id`, `collection` (`products` / `prices` / `cart` / `purchases` / `settings`), `id`, `data` (JSON del registro), `deleted`, `modified_at` (dispositivo; gana el último) y `synced_at` (servidor; cursor). RLS: cada usuario lee, crea y modifica solo sus filas; sin delete. Trigger `user_records_touch`; `delete_my_account()` borra el usuario y sus filas en cascada |
 
+- **Storage** (spec 27): bucket **privado** `fotos-propias`, JPEG de hasta 300 KB (`file_size_limit` 307200,
+  `allowed_mime_types` `image/jpeg`), un archivo por foto en `<user_id>/<id>.jpg`. Políticas en `storage.objects`
+  para `authenticated`: leer, subir y borrar solo la carpeta propia (`storage.foldername(name)[1] = auth.uid()`);
+  sin update (cada foto nueva es un archivo nuevo). Postgres no borra archivos de Storage: los borra la app antes
+  de `delete_my_account`
 - **Precio por sucursal** (spec 13): `sepa_precios_en_sucursales(eans, sucursales)` devuelve `ean`, `sucursal` y
   `precio` de cada producto en cada sucursal que lo informa; ignora lo que pase de 20 EAN y 40 sucursales. Arreglos
   por EAN × bandera en lugar de una fila por sucursal (serían 14 millones). `pos` se asigna en cada carga por
@@ -1106,6 +1159,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Cargar precio en el comercio: comercio por GPS o a mano, cualquier producto sin darlo de alta antes y
   `Price.storeRef`; precios propios en Comercios cercanos (spec 26)
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
+- [x] Fotos propias de los productos: comprimidas, en el teléfono y con cuenta en un bucket privado; "Solo la ves
+  vos" (spec 27)
 - [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 
 ---

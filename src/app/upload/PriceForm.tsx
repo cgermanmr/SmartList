@@ -9,6 +9,7 @@ import { formatDayMonth, formatMoney } from '@/lib/format';
 import { toGtin13 } from '@/lib/gtin';
 import { uniqueId } from '@/lib/ids';
 import { StoreRef } from '@/lib/models';
+import { savePhoto } from '@/lib/photo-sync';
 import { priceAt, PriceProductChoice, resolvePriceProduct } from '@/lib/price-form';
 import { getPricesForProduct, useStore } from '@/lib/store';
 
@@ -50,6 +51,8 @@ export default function PriceForm() {
   const storeBlock = useRef<HTMLElement>(null);
   const productInput = useRef<HTMLInputElement>(null);
   const amountInput = useRef<HTMLInputElement>(null);
+  // Guardando la foto (spec 27): un segundo envío mientras tanto no hace nada
+  const saving = useRef(false);
   // Después de guardar (o ante un error), el foco va al campo que corresponde cuando ya se dibujó
   const [focusTarget, setFocusTarget] = useState<{ field: 'store' | 'product' | 'amount'; n: number } | null>(null);
 
@@ -99,6 +102,9 @@ export default function PriceForm() {
   }
 
   function chooseProduct(next: PriceProductChoice | null) {
+    // Cambiar de producto descarta la foto elegida y sin guardar (spec 27)
+    const draft = choice?.kind === 'new' ? choice.photo : undefined;
+    if (draft && (next?.kind !== 'new' || next.photo !== draft)) URL.revokeObjectURL(draft.url);
     setChoice(next);
     if (next) setErrors(e => ({ ...e, product: undefined, name: undefined }));
   }
@@ -107,8 +113,9 @@ export default function PriceForm() {
   const ownId = choice?.kind === 'own' ? choice.product.id : null;
   const last = ownId ? getPricesForProduct(prices, ownId)[0] : undefined;
 
-  function submit(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault();
+    if (saving.current) return;
     const value = parseAmount(amount);
     const next: Errors = {
       store: store ? undefined : 'Elegí el comercio',
@@ -123,10 +130,25 @@ export default function PriceForm() {
     if (!store || !choice || value === null) return;
 
     const { product, isNew } = resolvePriceProduct(choice, useStore.getState().products, uniqueId());
+    // Spec 27: primero la foto en IndexedDB y después el producto con `photo`; si falla, el producto va sin foto
+    const draft = choice.kind === 'new' ? choice.photo : undefined;
+    let photoFailed = false;
+    if (draft && isNew) {
+      saving.current = true;
+      try {
+        product.photo = await savePhoto(draft.blob);
+      } catch {
+        photoFailed = true;
+      } finally {
+        saving.current = false;
+      }
+    }
+    if (draft) URL.revokeObjectURL(draft.url);
     if (isNew) addProduct(product);
     addPrice(priceAt({ id: uniqueId(), productId: product.id, amount: value, store, date: new Date() }));
 
-    setNotice(`Precio guardado: ${product.name} $${formatMoney(value)} en ${store.name}. Solo lo ves vos.`);
+    setNotice(`Precio guardado: ${product.name} $${formatMoney(value)} en ${store.name}. Solo lo ves vos.`
+      + (photoFailed ? ' No se pudo guardar la foto.' : ''));
     clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_MS);
     // Queda el comercio: se limpian producto y monto
@@ -140,7 +162,7 @@ export default function PriceForm() {
 
   return (
     <>
-      <form onSubmit={submit} noValidate className="space-y-4">
+      <form onSubmit={e => void submit(e)} noValidate className="space-y-4">
         <PriceStorePicker ref={storeBlock} value={store} onChange={chooseStore} error={errors.store} />
 
         <PriceProductPicker

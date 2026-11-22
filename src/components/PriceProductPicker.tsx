@@ -3,12 +3,15 @@
 import { Ref, useId, useRef, useState } from 'react';
 import { formatSize } from '@/lib/format';
 import { Product } from '@/lib/models';
+import { productImageSrc } from '@/lib/photo';
 import { PriceProductChoice } from '@/lib/price-form';
 import { getSepaProduct, sepaEnabled, SepaProduct, suggestedName } from '@/lib/sepa';
 import { filterProducts, useStore } from '@/lib/store';
+import PhotoField from './PhotoField';
 import ProductImage from './ProductImage';
 import ScanButton from './ScanButton';
 import SepaResults from './SepaResults';
+import { useProductPhotos } from './useProductPhotos';
 import { useSepaImages } from './useSepaImages';
 import { useSepaSearch } from './useSepaSearch';
 
@@ -144,6 +147,8 @@ function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputR
   const ownEans = new Set(products.map(p => p.ean));
   const catalog = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
   const images = useSepaImages(own.map(p => p.ean));
+  // La foto propia va antes que la del catálogo (spec 27)
+  const photoUrl = useProductPhotos(own);
   const searching = lookup?.status === 'loading';
 
   return (
@@ -181,7 +186,7 @@ function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputR
             {own.map(product => (
               <li key={product.id}>
                 <button type="button" onClick={() => onChange({ kind: 'own', product })} className="list-row">
-                  <ProductImage src={product.image ?? (product.ean ? images.get(product.ean) : undefined)} name={product.name} size={48} />
+                  <ProductImage src={productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined)} name={product.name} size={48} />
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold break-words">{product.name}</span>
                     {productDetails(product) && (
@@ -221,7 +226,9 @@ function ChosenProduct({ choice, onChangeProduct }: {
   const name = choice.kind === 'own' ? choice.product.name : suggestedName(choice.sepa);
   const ean = choice.kind === 'own' ? choice.product.ean : choice.sepa.ean;
   const images = useSepaImages([ean]);
-  const src = (choice.kind === 'own' ? choice.product.image : undefined) ?? (ean ? images.get(ean) : undefined);
+  const photoUrl = useProductPhotos(choice.kind === 'own' ? [choice.product] : []);
+  const catalogSrc = ean ? images.get(ean) : undefined;
+  const src = choice.kind === 'own' ? productImageSrc(choice.product, photoUrl(choice.product), catalogSrc) : catalogSrc;
   const info = choice.kind === 'own' ? productDetails(choice.product) : sepaDetails(choice.sepa);
 
   return (
@@ -240,7 +247,7 @@ function ChosenProduct({ choice, onChangeProduct }: {
   );
 }
 
-/** Casos B (con código) y C (sin código): Nombre (obligatorio) y Marca (opcional) */
+/** Casos B (con código) y C (sin código): Nombre (obligatorio), Marca y Foto (opcionales) */
 function NewProductFields({ value, onChange, lookup, nameError, inputRef, onChangeProduct }: Props & {
   value: Extract<PriceProductChoice, { kind: 'new' }>;
   onChangeProduct: () => void;
@@ -279,6 +286,11 @@ function NewProductFields({ value, onChange, lookup, nameError, inputRef, onChan
         <input id={`${id}-brand`} type="text" value={value.brand} autoComplete="off" placeholder="Ej: La Luna"
           onChange={e => onChange({ ...value, brand: e.target.value })} className="input-field" />
       </div>
+      <PhotoField
+        value={value.photo ?? null}
+        productName={value.name}
+        onChange={photo => onChange({ ...value, photo: photo ?? undefined })}
+      />
     </div>
   );
 }

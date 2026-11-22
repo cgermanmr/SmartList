@@ -4,11 +4,14 @@ import { Check, CirclePlus, Tag } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useRef, useState } from 'react';
 import DuplicateProduct from '@/components/DuplicateProduct';
+import PhotoField from '@/components/PhotoField';
 import ScanButton from '@/components/ScanButton';
 import SepaSearch from '@/components/SepaSearch';
 import { toGtin13 } from '@/lib/gtin';
 import { uniqueId } from '@/lib/ids';
 import { Unit } from '@/lib/models';
+import { PhotoDraft } from '@/lib/photo';
+import { savePhoto } from '@/lib/photo-sync';
 import { checkEan, EanCheck, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, ProductForm, SIZE_UNITS } from '@/lib/product-form';
 import { getSepaProduct, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { useStore } from '@/lib/store';
@@ -31,6 +34,9 @@ export default function UploadForm() {
 
   const [activeTab, setActiveTab] = useState<'price' | 'product'>('price');
   const [productForm, setProductForm] = useState<ProductForm>(EMPTY_PRODUCT_FORM);
+  // Foto elegida (spec 27): en memoria hasta guardar el producto
+  const [photo, setPhoto] = useState<PhotoDraft | null>(null);
+  const saving = useRef(false);
   const [eanError, setEanError] = useState<EanError | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -65,6 +71,7 @@ export default function UploadForm() {
       setActiveTab('product');
       setProductForm(form => ({ ...EMPTY_PRODUCT_FORM, category: form.category, ean: urlEan ?? '' }));
       setEanError(null);
+      setPhoto(null);
     }
   }
 
@@ -97,8 +104,9 @@ export default function UploadForm() {
     timer.current = setTimeout(() => setMessage(null), 3000);
   }
 
-  function submitProduct(e: FormEvent) {
+  async function submitProduct(e: FormEvent) {
     e.preventDefault();
+    if (saving.current) return;
     if (!productForm.name.trim()) {
       showMessage('Completá el nombre', 'error');
       return;
@@ -111,9 +119,24 @@ export default function UploadForm() {
       return;
     }
 
-    addProduct(productFromForm(productForm, uniqueId(), check.status === 'ok' ? check.ean : undefined));
-    showMessage('Producto agregado exitosamente!', 'ok');
+    const product = productFromForm(productForm, uniqueId(), check.status === 'ok' ? check.ean : undefined);
+    // Spec 27: primero la foto en IndexedDB y después el producto con `photo`; si falla, el producto va sin foto
+    let photoFailed = false;
+    if (photo) {
+      saving.current = true;
+      try {
+        product.photo = await savePhoto(photo.blob);
+      } catch {
+        photoFailed = true;
+      } finally {
+        saving.current = false;
+      }
+      URL.revokeObjectURL(photo.url);
+    }
+    addProduct(product);
+    showMessage(photoFailed ? 'Producto agregado. No se pudo guardar la foto.' : 'Producto agregado exitosamente!', 'ok');
     setProductForm(EMPTY_PRODUCT_FORM);
+    setPhoto(null);
     // Sin el ean en la URL, recargar no vuelve a completar el formulario con el producto recién guardado
     if (searchParams.has('ean')) router.replace('/upload?tab=producto', { scroll: false });
   }
@@ -194,7 +217,7 @@ export default function UploadForm() {
             </div>
           )}
 
-          <form onSubmit={submitProduct} className="space-y-4">
+          <form onSubmit={e => void submitProduct(e)} className="space-y-4">
             <div>
               <label htmlFor="product-name" className="block font-semibold mb-2">Nombre del producto *</label>
               <input
@@ -264,6 +287,9 @@ export default function UploadForm() {
                 className="input-field"
               />
             </div>
+
+            <PhotoField value={photo} onChange={setPhoto} productName={productForm.name}
+              labelClassName="block font-semibold mb-2" />
 
             <div>
               <label htmlFor="product-size" className="block font-semibold mb-2">Presentación (Opcional)</label>

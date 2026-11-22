@@ -25,8 +25,8 @@ puede no corresponder al producto o ser inapropiada.
 |---|---|---|
 | Leer el código en la góndola | Lector en Buscar (spec 11). La oferta del lector (`ScanOffer`), propio o del catálogo, muestra los comercios cercanos (resumen + 3) o los precios por cadena, y "¿Cuánto sale acá?" compara el precio de la góndola contra el más barato cercano, la referencia y el último precio propio (spec 24, hecha). "Cargar precio acá" lleva a Cargar precio con el producto y el monto (spec 26, hecha) | — |
 | Armar el carrito antes de ir | Agregar desde el catálogo sin dar de alta el producto (spec 18), carrito por comercio (spec 14), "Cerca tuyo" **ítem por ítem** al cambiar el comercio (spec 15), recorrido en el mapa (spec 16) | **Comparar el carrito entero** contra los comercios cercanos: es la pieza que más valor da |
-| Cargar un precio | Pestaña "Cargar precio" de `/upload` (spec 26, hecha): comercio obligatorio por GPS (sucursales a menos de 200 m), usados u "Otro comercio"; producto propio, del catálogo, con un código desconocido o sin código, creado al guardar; `Price.storeRef` con dirección y coordenadas | La foto del producto nuevo (spec 27) |
-| Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). `Product.image` está reservado para una foto propia | Todo: subirla, guardarla y supervisarla |
+| Cargar un precio | Pestaña "Cargar precio" de `/upload` (spec 26, hecha): comercio obligatorio por GPS (sucursales a menos de 200 m), usados u "Otro comercio"; producto propio, del catálogo, con un código desconocido o sin código, creado al guardar; `Price.storeRef` con dirección y coordenadas | — |
+| Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). Foto propia (spec 27, hecha): en Cargar precio (B y C), Agregar producto y el detalle; comprimida, en IndexedDB y, con cuenta, en el bucket privado `fotos-propias`; "Solo la ves vos" | Supervisarla y compartirla con la comunidad (spec 28) |
 | Precios privados | `localStorage` y, con cuenta, `user_records` con RLS (spec 21) | Compartir con un grupo (spec 22) y validar (spec 23) |
 
 ## Alcance MVP
@@ -38,7 +38,7 @@ Orden de implementación (no sigue la numeración):
 | 1 | [25 — ¿Dónde conviene el carrito?](../../specs/25-donde-conviene-el-carrito.md) | Compara el carrito contra las sucursales cercanas (o contra las cadenas, sin ubicación): cuántos productos tiene cada una, el total, el ahorro y los faltantes; "Pasar todo a este comercio" |
 | 2 | [24 — Comercios cercanos en el lector](../../specs/24-comercios-cercanos-en-el-lector.md) (hecha) | La oferta del lector muestra `NearbyLine` y `NearbyStores` con ubicación; opcional "¿Cuánto sale acá?", que lo compara contra la referencia (`vsReference`) |
 | 3 | [26 — Cargar precio en el comercio](../../specs/26-cargar-precio-en-el-comercio.md) (hecha) | Los tres casos y el comercio por GPS o a mano (ver abajo) |
-| 4 | 27 — Fotos propias | Foto del producto: compresión, guardado en el teléfono y, con cuenta, en Storage privado; leyenda de supervisión |
+| 4 | [27 — Fotos propias](../../specs/27-fotos-propias.md) (hecha) | Foto del producto: compresión, guardado en el teléfono y, con cuenta, en Storage privado; leyenda "Solo la ves vos" |
 | 5 | 22 — Grupos | Como la planifica la spec 21 |
 | 6 | 23 — Validación | Como la planifica la spec 21 |
 | 7 | 28 — Supervisión de fotos | Moderación automática, cola manual y publicación de las aprobadas |
@@ -70,8 +70,9 @@ El comercio, en los tres casos:
 
 1. **En el teléfono:** compresión a ~800 px y menos de 200 KB, sin EXIF ni GPS. Se guarda en IndexedDB
    (`localStorage` no tiene lugar para imágenes).
-2. **Con cuenta:** se sube a un bucket privado de Supabase Storage (`fotos-pendientes/<user_id>/…`, que solo ve el
-   autor). Leyenda: **"Se supervisará para compartirla con la comunidad"**.
+2. **Con cuenta:** se sube a un bucket privado de Supabase Storage (`fotos-propias/<user_id>/<id>.jpg`, que solo ve
+   el autor). Leyenda: **"Solo la ves vos"** (spec 27, hecha): no promete una supervisión que todavía no existe. La
+   leyenda "Se supervisará para compartirla con la comunidad" llega con la spec 28. Orden: 27 → 22 → 23 → 28.
 3. **Supervisión automática** (spec 28), en una Edge Function al subir:
    - **Contenido inapropiado:** un clasificador de imágenes (Google Cloud Vision SafeSearch, AWS Rekognition
      Moderation u OpenAI omni-moderation). Si da positivo, se rechaza y se borra.
@@ -99,15 +100,17 @@ El comercio, en los tres casos:
 - **Spec 26:** `Price.storeRef?: StoreRef`, opcional y compatible con lo guardado. `barrio` deja de ser
   obligatorio cuando hay comercio con dirección o coordenadas: se completa con el barrio de la sucursal o, si no
   hay, con "Sin especificar".
-- **Spec 27:** registro de la foto (`ean` o `productId`, `estado`, `ruta`) en IndexedDB y, con cuenta, en una tabla
-  `product_photos` con RLS, junto al bucket privado.
+- **Spec 27 (hecha):** `Product.photo?: { id, takenAt }`, que viaja con el producto en `user_records` (sin tabla
+  nueva); el archivo en IndexedDB (`el-changuito`, almacenes `photos` y `photo_deletes`) y, con cuenta, en el bucket
+  privado `fotos-propias`. La tabla de estados de moderación es de la spec 28.
 - **Spec 28:** bucket público `fotos-productos`, motivo y fecha de la decisión, rol admin.
 
 ## UI/UX
 
 - La comparación del carrito es una tarjeta arriba del carrito y un modal con la lista (detalle en la spec 25).
 - En Cargar precio, la elección del comercio va primero si hay GPS: un toque cuando se está en un comercio conocido.
-- La leyenda de supervisión acompaña siempre a la foto del autor hasta que se resuelve.
+- La foto propia lleva "Solo la ves vos" (spec 27). Con la spec 28, la leyenda de supervisión la acompaña hasta
+  que se resuelve.
 
 ## Dependencias
 

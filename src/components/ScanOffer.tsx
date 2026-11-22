@@ -8,11 +8,13 @@ import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import ProductImage from '@/components/ProductImage';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import { useNearbyPrices } from '@/components/useNearby';
+import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { formatDayMonth, formatMoney } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
 import { Product, StoreRef } from '@/lib/models';
+import { productImageSrc } from '@/lib/photo';
 import { SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { shelfComparison, ShelfTone } from '@/lib/shelf-price';
 import { getPricesForProduct, getRecentStorePrices, initialCartPrice, useStore } from '@/lib/store';
@@ -53,6 +55,8 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
   const lookup = useSepaReferenceLookup(eans);
   const summary = lookup.references.get(scan.ean);
   const images = useSepaImages(eans);
+  // La foto propia va antes que la del catálogo (spec 27)
+  const photoUrl = useProductPhotos(scan.status === 'own' ? [scan.product] : []);
   // Un useNearbyPrices propio: la oferta no depende de la búsqueda de texto; la caché evita pedir dos veces
   const nearby = useNearbyPrices(eans);
   const [now] = useState(() => new Date());
@@ -124,7 +128,7 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
       <div role="status" className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           {scan.status === 'found' && <ProductImage src={images.get(scan.ean)} name={name} size={48} />}
-          {own && <ProductImage src={own.image ?? images.get(scan.ean)} name={name} size={48} />}
+          {own && <ProductImage src={productImageSrc(own, photoUrl(own), images.get(scan.ean))} name={name} size={48} />}
           {own ? (
             <div className="min-w-0 flex-1 text-sm break-words">
               <p className="font-semibold text-gray-900">Ya tenés {own.name}.</p>

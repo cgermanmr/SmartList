@@ -14,12 +14,14 @@ import ScanOffer, { ScanResult } from '@/components/ScanOffer';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
 import { useNearbyPrices } from '@/components/useNearby';
+import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
 import { CartItem, Product, StoreRef } from '@/lib/models';
+import { productImageSrc } from '@/lib/photo';
 import { mapStops, MapStop } from '@/lib/route';
 import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { filterProducts, getPriceStats, getRecentStorePrices, initialCartPrice, useStore } from '@/lib/store';
@@ -90,7 +92,10 @@ export default function SearchPage() {
 
   // Imágenes de los productos propios con EAN, en una sola consulta; las del catálogo las pide SepaResults
   const images = useSepaImages(filteredProducts.map(p => p.ean));
-  const imageOf = (product: Product) => product.image ?? (product.ean ? images.get(product.ean) : undefined);
+  // La foto propia va antes que la del catálogo (spec 27)
+  const photoUrl = useProductPhotos(filteredProducts);
+  const imageOf = (product: Product) =>
+    productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined);
 
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 

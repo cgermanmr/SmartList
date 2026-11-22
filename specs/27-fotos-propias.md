@@ -1,6 +1,6 @@
 # SPEC 27 — Fotos propias
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 17](17-imagenes-de-productos.md), [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 26](26-cargar-precio-en-el-comercio.md)
 > **Fecha:** 2026-11-22
 > **Objetivo:** Sacar o elegir una foto de un producto propio, guardarla comprimida en el teléfono y, con cuenta, en un bucket privado de Supabase, y mostrarla antes que la imagen del catálogo, solo para quien la cargó.

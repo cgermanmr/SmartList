@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { clearLocalPhotos, releaseLocalPhotos, syncPhotos } from './photo-sync';
 import { loadFromStorage, OUTBOX_KEY, removeFromStorage, saveToStorage, SYNC_KEY } from './storage';
 import { onUserDataChange, syncDataOf, useStore } from './store';
 import {
@@ -108,6 +109,11 @@ export function pendingCount(): number {
   return getOutbox().length;
 }
 
+/** Usuario de la sesión que sincroniza; null sin sesión (las fotos de otro teléfono solo se bajan con sesión) */
+export function syncUserId(): string | null {
+  return sessionUserId;
+}
+
 // ── Sesión ───────────────────────────────────────────────────
 
 /**
@@ -122,6 +128,7 @@ export async function startSync(userId: string): Promise<void> {
     saveMeta({ userId, cursor: null });
   } else if (meta.userId !== userId) {
     clearUserData();
+    await clearLocalPhotos().catch(() => undefined);
     setOutbox([]);
     saveMeta({ userId, cursor: null });
   } else if (await accountGoneSafe()) {
@@ -192,6 +199,7 @@ async function round(): Promise<void> {
       applyRows(rows);
       saveMeta({ userId, cursor: maxSyncedAt(rows, meta.cursor) });
     }
+    await syncPhotosSafe(userId);
     lastSync = nowIso();
     setStatus({ state: 'idle', lastSync });
   } catch (error) {
@@ -225,6 +233,14 @@ function applyRows(rows: RemoteRow[]): void {
     setOutbox(enqueue(getOutbox(), extra));
     again = true;
   }
+}
+
+/** Fotos de la spec 27: un error de Storage no frena los registros; se reintenta en la vuelta siguiente */
+async function syncPhotosSafe(userId: string): Promise<void> {
+  if (sessionUserId !== userId) return;
+  try {
+    await syncPhotos(userId, useStore.getState().products);
+  } catch { /* se reintenta en la próxima vuelta */ }
 }
 
 function maxSyncedAt(rows: RemoteRow[], cursor: string | null): string | null {
@@ -264,6 +280,8 @@ export function forgetAccount(): void {
 
 async function forgetAccountAndSignOut(): Promise<void> {
   forgetAccount();
+  // Las fotos quedan en el teléfono sin subir, para subirse si se entra con otra cuenta
+  await releaseLocalPhotos().catch(() => undefined);
   try {
     await signOutHere();
   } catch { /* la sesión ya no sirve */ }
@@ -278,5 +296,6 @@ export async function signOutEverywhere(): Promise<void> {
   } finally {
     clearUserData();
     forgetAccount();
+    await clearLocalPhotos().catch(() => undefined);
   }
 }

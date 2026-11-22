@@ -1,12 +1,19 @@
+/** Foto propia de un producto (spec 27): el archivo está en IndexedDB y, con cuenta, en el bucket privado */
+export interface ProductPhoto {
+  id: string;        // uniqueId(); cambia con cada foto nueva
+  takenAt: string;   // ISO, al elegirla
+}
+
 export interface Product {
   id: string;
   name: string;
   category?: string;  // opcional: los productos creados desde el catálogo no tienen
-  image?: string;
+  image?: string;     // reservado (spec 17); no se usa para la foto propia
   ean?: string;       // GTIN-13 (toGtin13); único entre los productos propios
   brand?: string;
   size?: number;      // presentación: 500
   sizeUnit?: Unit;    // va junto con size: los dos o ninguno
+  photo?: ProductPhoto;  // foto propia (spec 27); solo la ve quien la cargó
 }
 
 /** Comercio de un ítem del carrito: viaja dentro del ítem, sin catálogo de comercios */

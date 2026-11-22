@@ -12,6 +12,7 @@ import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
 import ProductImage from '@/components/ProductImage';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
+import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { basketLines } from '@/lib/basket';
@@ -19,6 +20,7 @@ import { formatMoney } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
 import { CartItem, Price, Purchase, StoreRef } from '@/lib/models';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
+import { productImageSrc } from '@/lib/photo';
 import { mapStops, MapStop, MAX_STOPS } from '@/lib/route';
 import { ReferenceSummary, referenceShortLabel, referenceStatus, vsReference } from '@/lib/sepa';
 import {
@@ -126,6 +128,14 @@ export default function CartPage() {
   }
   // Imágenes de todo el carrito en una sola consulta (spec 17)
   const images = useSepaImages(cart.map(item => eanOf(item.productId)));
+  // La foto propia va antes que la del catálogo (spec 27)
+  const cartProducts = cart.map(item => products.find(p => p.id === item.productId));
+  const photoUrl = useProductPhotos(cartProducts);
+  const imageOf = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return undefined;
+    return productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined);
+  };
 
   function clear() {
     if (confirm('¿Estás seguro de que quieres vaciar el carrito?')) {
@@ -216,7 +226,7 @@ export default function CartPage() {
             group={group}
             eanOf={eanOf}
             references={references}
-            images={images}
+            imageOf={imageOf}
             onChangeStore={setStoreItemId}
             onMap={store => setMap({ stops: mapStops([store]) })}
             onCheckout={() => openCheckout(group.key)}
@@ -281,7 +291,7 @@ interface StoreGroupProps {
   group: CartGroup;
   eanOf: (productId: string) => string | undefined;
   references: Map<string, ReferenceSummary>;
-  images: Map<string, string>;
+  imageOf: (productId: string) => string | undefined;
   onChangeStore: (itemId: string) => void;
   /** Ver el comercio en el mapa (solo se ofrece si tiene coordenadas) */
   onMap: (store: StoreRef) => void;
@@ -290,7 +300,7 @@ interface StoreGroupProps {
   payment: ReactNode;
 }
 
-function StoreGroup({ group, eanOf, references, images, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
+function StoreGroup({ group, eanOf, references, imageOf, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
   const titleId = useId();
   const store = group.store;
   const detail = storeDetail(store);
@@ -334,7 +344,7 @@ function StoreGroup({ group, eanOf, references, images, onChangeStore, onMap, on
               key={item.id}
               item={item}
               reference={ean ? references.get(ean) : undefined}
-              image={ean ? images.get(ean) : undefined}
+              image={imageOf(item.productId)}
               onChangeStore={() => onChangeStore(item.id)}
             />
           );

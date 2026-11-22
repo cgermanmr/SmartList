@@ -31,6 +31,19 @@ export default function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Fotos de tus productos</h2>
+        <p>
+          Las fotos que agregás a tus productos se achican y se guardan en este teléfono. Antes de guardarlas se les
+          sacan los datos que trae el archivo: la ubicación donde se sacó, la fecha y el modelo de la cámara.
+        </p>
+        <p>
+          Con cuenta, se guarda también una copia en un almacenamiento privado de Supabase, para verlas en tus otros
+          teléfonos. Solo las ves vos: no se comparten con otras personas. Quitar una foto la borra; borrar la cuenta
+          borra todas.
+        </p>
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-lg font-semibold">Tu ubicación</h2>
         <p>
           La ubicación que usás para ver comercios cercanos no se guarda en tu cuenta ni sale del teléfono. La única
@@ -49,8 +62,9 @@ export default function PrivacyPage() {
         <h2 className="text-lg font-semibold">Cómo borrar tus datos</h2>
         <p>
           En <Link href="/cuenta" className="font-semibold text-primary-700 underline underline-offset-2">Cuenta</Link>,
-          {' '}<strong>Borrar mi cuenta</strong> elimina tu cuenta y todos tus datos guardados, en todos tus dispositivos.
-          No se puede deshacer. Cerrar sesión borra los datos de este teléfono; siguen en tu cuenta.
+          {' '}<strong>Borrar mi cuenta</strong> elimina tu cuenta y todos tus datos guardados, fotos incluidas, en todos
+          tus dispositivos. No se puede deshacer. Cerrar sesión borra los datos y las fotos de este teléfono; siguen en
+          tu cuenta.
         </p>
       </section>
 
