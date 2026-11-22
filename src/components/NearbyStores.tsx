@@ -8,7 +8,7 @@ import { Price, StoreRef } from '@/lib/models';
 import { isStaleDate, latestBranchDate, NearbyPrice, storeRefFromBranch } from '@/lib/sepa';
 import { priceStoreRef, storeKey } from '@/lib/store';
 
-/** Comercios que se ven antes de tocar "Ver más" */
+/** Comercios que se ven antes de tocar "Ver más", si no se pide otro límite */
 const VISIBLE_STORES = 10;
 
 function distanceLabel(km: number, approx: boolean): string {
@@ -60,6 +60,8 @@ interface Props {
   currentKey?: string;
   /** Ver un comercio en el mapa; sin esto (o si el comercio no tiene coordenadas) la fila no lleva el botón */
   onMap?: (store: StoreRef) => void;
+  /** Filas que se ven antes de tocar "Ver N más"; por defecto 10 */
+  limit?: number;
 }
 
 interface Row {
@@ -74,11 +76,11 @@ interface Row {
 }
 
 /**
- * Comercios que tienen un producto: nombre, dirección, distancia, precio y botón. Hasta 10 y "Ver más"; el más barato
+ * Comercios que tienen un producto: nombre, dirección, distancia, precio y botón. Hasta 10 (o `limit`) y "Ver más"; el más barato
  * de los cercanos (empatados, todos) se marca con fondo y con texto, no solo con color. En 375 px cada fila apila
  * nombre y dirección arriba y precio y botón abajo.
  */
-export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], onChoose, action = 'Agregar', currentKey, onMap }: Props) {
+export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], onChoose, action = 'Agregar', currentKey, onMap, limit = VISIBLE_STORES }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [today] = useState(() => new Date());
   const lowest = prices[0]?.price;
@@ -101,7 +103,7 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
       cheapest: false,
     })),
   ];
-  const visible = showAll ? rows : rows.slice(0, VISIBLE_STORES);
+  const visible = showAll ? rows : rows.slice(0, limit);
   const hidden = rows.length - visible.length;
   const date = latestBranchDate(prices.map(p => p.branch));
 

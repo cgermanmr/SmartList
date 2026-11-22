@@ -133,6 +133,9 @@ src/
 │   ├── DuplicateProduct.tsx    # Aviso "Ya tenés este producto: <nombre>" con link a su detalle
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
 │   ├── ScanButton.tsx          # Botón que abre el lector; solo si el navegador puede pedir la cámara
+│   ├── ScanOffer.tsx           # Oferta del lector en Buscar (spec 24): propio o del catálogo, comercios cercanos
+│   │                           #   (resumen + 3), precios por cadena y "¿Cuánto sale acá?"; ScanResult
+│   ├── CatalogActions.tsx      # AddToCartButton ("Buscando precio…") y EditLink, de Buscar y de la oferta del lector
 │   ├── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito; sección "Cerca tuyo"
 │   ├── CartCompareCard.tsx     # Tarjeta "¿Dónde conviene?" del carrito: la mejor opción y "Comparar N comercios"
 │   ├── CartCompareDialog.tsx   # Modal con las opciones (sucursales o cadenas), medidor de cobertura, faltantes,
@@ -154,6 +157,8 @@ src/
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
+    ├── shelf-price.ts          # "¿Cuánto sale acá?" (spec 24): shelfComparison contra el más barato cercano o la
+    │                           #   referencia, y contra el último precio propio
     ├── basket.ts               # ¿Dónde conviene el carrito?: basketLines, compareNearby, compareChains, savingsLine,
     │                           #   withoutEanLabel (spec 25)
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR);
@@ -474,11 +479,25 @@ interface CalculatorState {
   propio; si no, el promedio de referencia; si no, $0); si ya estaba suma 1 y conserva su comercio. No registra
   precios. Aviso fijo abajo "<nombre> en el carrito" con un ícono de check (`role="status"`, 3 s), por encima de la barra inferior; el producto pasa a los propios y
   sale de la sección del catálogo
-- Botón **Leer código de barras** (ícono) al lado del buscador: un producto propio con ese EAN abre su detalle; si no,
-  consulta el catálogo: si está, ofrece **Agregar al carrito** (igual que en la sección del catálogo, con "Editar
-  antes de agregar"); si no está o falla la consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`.
-  Escribir en el buscador borra la oferta. Si el producto tiene precios, la oferta suma el resumen y el botón "Ver
-  precios por cadena", que despliega la lista
+- Botón **Leer código de barras** (ícono) al lado del buscador: muestra la oferta del lector (`ScanOffer`,
+  [SPEC 24](specs/24-comercios-cercanos-en-el-lector.md)) sin salir de Buscar. Un producto propio con ese EAN: "Ya
+  tenés <nombre>.", "Último precio $Y · dd/mm" (si tiene), **Agregar al carrito** (`initialCartPrice`; espera la
+  referencia solo sin precio propio) y **Ver detalle**. Si no es propio, consulta el catálogo: si está, ofrece
+  **Agregar al carrito** (igual que en la sección del catálogo, con "Editar antes de agregar"); si no está o falla la
+  consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`. Escribir en el buscador o leer otro código
+  cierra la oferta (`key={scan.ean}`: nada pasa de un producto a otro)
+  - **Comercios cercanos** (con ubicación, un `useNearbyPrices` propio de la oferta): `NearbyLine` y `NearbyStores`
+    con los **3** más baratos abiertos (`limit`) y "Ver N más", con **Agregar** (en ese comercio y a ese precio) y
+    **Mapa**; en un propio, sus precios cargados a mano al final. Sin precio cercano, cargando, sin ubicación o con
+    error: el resumen por cadena y "Ver precios por cadena". Sin ubicación suma "Activá tu ubicación arriba para ver
+    comercios cercanos"
+  - **¿Cuánto sale acá?** (propio o del catálogo; teclado decimal, no se guarda): con un monto mayor a 0,
+    `shelfComparison` contra el más barato cercano ("Más barato que en los comercios cerca" en verde, "Igual que en
+    <cadena> — <distancia>" en azul, "En <cadena> — <distancia> sale $X menos" en rojo) o, sin cercanos con precio,
+    contra la referencia (`referenceLabel`); en un propio con precios, "La última vez pagaste $Y (dd/mm): $X más /
+    menos" o "… lo mismo". Cada línea con flecha (hacia dónde está el precio de la góndola) y `aria-live`; sin nada
+    contra qué comparar, "Sin precios para comparar". Con monto, **Agregar al carrito** entra en "Sin comercio" a ese
+    precio (`addSepaToCart` con `at` sin comercio); si ya estaba, suma 1 y conserva comercio y precio. No registra precios
 - Muestra la imagen (64 px, o el cuadro con la inicial), categoría (si tiene), último precio y variación % respecto
   al precio anterior (`getPriceStats().previous`). Los resultados del catálogo (también en Agregar producto y en el
   modal de vincular) y la oferta del lector llevan la imagen de 48 px a la izquierda
@@ -1029,6 +1048,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Panel de gasto mensual por cadena o comercio y por medio de pago, desde Historial (spec 03)
 - [x] Lista de comercios cercanos por distancia con su mapa, desde la barra de ubicación (spec 20)
 - [x] ¿Dónde conviene el carrito? Comparación contra las sucursales cercanas o las cadenas y "Pasar todo" (spec 25)
+- [x] Comercios cercanos en el lector, producto propio sin salir de Buscar y "¿Cuánto sale acá?" (spec 24)
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
 - [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 

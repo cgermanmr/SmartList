@@ -37,10 +37,11 @@ export interface AppState {
   /**
    * Agrega al carrito un producto del catálogo SEPA: usa el propio con ese EAN o lo crea con productFromSepa (sin
    * categoría). Entra sin comercio con initialCartPrice; si ya estaba, suma 1 y conserva su comercio. Con `at` (una
-   * fila de comercio) entra en ese comercio y a ese precio y, si ya estaba, pasa a ellos. No registra precios.
+   * fila de comercio) entra en ese comercio y a ese precio y, si ya estaba, pasa a ellos; con `at` sin comercio (el
+   * precio de la góndola, spec 24) entra en "Sin comercio" a ese precio y, si ya estaba, conserva comercio y precio.
    * Devuelve el producto propio
    */
-  addSepaToCart: (sepa: SepaProduct, reference?: number, at?: { store: StoreRef; price: number }) => Product;
+  addSepaToCart: (sepa: SepaProduct, reference?: number, at?: { store?: StoreRef; price: number }) => Product;
   removeFromCart: (itemId: string) => void;
   /** El checkout de un grupo saca solo sus ítems */
   removeCartItems: (itemIds: string[]) => void;
@@ -127,7 +128,7 @@ export const useStore = create<AppState>()((set, get) => ({
     const price = at ? at.price : initialCartPrice(get().prices, product.id, reference);
     get().addToCart({
       id: uniqueId(), productId: product.id, productName: product.name, price, quantity: 1, subtotal: price,
-      ...(at && { store: at.store }),
+      ...(at?.store && { store: at.store }),
     });
     return product;
   },

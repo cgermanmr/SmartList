@@ -622,6 +622,28 @@ describe('addSepaToCart', () => {
     expect(s.cart).toHaveLength(1);
     expect(s.cart[0]).toMatchObject({ price: 1250, quantity: 2, subtotal: 2500, store: dia });
   });
+
+  it('con un precio sin comercio entra en "Sin comercio" a ese precio, aunque tenga precio propio (spec 24)', () => {
+    useStore.setState({
+      products: [{ id: 'own', name: 'Yerba de casa', ean: '7793704000911' }],
+      prices: [{ id: 'a', productId: 'own', amount: 2000, date: new Date('2026-03-01'), barrio: 'Almagro' }],
+    });
+    useStore.getState().addSepaToCart(sepa, 1500, { price: 2350 });
+    const s = useStore.getState();
+    expect(s.cart).toHaveLength(1);
+    expect(s.cart[0]).toMatchObject({ productId: 'own', price: 2350, quantity: 1, subtotal: 2350 });
+    expect(s.cart[0]).not.toHaveProperty('store');
+    expect(s.prices).toHaveLength(1);
+  });
+
+  it('con un precio sin comercio, si ya estaba en el carrito suma 1 y conserva comercio y precio', () => {
+    const coto: StoreRef = { name: 'Coto — Caballito', sepaId: '12-1-45' };
+    useStore.getState().addSepaToCart(sepa, undefined, { store: coto, price: 1400 });
+    useStore.getState().addSepaToCart(sepa, undefined, { price: 2350 });
+    const cart = useStore.getState().cart;
+    expect(cart).toHaveLength(1);
+    expect(cart[0]).toMatchObject({ price: 1400, quantity: 2, subtotal: 2800, store: coto });
+  });
 });
 
 describe('ubicación', () => {

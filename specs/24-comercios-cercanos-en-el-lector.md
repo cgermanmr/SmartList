@@ -1,6 +1,6 @@
 # SPEC 24 — Comercios cercanos en el lector
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 11](11-lector-codigo-de-barras.md), [SPEC 12](12-precio-de-referencia-sepa.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 16](16-mapa-y-como-llegar.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md)
 > **Fecha:** 2026-11-21
 > **Objetivo:** Al leer un código de barras en Buscar, ver en la misma pantalla en qué comercios cercanos está más barato y comparar contra ese precio el que dice la góndola.

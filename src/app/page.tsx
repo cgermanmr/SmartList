@@ -2,14 +2,15 @@
 
 import { Check } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import BranchMap from '@/components/BranchMap';
+import { AddToCartButton, EditLink } from '@/components/CatalogActions';
 import LocationBar from '@/components/LocationBar';
 import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import NumberInput from '@/components/NumberInput';
 import ProductImage from '@/components/ProductImage';
 import ScanButton from '@/components/ScanButton';
+import ScanOffer, { ScanResult } from '@/components/ScanOffer';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
 import { useNearbyPrices } from '@/components/useNearby';
@@ -23,13 +24,7 @@ import { mapStops, MapStop } from '@/lib/route';
 import { getSepaProduct, isSearchableQuery, ReferenceSummary, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { filterProducts, getPriceStats, getRecentStorePrices, initialCartPrice, useStore } from '@/lib/store';
 
-/** Código leído con la cámara que no es de un producto propio */
-type ScanResult =
-  | { ean: string; status: 'loading' | 'missing' | 'error' }
-  | { ean: string; status: 'found'; product: SepaProduct };
-
 export default function SearchPage() {
-  const router = useRouter();
   const products = useStore(s => s.products);
   const prices = useStore(s => s.prices);
   const cart = useStore(s => s.cart);
@@ -109,12 +104,11 @@ export default function SearchPage() {
   }
 
   // ── Código leído con la cámara ─────────────────────────────
-  // Propio → su detalle; si no, se busca en el catálogo para ofrecer agregarlo con los datos completos
+  // Propio → su oferta en Buscar, sin salir (spec 24); si no, se busca en el catálogo para ofrecer agregarlo
   function scanned(ean: string) {
     const own = useStore.getState().products.find(p => p.ean === ean);
     if (own) {
-      setScan(null);
-      router.push(`/product/${own.id}`);
+      setScan({ ean, status: 'own', product: own });
       return;
     }
     if (!sepaEnabled) {
@@ -173,10 +167,11 @@ export default function SearchPage() {
           <ScanOffer
             key={scan.ean}
             scan={scan}
-            onAdd={(product, summary) => {
+            onAdded={name => {
               setScan(null);
-              addSepa(product, summary);
+              showNotice(name);
             }}
+            onMap={showMap}
           />
         )}
       </div>
@@ -418,113 +413,6 @@ export default function SearchPage() {
       </div>
 
       <BranchMap stops={mapStop} onClose={() => setMapStop(null)} />
-    </div>
-  );
-}
-
-interface AddToCartButtonProps {
-  /** Nombre del producto para el aria-label */
-  name: string;
-  /** Se están buscando sus precios: deshabilitado con "Buscando precio…" para no agregarlo en $0 */
-  loading: boolean;
-  onClick: () => void;
-  /** Acción de segundo orden: cuando arriba ya hay un "Agregar" por comercio */
-  secondary?: boolean;
-  className?: string;
-  children?: ReactNode;
-}
-
-function AddToCartButton({ name, loading, onClick, secondary = false, className = '', children = 'Agregar al carrito' }: AddToCartButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={loading}
-      aria-busy={loading || undefined}
-      aria-label={loading ? `Buscando el precio de ${name}` : `Agregar ${name} al carrito`}
-      className={`${secondary ? 'btn-secondary' : 'btn-primary disabled:hover:bg-primary-700'} disabled:cursor-wait disabled:opacity-60 ${className}`}>
-      {loading ? 'Buscando precio…' : children}
-    </button>
-  );
-}
-
-/** Link al formulario para cambiar el nombre sugerido o ponerle categoría antes de agregarlo (optativo) */
-function EditLink({ ean }: { ean: string }) {
-  return (
-    <Link
-      href={`/upload?tab=producto&ean=${ean}`}
-      className="inline-flex min-h-11 items-center text-sm text-primary-700 underline underline-offset-2 hover:text-primary-800">
-      Editar antes de agregar
-    </Link>
-  );
-}
-
-// ── Oferta para un código leído que no es propio ─────────────────────────────
-
-interface ScanOfferProps {
-  scan: ScanResult;
-  /** Agrega al carrito el producto del catálogo, con su referencia si tiene precios */
-  onAdd: (product: SepaProduct, summary: ReferenceSummary | undefined) => void;
-}
-
-function ScanOffer({ scan, onAdd }: ScanOfferProps) {
-  const href = `/upload?tab=producto&ean=${scan.ean}`;
-  const lookup = useSepaReferenceLookup(scan.status === 'found' ? [scan.ean] : []);
-  const summary = lookup.references.get(scan.ean);
-  const images = useSepaImages(scan.status === 'found' ? [scan.ean] : []);
-  const [pricesOpen, setPricesOpen] = useState(false);
-  const panelId = `cadenas-lector-${scan.ean}`;
-
-  if (scan.status === 'loading') {
-    return <p role="status" className="mt-3 text-sm text-gray-600">Buscando el código {scan.ean}…</p>;
-  }
-
-  const text = scan.status === 'found'
-    ? `No tenés ${scan.product.description}. Está en Precios Claros (${scan.ean}).`
-    : scan.status === 'error'
-      ? `No tenés un producto con el código ${scan.ean} y no se pudo consultar Precios Claros.`
-      : `No tenés un producto con el código ${scan.ean}.`;
-
-  return (
-    <div className="mt-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
-      <div role="status" className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          {scan.status === 'found' && (
-            <ProductImage src={images.get(scan.ean)} name={scan.product.description} size={48} />
-          )}
-          <p className="min-w-0 flex-1 text-sm text-gray-700 break-words">{text}</p>
-        </div>
-        {scan.status === 'found' ? (
-          <div className="flex shrink-0 flex-col items-center sm:items-end">
-            <AddToCartButton
-              name={scan.product.description}
-              loading={lookup.isLoading(scan.ean)}
-              onClick={() => onAdd(scan.product, summary)}
-              className="min-h-11 w-full sm:w-auto"
-            />
-            <EditLink ean={scan.ean} />
-          </div>
-        ) : (
-          <Link href={href} className="btn-primary shrink-0 text-center">Agregar producto</Link>
-        )}
-      </div>
-
-      {/* Precios por cadena: fuera de la región status para no leer la lista entera al desplegarla */}
-      {summary && (
-        <div className="mt-3 border-t border-primary-200 pt-3">
-          <ReferenceLine summary={summary} />
-          <button
-            type="button"
-            onClick={() => setPricesOpen(open => !open)}
-            aria-expanded={pricesOpen}
-            aria-controls={panelId}
-            className="mt-1 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary-700 hover:text-primary-800">
-            Ver precios por cadena
-            <Chevron open={pricesOpen} />
-          </button>
-          {pricesOpen && <SepaPriceTable id={panelId} summary={summary} />}
-        </div>
-      )}
     </div>
   );
 }
