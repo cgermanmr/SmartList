@@ -171,6 +171,8 @@ export default function CartPage() {
         date: now,
         barrio,
         store: storeName,
+        // El comercio completo del grupo (spec 26): el precio pagado conserva dirección y coordenadas
+        ...(group.store && { storeRef: group.store }),
       };
       addPrice(price);
     });

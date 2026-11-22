@@ -23,9 +23,9 @@ puede no corresponder al producto o ser inapropiada.
 
 | Uso | Qué hay | Qué falta |
 |---|---|---|
-| Leer el código en la góndola | Lector en Buscar (spec 11). La oferta del lector (`ScanOffer`), propio o del catálogo, muestra los comercios cercanos (resumen + 3) o los precios por cadena, y "¿Cuánto sale acá?" compara el precio de la góndola contra el más barato cercano, la referencia y el último precio propio (spec 24, hecha) | Guardar el precio de la góndola con su comercio (spec 26) |
+| Leer el código en la góndola | Lector en Buscar (spec 11). La oferta del lector (`ScanOffer`), propio o del catálogo, muestra los comercios cercanos (resumen + 3) o los precios por cadena, y "¿Cuánto sale acá?" compara el precio de la góndola contra el más barato cercano, la referencia y el último precio propio (spec 24, hecha). "Cargar precio acá" lleva a Cargar precio con el producto y el monto (spec 26, hecha) | — |
 | Armar el carrito antes de ir | Agregar desde el catálogo sin dar de alta el producto (spec 18), carrito por comercio (spec 14), "Cerca tuyo" **ítem por ítem** al cambiar el comercio (spec 15), recorrido en el mapa (spec 16) | **Comparar el carrito entero** contra los comercios cercanos: es la pieza que más valor da |
-| Cargar un precio | Pestaña "precio" de `/upload`: exige un producto **propio**, monto, barrio (obligatorio) y comercio como texto libre | Cargar el precio de un producto del catálogo sin darlo de alta; comercio con dirección o coordenadas |
+| Cargar un precio | Pestaña "Cargar precio" de `/upload` (spec 26, hecha): comercio obligatorio por GPS (sucursales a menos de 200 m), usados u "Otro comercio"; producto propio, del catálogo, con un código desconocido o sin código, creado al guardar; `Price.storeRef` con dirección y coordenadas | La foto del producto nuevo (spec 27) |
 | Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). `Product.image` está reservado para una foto propia | Todo: subirla, guardarla y supervisarla |
 | Precios privados | `localStorage` y, con cuenta, `user_records` con RLS (spec 21) | Compartir con un grupo (spec 22) y validar (spec 23) |
 
@@ -37,7 +37,7 @@ Orden de implementación (no sigue la numeración):
 |---|---|---|
 | 1 | [25 — ¿Dónde conviene el carrito?](../../specs/25-donde-conviene-el-carrito.md) | Compara el carrito contra las sucursales cercanas (o contra las cadenas, sin ubicación): cuántos productos tiene cada una, el total, el ahorro y los faltantes; "Pasar todo a este comercio" |
 | 2 | [24 — Comercios cercanos en el lector](../../specs/24-comercios-cercanos-en-el-lector.md) (hecha) | La oferta del lector muestra `NearbyLine` y `NearbyStores` con ubicación; opcional "¿Cuánto sale acá?", que lo compara contra la referencia (`vsReference`) |
-| 3 | [26 — Cargar precio en el comercio](../../specs/26-cargar-precio-en-el-comercio.md) | Los tres casos y el comercio por GPS o a mano (ver abajo) |
+| 3 | [26 — Cargar precio en el comercio](../../specs/26-cargar-precio-en-el-comercio.md) (hecha) | Los tres casos y el comercio por GPS o a mano (ver abajo) |
 | 4 | 27 — Fotos propias | Foto del producto: compresión, guardado en el teléfono y, con cuenta, en Storage privado; leyenda de supervisión |
 | 5 | 22 — Grupos | Como la planifica la spec 21 |
 | 6 | 23 — Validación | Como la planifica la spec 21 |

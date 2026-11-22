@@ -1,7 +1,6 @@
 'use client';
 
 import { Check, CirclePlus, Tag } from 'lucide-react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useRef, useState } from 'react';
 import DuplicateProduct from '@/components/DuplicateProduct';
@@ -9,14 +8,13 @@ import ScanButton from '@/components/ScanButton';
 import SepaSearch from '@/components/SepaSearch';
 import { toGtin13 } from '@/lib/gtin';
 import { uniqueId } from '@/lib/ids';
-import { Price, Unit } from '@/lib/models';
+import { Unit } from '@/lib/models';
 import { checkEan, EanCheck, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, ProductForm, SIZE_UNITS } from '@/lib/product-form';
 import { getSepaProduct, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { useStore } from '@/lib/store';
+import PriceForm from './PriceForm';
 
 const CATEGORIES = ['Lacteos', 'Almacen', 'Aceites', 'Proteina', 'Bebidas', 'Verduras', 'Frutas', 'Limpieza'];
-
-const EMPTY_PRICE_FORM = { productId: '', amount: '', barrio: '', store: '' };
 
 type Message = { text: string; type: 'ok' | 'error' };
 type EanError = Extract<EanCheck, { status: 'invalid' | 'duplicate' }>;
@@ -29,19 +27,15 @@ export default function UploadForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const products = useStore(s => s.products);
-  const addPrice = useStore(s => s.addPrice);
   const addProduct = useStore(s => s.addProduct);
 
   const [activeTab, setActiveTab] = useState<'price' | 'product'>('price');
-  const [priceForm, setPriceForm] = useState(EMPTY_PRICE_FORM);
   const [productForm, setProductForm] = useState<ProductForm>(EMPTY_PRODUCT_FORM);
   const [eanError, setEanError] = useState<EanError | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const categoryInput = useRef<HTMLInputElement>(null);
   const eanInput = useRef<HTMLInputElement>(null);
-  // Código leído en Cargar precio que no es de ningún producto propio
-  const [missingEan, setMissingEan] = useState<string | null>(null);
   // Búsqueda en el catálogo de un código leído en Agregar producto; la ref descarta respuestas viejas
   const [scanLookup, setScanLookup] = useState<{ ean: string; failed: boolean } | null>(null);
   const pendingScan = useRef<string | null>(null);
@@ -54,6 +48,16 @@ export default function UploadForm() {
   const urlTarget = opensProduct ? urlEan ?? '' : null;
   const [appliedTarget, setAppliedTarget] = useState<string | null>(null);
   const [lookup, setLookup] = useState<{ ean: string; failed: boolean } | null>(null);
+
+  // /upload?tab=precio&ean=…&monto=… (spec 26): abre Cargar precio; el producto y el monto los aplica PriceForm
+  const opensPrice = searchParams.get('tab') === 'precio';
+  const priceTarget = opensPrice ? `${searchParams.get('ean') ?? ''}|${searchParams.get('monto') ?? ''}` : null;
+  const [appliedPrice, setAppliedPrice] = useState<string | null>(null);
+
+  if (priceTarget !== appliedPrice) {
+    setAppliedPrice(priceTarget);
+    if (opensPrice) setActiveTab('price');
+  }
 
   if (urlTarget !== appliedTarget) {
     setAppliedTarget(urlTarget);
@@ -93,28 +97,6 @@ export default function UploadForm() {
     timer.current = setTimeout(() => setMessage(null), 3000);
   }
 
-  function submitPrice(e: FormEvent) {
-    e.preventDefault();
-    const amount = Number(priceForm.amount);
-    if (!priceForm.productId || !amount || !priceForm.barrio) {
-      showMessage('Por favor completa todos los campos requeridos', 'error');
-      return;
-    }
-
-    const price: Price = {
-      id: uniqueId(),
-      productId: priceForm.productId,
-      amount,
-      date: new Date(),
-      barrio: priceForm.barrio,
-      store: priceForm.store,
-    };
-
-    addPrice(price);
-    showMessage('Precio compartido exitosamente!', 'ok');
-    setPriceForm(EMPTY_PRICE_FORM);
-  }
-
   function submitProduct(e: FormEvent) {
     e.preventDefault();
     if (!productForm.name.trim()) {
@@ -137,17 +119,6 @@ export default function UploadForm() {
   }
 
   // ── Código leído con la cámara ─────────────────────────────
-
-  /** Cargar precio: selecciona el producto propio; si no hay, ofrece agregarlo primero */
-  function scannedForPrice(ean: string) {
-    const own = useStore.getState().products.find(p => p.ean === ean);
-    if (own) {
-      setPriceForm(form => ({ ...form, productId: own.id }));
-      setMissingEan(null);
-    } else {
-      setMissingEan(ean);
-    }
-  }
 
   /**
    * Agregar producto: propio → "Ya tenés este producto"; en el catálogo → completa el formulario como el
@@ -202,92 +173,11 @@ export default function UploadForm() {
         </button>
       </div>
 
-      {/* Tab: Cargar Precio */}
-      {activeTab === 'price' && (
-        <div>
-          <h1 className="text-2xl font-bold mb-6">Cargar Precio</h1>
-
-          <form onSubmit={submitPrice} className="space-y-4">
-            <div>
-              <label htmlFor="price-product" className="block font-semibold mb-2">Producto *</label>
-              <div className="flex gap-2">
-                <select
-                  id="price-product"
-                  value={priceForm.productId}
-                  onChange={e => {
-                    setPriceForm({ ...priceForm, productId: e.target.value });
-                    setMissingEan(null);
-                  }}
-                  className="input-field min-w-0 flex-1">
-                  <option value="">Selecciona un producto</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <ScanButton onDetected={scannedForPrice} />
-              </div>
-              {missingEan && (
-                <div role="status" className="mt-3 flex flex-col gap-3 rounded-lg border border-primary-200 bg-primary-50 p-4">
-                  <p className="text-sm text-gray-700">
-                    No tenés un producto con el código {missingEan}. Agregalo primero y después cargá su precio.
-                  </p>
-                  <Link
-                    href={`/upload?tab=producto&ean=${missingEan}`}
-                    onClick={e => {
-                      // Si la URL ya es esa (se llegó desde Buscar con este código), navegar no cambia nada
-                      if (urlEan === missingEan) {
-                        e.preventDefault();
-                        setActiveTab('product');
-                      }
-                      setMissingEan(null);
-                    }}
-                    className="btn-primary text-center">
-                    Agregar producto
-                  </Link>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label htmlFor="price-amount" className="block font-semibold mb-2">Precio ($) *</label>
-              <input
-                id="price-amount"
-                value={priceForm.amount}
-                onChange={e => setPriceForm({ ...priceForm, amount: e.target.value })}
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="150.50"
-                className="input-field"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="price-barrio" className="block font-semibold mb-2">Barrio *</label>
-              <input
-                id="price-barrio"
-                value={priceForm.barrio}
-                onChange={e => setPriceForm({ ...priceForm, barrio: e.target.value })}
-                type="text"
-                placeholder="Ej: Almagro"
-                className="input-field"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="price-store" className="block font-semibold mb-2">Tienda (Opcional)</label>
-              <input
-                id="price-store"
-                value={priceForm.store}
-                onChange={e => setPriceForm({ ...priceForm, store: e.target.value })}
-                type="text"
-                placeholder="Ej: Almacen Don Carlos"
-                className="input-field"
-              />
-            </div>
-
-            <button type="submit" className="btn-primary w-full">Compartir Precio</button>
-          </form>
-        </div>
-      )}
+      {/* Tab: Cargar precio. Queda montada al cambiar de pestaña: el comercio elegido se conserva */}
+      <div hidden={activeTab !== 'price'}>
+        <h1 className="text-2xl font-bold mb-6">Cargar precio</h1>
+        <PriceForm />
+      </div>
 
       {/* Tab: Agregar Producto */}
       {activeTab === 'product' && (

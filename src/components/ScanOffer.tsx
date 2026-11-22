@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, Equal } from 'lucide-react';
+import { ArrowDown, ArrowUp, Equal, Tag } from 'lucide-react';
 import Link from 'next/link';
 import { useId, useState } from 'react';
 import { AddToCartButton, EditLink } from '@/components/CatalogActions';
@@ -77,6 +77,8 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
   // ── Agregar al carrito ─────────────────────────────────────
   // Con el precio de la góndola escrito, entra en "Sin comercio" a ese precio (no se sabe en qué comercio está)
   const shelfAt = hasShelfPrice ? { price: shelfPrice } : undefined;
+  // Cargar precio acá (spec 26): la pestaña Cargar precio con el producto y, si se escribió, el precio de la góndola
+  const loadPriceHref = `/upload?tab=precio&ean=${scan.ean}${hasShelfPrice ? `&monto=${shelfPrice}` : ''}`;
 
   function addOwn(product: Product, at?: { store?: StoreRef; price: number }) {
     const price = at ? at.price : initialCartPrice(prices, product.id, summary?.reference);
@@ -169,9 +171,17 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
             <EditLink ean={scan.ean} />
           </div>
         ) : (
-          <Link href={`/upload?tab=producto&ean=${scan.ean}`} className="btn-primary shrink-0 text-center">
-            Agregar producto
-          </Link>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Link href={`/upload?tab=producto&ean=${scan.ean}`} className="btn-primary flex-1 text-center sm:flex-none">
+              Agregar producto
+            </Link>
+            <Link
+              href={loadPriceHref}
+              className="btn-secondary inline-flex flex-1 items-center justify-center gap-1.5 sm:flex-none">
+              <Tag aria-hidden="true" className="size-4" />
+              Cargar precio acá
+            </Link>
+          </div>
         )}
       </div>
 
@@ -186,6 +196,8 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
                 prices={near}
                 approx={nearby.approx}
                 ownPrices={ownStorePrices}
+                origin={location ?? undefined}
+                radiusKm={nearby.radiusKm}
                 limit={OPEN_STORES}
                 onChoose={addAt}
                 onMap={onMap}
@@ -254,6 +266,12 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
               <p className="mt-2 text-sm text-gray-600">Sin precios para comparar</p>
             ))}
           </div>
+          <Link
+            href={loadPriceHref}
+            className="mt-1 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary-700 underline underline-offset-2 hover:text-primary-800">
+            <Tag aria-hidden="true" className="size-4" />
+            Cargar precio acá
+          </Link>
         </div>
       )}
     </div>

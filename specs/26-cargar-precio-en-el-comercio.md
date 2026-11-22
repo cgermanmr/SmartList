@@ -1,6 +1,6 @@
 # SPEC 26 — Cargar precio en el comercio
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 11](11-lector-codigo-de-barras.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md), [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 24](24-comercios-cercanos-en-el-lector.md)
 > **Fecha:** 2026-11-21
 > **Objetivo:** Cargar el precio de cualquier producto (propio, del catálogo, con un código desconocido o sin código) en el comercio donde está el usuario, elegido por GPS o a mano, sin dar de alta el producto antes.

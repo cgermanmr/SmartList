@@ -35,8 +35,10 @@ export interface Price {
   productId: string;
   amount: number;
   date: Date;        // string ISO cuando viene de localStorage
-  barrio: string;
-  store?: string;
+  barrio: string;      // NO_BARRIO ("Sin especificar") si no se conoce
+  store?: string;      // nombre del comercio; con storeRef, igual a storeRef.name
+  /** Comercio completo (spec 26): sucursal SEPA o cargado a mano, con coordenadas si se usó el GPS */
+  storeRef?: StoreRef;
 }
 
 export interface Purchase {

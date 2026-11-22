@@ -19,6 +19,7 @@ import { useNearbyPrices } from './useNearby';
 export default function NearbyStoresCard({ product }: { product: Product }) {
   const prices = useStore(s => s.prices);
   const addToCart = useStore(s => s.addToCart);
+  const location = useStore(s => s.location);
   const nearby = useNearbyPrices([product.ean]);
   const [now] = useState(() => new Date());
   const [added, setAdded] = useState<string | null>(null);
@@ -51,6 +52,8 @@ export default function NearbyStoresCard({ product }: { product: Product }) {
                 prices={near}
                 approx={nearby.approx}
                 ownPrices={ownPrices}
+                origin={location ?? undefined}
+                radiusKm={nearby.radiusKm}
                 onChoose={add}
                 onMap={store => setMapStop(mapStops([store]))}
               />

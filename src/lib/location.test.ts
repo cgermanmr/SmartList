@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { gpsLocation, nearbyListSummary, nextRadius, NO_LOCATION, parseLocationState } from './location';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  gpsLocation, nearbyListSummary, nextRadius, NO_LOCATION, parseLocationState, requestPosition,
+} from './location';
 
 describe('parseLocationState', () => {
   const location = { lat: -34.6037, lng: -58.3816, source: 'gps', label: 'Mi ubicación' };
@@ -69,5 +71,31 @@ describe('nearbyListSummary', () => {
 
   it('aclara cuando la lista se corta en el máximo', () => {
     expect(nearbyListSummary({ count: 40, radiusKm: 10, limited: true })).toBe('Los 40 más cercanos, a menos de 10 km');
+  });
+});
+
+describe('requestPosition', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function stubGeolocation() {
+    const getCurrentPosition = vi.fn<Geolocation['getCurrentPosition']>(ok =>
+      ok({ coords: { latitude: -34.6, longitude: -58.4 } } as GeolocationPosition));
+    vi.stubGlobal('navigator', { geolocation: { getCurrentPosition } });
+    vi.stubGlobal('window', { isSecureContext: true });
+    return getCurrentPosition;
+  }
+
+  it('por defecto, sin alta precisión y con una posición de hasta 5 min', async () => {
+    const getCurrentPosition = stubGeolocation();
+    await expect(requestPosition()).resolves.toEqual({ lat: -34.6, lng: -58.4 });
+    expect(getCurrentPosition.mock.calls[0][2])
+      .toEqual({ enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 });
+  });
+
+  it('con highAccuracy pide el GPS y una posición de hasta 1 min', async () => {
+    const getCurrentPosition = stubGeolocation();
+    await requestPosition({ highAccuracy: true });
+    expect(getCurrentPosition.mock.calls[0][2])
+      .toEqual({ enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 });
   });
 });

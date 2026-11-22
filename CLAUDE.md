@@ -95,7 +95,8 @@ src/
 │   ├── globals.css             # Tailwind v4 + @theme (primary, accent, gray, fuentes) + @layer components
 │   ├── page.tsx                # Buscar
 │   ├── upload/                 # page.tsx (Suspense) + UploadForm.tsx (useSearchParams): tabs cargar precio /
-│   │                           #   agregar producto; ?tab=producto&ean=… abre agregar producto completado
+│   │                           #   agregar producto; ?tab=producto&ean=… abre agregar producto completado;
+│   │                           #   PriceForm.tsx: pestaña Cargar precio (spec 26) y ?tab=precio&ean=…&monto=…
 │   ├── product/[id]/           # page.tsx (Suspense) + ProductDetail.tsx (useParams); vincular con el catálogo
 │   ├── cart/page.tsx           # Carrito y checkout con medio de pago
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
@@ -134,7 +135,11 @@ src/
 │   ├── BarcodeScanner.tsx      # Lector de códigos de barras: <dialog> a pantalla completa con la cámara e ingreso manual
 │   ├── ScanButton.tsx          # Botón que abre el lector; solo si el navegador puede pedir la cámara
 │   ├── ScanOffer.tsx           # Oferta del lector en Buscar (spec 24): propio o del catálogo, comercios cercanos
-│   │                           #   (resumen + 3), precios por cadena y "¿Cuánto sale acá?"; ScanResult
+│   │                           #   (resumen + 3), precios por cadena, "¿Cuánto sale acá?" y "Cargar precio acá"; ScanResult
+│   ├── PriceStorePicker.tsx    # Bloque "Comercio" de Cargar precio: GPS (sucursales a menos de 200 m), comercios
+│   │                           #   usados, "Otro comercio" / "Otro comercio acá"; elegido con "Cambiar"
+│   ├── PriceProductPicker.tsx  # Bloque "Producto" de Cargar precio: propios y del catálogo, lector, "No tiene código
+│   │                           #   de barras", casos B y C; useEanLookup (resuelve un código leído o de la URL)
 │   ├── CatalogActions.tsx      # AddToCartButton ("Buscando precio…") y EditLink, de Buscar y de la oferta del lector
 │   ├── CartStoreDialog.tsx     # Modal <dialog> "Cambiar comercio" de un ítem del carrito; sección "Cerca tuyo"
 │   ├── CartCompareCard.tsx     # Tarjeta "¿Dónde conviene?" del carrito: la mejor opción y "Comparar N comercios"
@@ -146,7 +151,8 @@ src/
 │   ├── LocationBar.tsx         # "Usar mi ubicación" / "Elegir localidad"; con ubicación, radio, Cambiar y Quitar
 │   │                           #   y el link "N comercios cerca" que abre la lista
 │   ├── NearbyBranchesDialog.tsx # Modal <dialog> con los comercios del radio por distancia; tocar uno abre su mapa
-│   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; NearbyLine ("Desde $X…")
+│   ├── NearbyStores.tsx        # Lista de comercios con dirección, distancia, precio y botón; precios propios dentro
+│   │                           #   del radio mezclados (spec 26); NearbyLine ("Desde $X…")
 │   ├── NearbyStoresCard.tsx    # Tarjeta "Comercios cercanos" del detalle
 │   ├── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
 │   │                           #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
@@ -157,6 +163,8 @@ src/
     ├── storage.ts              # Claves preciolocal_*, datos de ejemplo, loadFromStorage/saveToStorage/loadCalculator
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
+    ├── price-form.ts           # Cargar precio (spec 26): PriceProductChoice, storesAtPoint, recentStores, otherStore,
+    │                           #   resolvePriceProduct, priceAt; ownPricesNear (precios propios en Comercios cercanos)
     ├── shelf-price.ts          # "¿Cuánto sale acá?" (spec 24): shelfComparison contra el más barato cercano o la
     │                           #   referencia, y contra el último precio propio
     ├── basket.ts               # ¿Dónde conviene el carrito?: basketLines, compareNearby, compareChains, savingsLine,
@@ -386,11 +394,13 @@ interface Price {
   productId: string;
   amount: number;
   date: Date;        // string ISO cuando viene de localStorage
-  barrio: string;
-  store?: string;
+  barrio: string;    // NO_BARRIO ("Sin especificar") si no se conoce
+  store?: string;    // nombre del comercio; con storeRef, igual a storeRef.name
+  storeRef?: StoreRef;  // spec 26: comercio completo (sucursal SEPA o a mano, con coordenadas si se usó el GPS);
+                        // priceStoreRef lo usa primero. store y barrio se siguen escribiendo para lo que ya los lee
 }
 
-interface StoreRef {   // comercio de un ítem del carrito; viaja dentro del ítem, sin catálogo
+interface StoreRef {   // comercio de un ítem del carrito o de un precio; viaja dentro, sin catálogo
   name: string;
   barrio?: string;
   address?: string;
@@ -490,7 +500,10 @@ interface CalculatorState {
   tenés <nombre>.", "Último precio $Y · dd/mm" (si tiene), **Agregar al carrito** (`initialCartPrice`; espera la
   referencia solo sin precio propio) y **Ver detalle**. Si no es propio, consulta el catálogo: si está, ofrece
   **Agregar al carrito** (igual que en la sección del catálogo, con "Editar antes de agregar"); si no está o falla la
-  consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`. Escribir en el buscador o leer otro código
+  consulta, "Agregar producto", que navega a `/upload?tab=producto&ean=…`, y al lado **Cargar precio acá**
+  ([SPEC 26](specs/26-cargar-precio-en-el-comercio.md)). En un propio o del catálogo, el link **Cargar precio acá**
+  queda debajo de "¿Cuánto sale acá?": lleva a `/upload?tab=precio&ean=…` (con `&monto=…` si hay un monto escrito).
+  Escribir en el buscador o leer otro código
   cierra la oferta (`key={scan.ean}`: nada pasa de un producto a otro)
   - **Comercios cercanos** (con ubicación, un `useNearbyPrices` propio de la oferta): `NearbyLine` y `NearbyStores`
     con los **3** más baratos abiertos (`limit`) y "Ver N más", con **Agregar** (en ese comercio y a ese precio) y
@@ -522,19 +535,54 @@ interface CalculatorState {
   (la fila del catálogo, o "Ver comercios" en la tarjeta propia), la lista de comercios (`NearbyStores`): hasta
   10 y "Ver N más", por precio y después distancia, con dirección, distancia, precio y **Agregar**
   (`aria-label="Agregar <producto> en <comercio>"`); el más barato lleva "Más barato". En un producto propio se
-  suman al final sus precios cargados a mano de los últimos 60 días que tienen comercio (el último de cada barrio
-  + comercio), con "Cargado por vos · dd/mm". Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa",
-  en ámbar con más de 7 días
+  suman sus precios cargados a mano de los últimos 60 días que tienen comercio (el último de cada comercio,
+  `storeKey`), con "Cargado por vos · dd/mm": los de un comercio con coordenadas **dentro del radio** (spec 26,
+  `ownPricesNear`) se mezclan con los de Precios Claros por precio y distancia, con su distancia y Mapa ("Más
+  barato" cuenta también esos); los demás (sin coordenadas, fuera del radio) van al final, sin distancia ni Mapa.
+  `NearbyLine` resume solo Precios Claros. Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa", en
+  ámbar con más de 7 días
   - **Agregar** en un comercio: crea el producto si no existe (`addSepaToCart` con `at`) y lo deja en el carrito
     con ese comercio y ese precio; si ya estaba, suma 1 y pasa a ellos. No registra precios
   - En el catálogo, debajo de la lista quedan "Agregar sin comercio" (el de la spec 18) y "Editar antes de
     agregar". Un resultado sin precio cercano despliega la lista por cadena de la spec 12
   - Sin ubicación (o si falla la consulta) todo queda como en la spec 12: resumen y lista por cadena
   - Cada comercio con coordenadas lleva el botón **Mapa** (`aria-label="Ver <comercio> en el mapa"`; solo ícono
-    en el celular), que abre el mapa del comercio (ver *Mapa del comercio*). Los precios cargados a mano no lo llevan
+    en el celular), que abre el mapa del comercio (ver *Mapa del comercio*). Los precios cargados a mano solo lo
+    llevan dentro del radio
 
 ### Cargar (`/upload`)
-- Tab **precio**: producto, monto, barrio (requeridos) y tienda (opcional)
+- Tab **Cargar precio** ([SPEC 26](specs/26-cargar-precio-en-el-comercio.md), `PriceForm`): tres tarjetas en orden,
+  **Comercio**, **Producto** y **Precio**, y "Guardar precio". Queda montada al cambiar de pestaña (`hidden`): el
+  comercio elegido se conserva al navegar y se pierde al recargar. Validación al guardar, con el error junto al
+  campo y el foco en el primero: "Elegí el comercio", "Elegí el producto", "Completá el nombre" (casos B y C) y
+  "Completá el precio" (vacío, 0 o no numérico)
+  - **Comercio** (`PriceStorePicker`, obligatorio): **Usar mi ubicación** (con `geolocationAvailable`) hace una
+    lectura de alta precisión (`requestPosition({ highAccuracy: true })`) que **no cambia la ubicación de la app**,
+    baja las sucursales recién ahí y ofrece hasta 3 a menos de **200 m** (`storesAtPoint`) como "¿Estás en…?", con
+    dirección y distancia (la más cercana en `primary-700`), y debajo "Otro comercio acá" (guarda las coordenadas
+    de la lectura, redondeadas a 4 decimales). Sin sucursales a menos de 200 m: "No hay comercios de Precios Claros
+    a menos de 200 m" con ese formulario abierto. Errores: "Sin permiso para usar tu ubicación. Elegí el comercio a
+    mano." / "No se pudo obtener tu ubicación. Elegí el comercio a mano.". **Comercios que usaste** (`recentStores`:
+    hasta 5 de precios y compras, del más reciente, distintos por `storeKey`) y **Otro comercio** (nombre
+    obligatorio, dirección y barrio opcionales; no es un `<form>`: Enter usa el comercio). El barrio ya no es
+    obligatorio. Elegido: nombre, dirección o barrio, ícono de ubicación si tiene coordenadas y **Cambiar**
+  - **Producto** (`PriceProductPicker`): "Buscá un producto" con "Tus productos" (`filterProducts`, hasta 5) y "En
+    Precios Claros" (sin los propios, imagen de 48 px), el lector y **No tiene código de barras** (caso C, con lo
+    escrito como nombre). Un código leído (`useEanLookup`): propio → ese; en el catálogo → caso A; fuera, con error
+    o sin Supabase → caso B ("El código … no está en Precios Claros." / "No se pudo consultar Precios Claros.");
+    "Buscando el código…" mientras tanto y una respuesta vieja se descarta. Elegido: imagen, nombre (del catálogo, el
+    sugerido), marca y presentación, "Precios Claros" si es del catálogo y **Cambiar**; en B y C, Nombre (obligatorio)
+    y Marca (opcional) con el código arriba en B
+  - **Precio**: "Precio ($)" con teclado decimal; con precios propios, "Último precio $Y · dd/mm"
+  - **Guardar**: el producto se resuelve recién ahí (`resolvePriceProduct`: propio; A → el propio con ese EAN si
+    apareció mientras tanto, si no `productFromSepa`; B y C → nuevo, sin categoría), y se registra `priceAt`
+    (`storeRef`, `store` = su nombre, `barrio` = el suyo o "Sin especificar"). Aviso fijo abajo "Precio guardado:
+    <producto> $X en <comercio>. Solo lo ves vos." (3 s). **Queda el comercio**; producto y monto se limpian y el
+    foco vuelve al buscador
+  - `?tab=precio&ean=…&monto=…` abre la pestaña con el producto resuelto como al leer el código y el monto (> 0),
+    cuando cambia la URL (el código, una sola vez aunque la página vuelva a mostrarse); al guardar, la URL queda en
+    `?tab=precio`. La oferta del lector de Buscar lleva ahí con **Cargar precio acá** (suma `&monto=` si hay algo en
+    "¿Cuánto sale acá?")
 - Tab **producto**: nombre (requerido, "Completá el nombre"); "Categoría (opcional)", código de barras, marca y
   presentación (número + unidad), opcionales. Sin categoría, el producto se guarda sin `category`
 - Buscador **Buscar en Precios Claros** (espera de 300 ms, "Buscando…", "Sin resultados", error): al elegir un
@@ -544,12 +592,10 @@ interface CalculatorState {
   con link; en ambos casos no guarda
 - `?tab=producto&ean=…` abre la pestaña producto completada con `getSepaProduct`; si el EAN no está en el catálogo,
   solo con el EAN (vacía si no es válido). Al guardar, la URL queda en `?tab=producto`
-- Botón **Leer código de barras** (ícono) en los dos tabs:
-  - **precio** (al lado del producto): un producto propio con ese EAN queda seleccionado; si no, "No tenés un
-    producto con el código …" con "Agregar producto", que lleva al tab producto con `?tab=producto&ean=…`
-  - **producto** (al lado del código de barras): propio → "Ya tenés este producto" con link; en el catálogo →
-    completa el formulario igual que el buscador; si no, completa solo el EAN y deja el resto como estaba
-- Mensajes de éxito/error que se ocultan a los 3 s
+- Botón **Leer código de barras** (ícono) en el tab producto (al lado del código de barras): propio → "Ya tenés este
+  producto" con link; en el catálogo → completa el formulario igual que el buscador; si no, completa solo el EAN y
+  deja el resto como estaba
+- Mensajes de éxito/error del tab producto que se ocultan a los 3 s
 
 ### Lector de códigos de barras (`BarcodeScanner`)
 - Modal negro a pantalla completa: video de la cámara trasera (`facingMode: { ideal: 'environment' }`), recuadro guía
@@ -643,7 +689,8 @@ interface CalculatorState {
   (`PAYMENT_METHODS` de `lib/payment-methods.ts`; los íconos, en el carrito); se guarda el label. En
   "Sin comercio" se pueden escribir barrio y comercio, los dos opcionales
 - Al confirmar un grupo: guarda **un** `Purchase` con sus ítems (`store` = comercio, `barrio` solo si se conoce),
-  **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no se conoce) y saca del
+  **registra cada precio pagado en el historial de precios** (barrio `Sin especificar` si no se conoce; con
+  comercio, también `storeRef` con el comercio del grupo, spec 26) y saca del
   carrito solo esos ítems (`removeCartItems`); los demás grupos quedan
 
 ### Historial de compras (`/purchases`)
@@ -1056,6 +1103,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] ¿Dónde conviene el carrito? Comparación contra las sucursales cercanas o las cadenas y "Pasar todo" (spec 25)
 - [x] Comercios cercanos en el lector, producto propio sin salir de Buscar y "¿Cuánto sale acá?" (spec 24)
 - [x] Buscador fijo arriba en Buscar, sin título a la vista ni mensaje sin propios (spec 29)
+- [x] Cargar precio en el comercio: comercio por GPS o a mano, cualquier producto sin darlo de alta antes y
+  `Price.storeRef`; precios propios en Comercios cercanos (spec 26)
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
 - [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
 

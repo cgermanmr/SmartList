@@ -3,8 +3,9 @@
 import { Map as MapIcon } from 'lucide-react';
 import { useState } from 'react';
 import { formatDayMonth, formatIsoDate, formatMoney } from '@/lib/format';
-import { formatDistance } from '@/lib/geo';
+import { formatDistance, LatLng } from '@/lib/geo';
 import { Price, StoreRef } from '@/lib/models';
+import { ownPricesNear } from '@/lib/price-form';
 import { isStaleDate, latestBranchDate, NearbyPrice, storeRefFromBranch } from '@/lib/sepa';
 import { priceStoreRef, storeKey } from '@/lib/store';
 
@@ -50,8 +51,14 @@ interface Props {
   /** Precios en los comercios cercanos, ya ordenados por precio y distancia */
   prices: NearbyPrice[];
   approx: boolean;
-  /** Precios cargados a mano (getRecentStorePrices): van al final, sin distancia */
+  /**
+   * Precios cargados a mano (getRecentStorePrices). Los de un comercio con coordenadas dentro del radio se mezclan
+   * con los de Precios Claros, con su distancia y Mapa (spec 26); los demás van al final, sin distancia
+   */
   ownPrices?: Price[];
+  /** Ubicación de la app y radio: para la distancia de los precios propios */
+  origin?: LatLng;
+  radiusKm?: number;
   /** Elegir un comercio con su precio; sin esto las filas no llevan botón */
   onChoose?: (store: StoreRef, price: number) => void;
   /** Texto del botón de cada fila */
@@ -72,7 +79,21 @@ interface Row {
   detail: string;
   /** Distancia, o "Cargado por vos · dd/mm" */
   aside: string;
+  /** "Cargado por vos · dd/mm" debajo, en un precio propio con distancia */
+  note?: string;
+  distanceKm: number;
   cheapest: boolean;
+  /** Botón Mapa: las sucursales y los precios propios dentro del radio */
+  mappable: boolean;
+}
+
+function ownLabel(price: Price): string {
+  return `Cargado por vos · ${formatDayMonth(price.date)}`;
+}
+
+function ownDetail(price: Price): string {
+  const store = priceStoreRef(price);
+  return store.address ? [store.address, store.barrio].filter(Boolean).join(', ') : store.barrio ?? '';
 }
 
 /**
@@ -80,27 +101,48 @@ interface Row {
  * de los cercanos (empatados, todos) se marca con fondo y con texto, no solo con color. En 375 px cada fila apila
  * nombre y dirección arriba y precio y botón abajo.
  */
-export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], onChoose, action = 'Agregar', currentKey, onMap, limit = VISIBLE_STORES }: Props) {
+export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], origin, radiusKm, onChoose, action = 'Agregar', currentKey, onMap, limit = VISIBLE_STORES }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [today] = useState(() => new Date());
-  const lowest = prices[0]?.price;
+  const own = ownPricesNear(ownPrices, origin, radiusKm);
 
-  const rows: Row[] = [
+  // Sucursales y precios propios dentro del radio, por precio y después distancia
+  const near: Row[] = [
     ...prices.map(p => ({
       key: p.branch.id,
       store: storeRefFromBranch(p.branch),
       price: p.price,
       detail: [p.branch.address, p.branch.barrio ?? p.branch.localidad].filter(Boolean).join(', '),
       aside: distanceLabel(p.distanceKm, approx),
-      cheapest: p.price === lowest,
+      distanceKm: p.distanceKm,
+      cheapest: false,
+      mappable: true,
     })),
-    ...ownPrices.map(p => ({
+    ...own.near.map(({ price: p, distanceKm }) => ({
       key: `propio-${p.id}`,
       store: priceStoreRef(p),
       price: p.amount,
-      detail: priceStoreRef(p).barrio ?? '',
-      aside: `Cargado por vos · ${formatDayMonth(p.date)}`,
+      detail: ownDetail(p),
+      aside: distanceLabel(distanceKm, approx),
+      note: ownLabel(p),
+      distanceKm,
       cheapest: false,
+      mappable: true,
+    })),
+  ].sort((a, b) => a.price - b.price || a.distanceKm - b.distanceKm || a.key.localeCompare(b.key));
+  const lowest = near[0]?.price;
+
+  const rows: Row[] = [
+    ...near.map(row => ({ ...row, cheapest: row.price === lowest })),
+    ...own.rest.map(p => ({
+      key: `propio-${p.id}`,
+      store: priceStoreRef(p),
+      price: p.amount,
+      detail: ownDetail(p),
+      aside: ownLabel(p),
+      distanceKm: Infinity,
+      cheapest: false,
+      mappable: false,
     })),
   ];
   const visible = showAll ? rows : rows.slice(0, limit);
@@ -120,6 +162,7 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
                   <span className="shrink-0 text-sm text-gray-600">{row.aside}</span>
                 </div>
                 {row.detail && <p className="text-sm text-gray-600 break-words">{row.detail}</p>}
+                {row.note && <p className="text-sm text-gray-600">{row.note}</p>}
               </div>
               <div className="mt-2 flex items-center justify-between gap-3 sm:mt-0 sm:shrink-0 sm:justify-end">
                 <span className="flex flex-wrap items-center gap-x-2">
@@ -131,7 +174,7 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
                   )}
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
-                  {onMap && row.store.lat !== undefined && row.store.lng !== undefined && (
+                  {onMap && row.mappable && row.store.lat !== undefined && row.store.lng !== undefined && (
                     <button
                       type="button"
                       onClick={() => onMap(row.store)}

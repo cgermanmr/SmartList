@@ -335,8 +335,12 @@ export function getRecentStorePrices(prices: Price[], productId: string, now: Da
   });
 }
 
-/** Comercio de un precio cargado a mano: { name: store, barrio }; el barrio "Sin especificar" no es un barrio */
-export function priceStoreRef(price: Pick<Price, 'store' | 'barrio'>): StoreRef {
+/**
+ * Comercio de un precio: su storeRef si lo tiene (spec 26); si no, { name: store, barrio }, como se guardaban antes.
+ * El barrio "Sin especificar" no es un barrio
+ */
+export function priceStoreRef(price: Pick<Price, 'store' | 'barrio' | 'storeRef'>): StoreRef {
+  if (price.storeRef) return price.storeRef;
   const name = (price.store ?? '').trim();
   const barrio = price.barrio?.trim();
   return barrio && barrio !== NO_BARRIO ? { name, barrio } : { name };

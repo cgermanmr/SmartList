@@ -37,6 +37,12 @@ export default function PrivacyPage() {
           excepción es el mapa con la ruta a un comercio: para marcarla, tu ubicación se envía a OpenStreetMap, y el
           mapa lo avisa.
         </p>
+        <p>
+          Al cargar un precio, &ldquo;Usar mi ubicación&rdquo; busca los comercios que tenés cerca sin cambiar la ubicación
+          de comercios cercanos. Si elegís &ldquo;Otro comercio acá&rdquo;, el precio guarda las coordenadas de ese comercio
+          (redondeadas, a unos 10 metros) para mostrar su distancia y su mapa, y con cuenta se sincronizan junto con el
+          precio. Son las del comercio, no un registro de por dónde andás.
+        </p>
       </section>
 
       <section className="space-y-2">

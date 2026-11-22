@@ -81,6 +81,8 @@ export default function SearchPage() {
 
   // Comercios cercanos (solo con ubicación): una sola consulta con los EAN visibles, propios y del catálogo, cuando
   // ya llegaron los resultados; mientras se escribe no se pide nada nuevo
+  // Ubicación de la app: la distancia de los precios propios en "Comercios cercanos" (spec 26)
+  const location = useStore(s => s.location);
   const nearby = useNearbyPrices(sepaSearch.status === 'loading' ? [] : [
     ...filteredProducts.map(p => p.ean),
     ...catalogSearch.results.map(r => r.ean),
@@ -265,6 +267,8 @@ export default function SearchPage() {
                         prices={near}
                         approx={nearby.approx}
                         ownPrices={ownStorePrices}
+                        origin={location ?? undefined}
+                        radiusKm={nearby.radiusKm}
                         onChoose={(store, price) => addAt(product, store, price)}
                         onMap={showMap}
                       />

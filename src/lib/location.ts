@@ -97,8 +97,13 @@ export function geolocationAvailable(): boolean {
 
 const PERMISSION_DENIED = 1;
 
-/** Una sola lectura, sin alta precisión; rechaza con un LocationError */
-export function requestPosition(): Promise<LatLng> {
+/**
+ * Una sola lectura; rechaza con un LocationError. Por defecto sin alta precisión y aceptando una posición de hasta
+ * 5 min. Con `highAccuracy` (Cargar precio, spec 26: saber en qué comercio está el usuario) pide el GPS y acepta
+ * una posición de hasta 1 min
+ */
+export function requestPosition(options: { highAccuracy?: boolean } = {}): Promise<LatLng> {
+  const highAccuracy = options.highAccuracy ?? false;
   return new Promise((resolve, reject) => {
     if (!geolocationAvailable()) {
       reject('unavailable' satisfies LocationError);
@@ -107,7 +112,7 @@ export function requestPosition(): Promise<LatLng> {
     navigator.geolocation.getCurrentPosition(
       position => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
       error => reject((error.code === PERMISSION_DENIED ? 'denied' : 'unavailable') satisfies LocationError),
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 },
+      { enableHighAccuracy: highAccuracy, timeout: 10_000, maximumAge: highAccuracy ? 60_000 : 300_000 },
     );
   });
 }

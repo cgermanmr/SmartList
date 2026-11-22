@@ -4,7 +4,7 @@ import type { SepaProduct } from './sepa';
 import { CALCULATOR_KEY, CART_KEY, LOCATION_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
 import {
   filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, getRecentStorePrices,
-  groupCartByStore, initialCartPrice, priceStoreRef, storeKey, useStore,
+  NO_BARRIO, groupCartByStore, initialCartPrice, priceStoreRef, storeKey, useStore,
 } from './store';
 
 // localStorage en memoria para el entorno de Node
@@ -725,5 +725,18 @@ describe('priceStoreRef', () => {
 
   it('el barrio "Sin especificar" no se guarda', () => {
     expect(priceStoreRef({ store: 'Coto', barrio: 'Sin especificar' })).toEqual({ name: 'Coto' });
+  });
+
+  it('con storeRef (spec 26) devuelve ese comercio completo', () => {
+    const storeRef: StoreRef = {
+      name: 'Coto — Cabildo', sepaId: '10-1-123', chain: 'Coto', address: 'Av. Cabildo 2280', barrio: 'Belgrano',
+      lat: -34.56, lng: -58.45,
+    };
+    expect(priceStoreRef({ store: 'Coto — Cabildo', barrio: 'Belgrano', storeRef })).toBe(storeRef);
+  });
+
+  it('un precio con storeRef de una sucursal tiene el storeKey de su sepaId', () => {
+    const ref = priceStoreRef({ store: 'Coto', barrio: NO_BARRIO, storeRef: { name: 'Coto', sepaId: '10-1-123' } });
+    expect(storeKey(ref)).toBe('sepa:10-1-123');
   });
 });
