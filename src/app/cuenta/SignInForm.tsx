@@ -30,7 +30,16 @@ function GoogleLogo() {
  * Entrar con Google o con un mail: se pide el mail, llega un mail con un código de 6 dígitos y un link; en la app
  * instalada del iPhone (que no comparte datos con Safari) solo sirve el código
  */
-export default function SignInForm({ onCodeEntered }: { onCodeEntered: (email: string, code: string) => Promise<void> }) {
+interface Props {
+  onCodeEntered: (email: string, code: string) => Promise<void>;
+  /** Ruta a la que vuelve el login con Google o el link del mail (por defecto /cuenta) */
+  redirectTo?: string;
+  /** Título y bajada de la tarjeta, si no son los de /cuenta */
+  title?: string;
+  intro?: string;
+}
+
+export default function SignInForm({ onCodeEntered, redirectTo, title, intro }: Props) {
   const ios = useSyncExternalStore(noSubscribe, iosStandalone, () => false);
   const emailId = useId();
   const codeId = useId();
@@ -53,7 +62,7 @@ export default function SignInForm({ onCodeEntered }: { onCodeEntered: (email: s
     setError(null);
     setBusy(true);
     try {
-      await signInWithGoogle(); // navega a Google
+      await signInWithGoogle(redirectTo); // navega a Google
     } catch {
       setBusy(false);
       setError('No se pudo abrir el login de Google. Probá de nuevo.');
@@ -64,7 +73,7 @@ export default function SignInForm({ onCodeEntered }: { onCodeEntered: (email: s
     setBusy(true);
     setError(null);
     try {
-      await sendEmailCode(address);
+      await sendEmailCode(address, redirectTo);
       setSentTo(address.trim());
       setCode('');
       setWait(RESEND_SECONDS);
@@ -153,8 +162,8 @@ export default function SignInForm({ onCodeEntered }: { onCodeEntered: (email: s
   // ── Elegir cómo entrar ───────────────────────────────────
   return (
     <div className="card p-5">
-      <h2 className="text-lg font-semibold">Guardá tus datos y usalos en cualquier teléfono</h2>
-      <p className="mt-1 text-gray-600">Tus productos, precios, carrito y compras quedan en tu cuenta.</p>
+      <h2 className="text-lg font-semibold">{title ?? 'Guardá tus datos y usalos en cualquier teléfono'}</h2>
+      <p className="mt-1 text-gray-600">{intro ?? 'Tus productos, precios, carrito y compras quedan en tu cuenta.'}</p>
 
       <button
         type="button"

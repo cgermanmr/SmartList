@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { clearGroupPrices } from './group';
 import { clearLocalPhotos, releaseLocalPhotos, syncPhotos } from './photo-sync';
 import { loadFromStorage, OUTBOX_KEY, removeFromStorage, saveToStorage, SYNC_KEY } from './storage';
 import { onUserDataChange, syncDataOf, useStore } from './store';
@@ -276,6 +277,7 @@ export function forgetAccount(): void {
   saveMeta(null);
   lastSync = null;
   setStatus({ state: 'off' });
+  clearGroupPrices(); // los precios del grupo son de la cuenta (spec 22)
 }
 
 async function forgetAccountAndSignOut(): Promise<void> {

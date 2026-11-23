@@ -27,7 +27,7 @@ puede no corresponder al producto o ser inapropiada.
 | Armar el carrito antes de ir | Agregar desde el catálogo sin dar de alta el producto (spec 18), carrito por comercio (spec 14), "Cerca tuyo" **ítem por ítem** al cambiar el comercio (spec 15), recorrido en el mapa (spec 16) | **Comparar el carrito entero** contra los comercios cercanos: es la pieza que más valor da |
 | Cargar un precio | Pestaña "Cargar precio" de `/upload` (spec 26, hecha): comercio obligatorio por GPS (sucursales a menos de 200 m), usados u "Otro comercio"; producto propio, del catálogo, con un código desconocido o sin código, creado al guardar; `Price.storeRef` con dirección y coordenadas | — |
 | Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). Foto propia (spec 27, hecha): en Cargar precio (B y C), Agregar producto y el detalle; comprimida, en IndexedDB y, con cuenta, en el bucket privado `fotos-propias`; "Solo la ves vos" | Supervisarla y compartirla con la comunidad (spec 28) |
-| Precios privados | `localStorage` y, con cuenta, `user_records` con RLS (spec 21) | Compartir con un grupo (spec 22) y validar (spec 23) |
+| Precios privados | `localStorage` y, con cuenta, `user_records` con RLS (spec 21). Grupos (spec 22, hecha): un grupo a la vez de hasta 20 integrantes por link de invitación; cada uno ve los precios con código de barras de los demás de los últimos 60 días en Comercios cercanos, "¿Cuánto sale acá?" y el detalle (Precios del grupo), consultados a pedido con `group_prices` | Validar (spec 23); precios propios y del grupo en "¿Dónde conviene el carrito?" |
 
 ## Alcance MVP
 
@@ -39,7 +39,7 @@ Orden de implementación (no sigue la numeración):
 | 2 | [24 — Comercios cercanos en el lector](../../specs/24-comercios-cercanos-en-el-lector.md) (hecha) | La oferta del lector muestra `NearbyLine` y `NearbyStores` con ubicación; opcional "¿Cuánto sale acá?", que lo compara contra la referencia (`vsReference`) |
 | 3 | [26 — Cargar precio en el comercio](../../specs/26-cargar-precio-en-el-comercio.md) (hecha) | Los tres casos y el comercio por GPS o a mano (ver abajo) |
 | 4 | [27 — Fotos propias](../../specs/27-fotos-propias.md) (hecha) | Foto del producto: compresión, guardado en el teléfono y, con cuenta, en Storage privado; leyenda "Solo la ves vos" |
-| 5 | 22 — Grupos | Como la planifica la spec 21 |
+| 5 | [22 — Grupos y precios compartidos](../../specs/22-grupos-y-precios-compartidos.md) (hecha) | Un grupo a la vez (hasta 20), link de invitación, apodos y "Compartir mis precios"; los precios del grupo en Comercios cercanos, "¿Cuánto sale acá?" y el detalle |
 | 6 | 23 — Validación | Como la planifica la spec 21 |
 | 7 | 28 — Supervisión de fotos | Moderación automática, cola manual y publicación de las aprobadas |
 

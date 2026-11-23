@@ -1,10 +1,11 @@
 'use client';
 
-import { CloudOff, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
+import { ChevronRight, CloudOff, LoaderCircle, RefreshCw, TriangleAlert, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useAuth } from '@/components/useAuth';
+import { useMyGroup } from '@/components/useMyGroup';
 import { useNow } from '@/components/useNow';
 import { AccountUser, deleteAccountData, verifyEmailCode } from '@/lib/auth';
 import { formatTimeAgo } from '@/lib/format';
@@ -103,6 +104,8 @@ function SignedIn({ user, status }: { user: AccountUser; status: SyncStatus }) {
         {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
       </div>
 
+      <GroupSection userId={user.id} />
+
       <div className="mt-8 border-t border-gray-200 pt-5">
         <p className="text-sm text-gray-600">Borra tu cuenta y todos tus datos guardados, en todos tus dispositivos.</p>
         <button
@@ -138,6 +141,42 @@ function SignedIn({ user, status }: { user: AccountUser; status: SyncStatus }) {
         onCancel={() => setConfirming(null)}
       />
     </>
+  );
+}
+
+// ── Grupo (spec 22) ──────────────────────────────────────────
+
+/** El grupo con la cantidad de integrantes, o la invitación a crear uno; los dos llevan a /grupo */
+function GroupSection({ userId }: { userId: string }) {
+  const { status, group } = useMyGroup(userId);
+  const members = group?.members.length ?? 0;
+
+  return (
+    <section aria-labelledby="account-group" className="mt-4">
+      <h2 id="account-group" className="mb-2 px-1 text-lg font-semibold">Grupo</h2>
+      <Link href="/grupo" className="card list-row rounded-2xl p-4">
+        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700">
+          <Users className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          {status === 'loading' && <span className="text-gray-500">Cargando…</span>}
+          {status === 'error' && <span className="font-semibold">Ver el grupo</span>}
+          {status === 'ready' && group && (
+            <>
+              <span className="block truncate font-semibold">{group.name}</span>
+              <span className="block text-sm text-gray-600">{members === 1 ? '1 integrante' : `${members} integrantes`}</span>
+            </>
+          )}
+          {status === 'ready' && !group && (
+            <>
+              <span className="block text-gray-700">Compartí precios con tu familia o tus amigos</span>
+              <span className="block font-semibold text-primary-700">Crear o unirte a un grupo</span>
+            </>
+          )}
+        </span>
+        <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-gray-500" />
+      </Link>
+    </section>
   );
 }
 

@@ -13,12 +13,14 @@ import ScanButton from '@/components/ScanButton';
 import ScanOffer, { ScanResult } from '@/components/ScanOffer';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
 import SepaResults from '@/components/SepaResults';
+import { useGroupPrices } from '@/components/useGroupPrices';
 import { useNearbyPrices } from '@/components/useNearby';
 import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { useSepaSearch } from '@/components/useSepaSearch';
 import { formatMoney, formatPctChange } from '@/lib/format';
+import { groupPricesNear } from '@/lib/group';
 import { uniqueId } from '@/lib/ids';
 import { CartItem, Product, StoreRef } from '@/lib/models';
 import { productImageSrc } from '@/lib/photo';
@@ -85,10 +87,15 @@ export default function SearchPage() {
   // ya llegaron los resultados; mientras se escribe no se pide nada nuevo
   // Ubicación de la app: la distancia de los precios propios en "Comercios cercanos" (spec 26)
   const location = useStore(s => s.location);
-  const nearby = useNearbyPrices(sepaSearch.status === 'loading' ? [] : [
+  const nearbyEans = sepaSearch.status === 'loading' ? [] : [
     ...filteredProducts.map(p => p.ean),
     ...catalogSearch.results.map(r => r.ean),
-  ]);
+  ];
+  const nearby = useNearbyPrices(nearbyEans);
+  // Precios del grupo (spec 22): los mismos EAN, en una consulta; sin ubicación no se muestran en Buscar
+  const groupPrices = useGroupPrices(location ? nearbyEans : []);
+  const groupNear = (ean: string | undefined) =>
+    ean ? groupPricesNear(groupPrices.get(ean) ?? [], location ?? undefined, nearby.radiusKm) : [];
 
   // Imágenes de los productos propios con EAN, en una sola consulta; las del catálogo las pide SepaResults
   const images = useSepaImages(filteredProducts.map(p => p.ean));
@@ -215,7 +222,7 @@ export default function SearchPage() {
             // Comercios cercanos: solo con EAN y con ubicación; los precios cargados a mano van al final de la lista
             const near = nearby.get(product.ean);
             const ownStorePrices = near === undefined ? [] : getRecentStorePrices(prices, product.id, now);
-            const hasStores = Array.isArray(near) && near.length + ownStorePrices.length > 0;
+            const hasStores = Array.isArray(near) && near.length + ownStorePrices.length + groupNear(product.ean).length > 0;
             const storesOpen = storesOpenId === product.id && hasStores;
             const storesId = 'comercios-' + product.id;
             const priceColor = stats && stats.previous !== null && stats.current > stats.previous
@@ -272,6 +279,7 @@ export default function SearchPage() {
                         prices={near}
                         approx={nearby.approx}
                         ownPrices={ownStorePrices}
+                        groupPrices={groupPrices.get(product.ean ?? '')}
                         origin={location ?? undefined}
                         radiusKm={nearby.radiusKm}
                         onChoose={(store, price) => addAt(product, store, price)}
@@ -372,7 +380,8 @@ export default function SearchPage() {
                 const summary = references.get(product.ean);
                 const loading = catalogLookup.isLoading(product.ean);
                 const near = nearby.get(product.ean);
-                const stores = Array.isArray(near) && near.length > 0 ? near : null;
+                // Con precios cercanos de Precios Claros o del grupo (spec 22), la lista de comercios
+                const stores = Array.isArray(near) && near.length + groupNear(product.ean).length > 0 ? near : null;
                 // Sin precios (o mientras cargan): datos y, a la derecha, el botón y el link al formulario
                 if (!summary && !stores) {
                   return (
@@ -411,6 +420,9 @@ export default function SearchPage() {
                             productName={product.description}
                             prices={stores}
                             approx={nearby.approx}
+                            groupPrices={groupPrices.get(product.ean)}
+                            origin={location ?? undefined}
+                            radiusKm={nearby.radiusKm}
                             onChoose={(store, price) => addSepaAt(product, store, price)}
                             onMap={showMap}
                           />

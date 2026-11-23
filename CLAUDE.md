@@ -27,7 +27,9 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md)). Las imágenes
   de los productos con código de barras salen de Open Food Facts y del portal Precios Claros, resueltas por un script
   semanal ([SPEC 17](specs/17-imagenes-de-productos.md)); cada producto propio puede llevar una foto propia, privada,
-  en el teléfono y con cuenta en un bucket privado ([SPEC 27](specs/27-fotos-propias.md))
+  en el teléfono y con cuenta en un bucket privado ([SPEC 27](specs/27-fotos-propias.md)). Con cuenta, un grupo
+  de hasta 20 personas comparte sus precios de productos con código de barras
+  ([SPEC 22](specs/22-grupos-y-precios-compartidos.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -84,7 +86,8 @@ supabase/
 ├── config.toml                 # Proyecto de la CLI (supabase init)
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
 │                               #   20261117000000_sepa_imagenes.sql, 20261118000000_user_records.sql,
-│                               #   20261122000000_fotos_propias.sql (bucket privado, spec 27)
+│                               #   20261122000000_fotos_propias.sql (bucket privado, spec 27),
+│                               #   20261123000000_grupos.sql y 20261123000001_grupos_trigger_privado.sql (spec 22)
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #5b2a86, display standalone
@@ -104,8 +107,11 @@ src/
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
 │   ├── gastos/page.tsx         # Panel de gasto mensual: selector de mes, resumen, gráfico y desgloses
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
-│   ├── cuenta/                 # page.tsx (sesión, estado de la sincronización, cerrar sesión, borrar la cuenta) +
-│   │                           #   SignInForm.tsx (Google o mail → código de 6 dígitos)
+│   ├── cuenta/                 # page.tsx (sesión, estado de la sincronización, sección Grupo, cerrar sesión, borrar
+│   │                           #   la cuenta) + SignInForm.tsx (Google o mail → código de 6 dígitos; redirectTo, title)
+│   ├── grupo/                  # page.tsx (estados: sin Supabase, sin sesión, cargando, error) + CreateGroup.tsx
+│   │                           #   (sin grupo) + GroupView.tsx (nombre, invitar, integrantes, apodo, Compartir mis
+│   │                           #   precios, salir); unirse/: page.tsx (Suspense) + JoinGroup.tsx (useSearchParams)
 │   ├── privacidad/page.tsx     # Qué se guarda, dónde y cómo borrarlo (Server Component)
 │   └── not-found.tsx           # Redirige a /
 ├── components/
@@ -161,6 +167,9 @@ src/
 │   ├── BranchMap.tsx           # Modal <dialog> con el mapa (Leaflet) de un comercio o del recorrido del carrito:
 │   │                           #   marcadores, ruta a pie / en auto, "Usar mi ubicación" y "Abrir en Google Maps"
 │   ├── useSepaImages.ts        # Hook: imágenes de varios EAN en una sola consulta (getSepaImages), acumuladas
+│   ├── useMyGroup.ts           # Hook: el grupo propio (my_group) con retry y refresh (spec 22)
+│   ├── useGroupPrices.ts       # Hook: precios del grupo de varios EAN (getGroupPrices), solo con sesión (spec 22)
+│   ├── GroupPricesCard.tsx     # Tarjeta "Precios del grupo" del detalle (spec 22)
 │   ├── useProductPhotos.ts     # Hook: object URL de la foto propia de cada producto (caché de módulo por id); baja
 │   │                           #   las que faltan con sesión; forgetPhotoUrl
 │   └── ProductImage.tsx        # Imagen del producto (40/48/64/160 px) o cuadro con la inicial si no hay o no carga
@@ -195,6 +204,9 @@ src/
     ├── photo-store.ts          # IndexedDB `el-changuito`: almacenes photos ({ id, blob, uploaded }) y photo_deletes
     ├── photo-sync.ts           # savePhoto, discardPhoto, syncPhotos (subir, borrar del bucket, limpiar), downloadPhoto,
     │                           #   deleteAllRemotePhotos, clearLocalPhotos, releaseLocalPhotos
+    ├── group.ts                # Grupos (spec 22): tipos, funciones puras (defaultNickname, validaciones, inviteUrl,
+    │                           #   groupErrorMessage, groupPriceFromRow, latestGroupPrices, groupPricesNear,
+    │                           #   groupPriceNote), llamadas a las funciones de la base y getGroupPrices (caché 5 min)
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
     │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
@@ -338,6 +350,28 @@ src/
   estado de la sincronización). Cerrar sesión u otro usuario vacían IndexedDB; una cuenta borrada desde otro
   dispositivo deja las fotos sin subir; **Borrar mi cuenta** borra antes los archivos de la carpeta del usuario y,
   si eso falla, no borra la cuenta
+- **Grupos y precios compartidos** ([SPEC 22](specs/22-grupos-y-precios-compartidos.md)) — con cuenta, **un grupo
+  a la vez** de hasta 20 integrantes (`group_members.user_id` único). Tablas `groups` y `group_members` con RLS y
+  **sin permisos directos**: todo pasa por funciones `security definer` (`search_path = ''`) que validan con
+  `auth.uid()` y levantan un código (`invalid_code`, `group_full`, `already_in_group`, `not_in_group`, `not_admin`,
+  `invalid_name`) que la app traduce con `groupErrorMessage` (supabase-js lo deja en `error.message`). Quien crea el
+  grupo lo administra; al salir (o borrar la cuenta) el trigger pasa el rol al integrante más antiguo, y el grupo
+  vacío se borra. Invitación: link permanente `/grupo/unirse?c=<código>` (12 caracteres url-safe), regenerable por
+  quien administra; `group_preview` (también sin sesión) da solo nombre y cantidad. `join_group(código, apodo,
+  p_leave)` con `p_leave` sale del grupo actual en la misma transacción ("Salir y unirme"; si el nuevo está completo
+  no sale de ninguno). Los integrantes se ven por **apodo**, nunca por mail. **Los precios no se copian**:
+  `group_prices(eans)` lee a pedido en `user_records` los de los **demás** integrantes con `share_prices`, de
+  productos con ese EAN, de los últimos 60 días (fechas ISO comparadas como texto), hasta 20 EAN por llamada, con
+  índices parciales por `(user_id, data->>'ean')` y `(user_id, data->>'productId')`. En la app,
+  `getGroupPrices` (de a 20 EAN) guarda la promesa por EAN **5 minutos** (también los "sin precios"; un fallo no
+  se guarda); `clearGroupPrices` la vacía y sube una versión que escuchan los hooks, al crear, unirse, salir, sacar
+  a alguien, cambiar **Compartir mis precios** y en `forgetAccount` (cerrar sesión, otra cuenta, cuenta borrada).
+  `useGroupPrices(eans)` solo consulta con sesión y devuelve por EAN `latestGroupPrices` (el último de cada
+  integrante en cada comercio, por precio y después el más nuevo); `groupPriceFromRow` arma el comercio desde
+  `storeRef` o `store` + `barrio` y descarta los que no tienen comercio. Buscar y el lector piden los precios del
+  grupo solo con ubicación (se muestran solo dentro del radio, `groupPricesNear`); el detalle, siempre.
+  El login desde la invitación vuelve a esa página (`signInWithGoogle(redirectTo)` / `sendEmailCode(…, redirectTo)`,
+  solo rutas propias; las Redirect URLs de Auth ya cubren `/**`)
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -404,6 +438,8 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/calculadora` | `app/calculadora/page.tsx` | Calculadora | Comparar presentaciones por precio unitario |
 | `/product/[id]` | `app/product/[id]/page.tsx` | — | Detalle del producto |
 | `/cuenta` | `app/cuenta/page.tsx` | — (ícono del header) | Entrar, estado de la sincronización, salir, borrar la cuenta |
+| `/grupo` | `app/grupo/page.tsx` | — (desde Cuenta) | Crear un grupo o, con grupo, invitar, integrantes, apodo, compartir, salir |
+| `/grupo/unirse` | `app/grupo/unirse/page.tsx` | — | Unirse con el link de invitación (`?c=<código>`) |
 | `/privacidad` | `app/privacidad/page.tsx` | — | Qué se guarda y cómo borrarlo |
 | otra | `app/not-found.tsx` | — | Redirige a `/` |
 
@@ -552,7 +588,9 @@ interface CalculatorState {
     comercios cercanos"
   - **¿Cuánto sale acá?** (propio o del catálogo; teclado decimal, no se guarda): con un monto mayor a 0,
     `shelfComparison` contra el más barato cercano ("Más barato que en los comercios cerca" en verde, "Igual que en
-    <cadena> — <distancia>" en azul, "En <cadena> — <distancia> sale $X menos" en rojo) o, sin cercanos con precio,
+    <cadena> — <distancia>" en azul, "En <cadena> — <distancia> sale $X menos" en rojo; el más barato puede ser un
+    precio del grupo dentro del radio, spec 22, y entonces la línea suma "(Ana · 12/11)"; a igual precio, el más
+    cerca) o, sin cercanos con precio,
     contra la referencia (`referenceLabel`); en un propio con precios, "La última vez pagaste $Y (dd/mm): $X más /
     menos" o "… lo mismo". Cada línea con flecha (hacia dónde está el precio de la góndola) y `aria-live`; sin nada
     contra qué comparar, "Sin precios para comparar". Con monto, **Agregar al carrito** entra en "Sin comercio" a ese
@@ -579,7 +617,10 @@ interface CalculatorState {
   `storeKey`), con "Cargado por vos · dd/mm": los de un comercio con coordenadas **dentro del radio** (spec 26,
   `ownPricesNear`) se mezclan con los de Precios Claros por precio y distancia, con su distancia y Mapa ("Más
   barato" cuenta también esos); los demás (sin coordenadas, fuera del radio) van al final, sin distancia ni Mapa.
-  `NearbyLine` resume solo Precios Claros. Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa", en
+  Con un grupo ([SPEC 22](specs/22-grupos-y-precios-compartidos.md)), los precios del grupo de un comercio con
+  coordenadas dentro del radio se mezclan igual, con "Cargado por Ana · 12/11", distancia, Mapa y Agregar (también
+  en los resultados del catálogo, que abren la lista aunque solo haya precios del grupo); fuera del radio solo se
+  ven en el detalle. `NearbyLine` resume solo Precios Claros. Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa", en
   ámbar con más de 7 días
   - **Agregar** en un comercio: crea el producto si no existe (`addSepaToCart` con `at`) y lo deja en el carrito
     con ese comercio y ese precio; si ya estaba, suma 1 y pasa a ellos. No registra precios
@@ -686,6 +727,11 @@ interface CalculatorState {
   "X % por encima…"; ±5 %), cadena más barata, rango y la lista por cadena. Sin EAN no consulta
 - Con EAN, tarjeta **Comercios cercanos** (`NearbyStoresCard`) después de la de referencia: la `LocationBar` y,
   con ubicación, el resumen y la misma lista de comercios de Buscar, con "Agregar" por comercio
+- Con EAN y precios del grupo, tarjeta **Precios del grupo** (`GroupPricesCard`, spec 22) después de Comercios
+  cercanos: una fila por precio (`latestGroupPrices`) con comercio, dirección o barrio, precio, "Cargado por Ana ·
+  12/11" y, con ubicación y coordenadas, la distancia ("aprox." con localidad); **Mapa** con coordenadas y
+  **Agregar** (en ese comercio y a ese precio). Hasta 10 y "Ver N más"; pie "Precios cargados por tu grupo en los
+  últimos 60 días." También fuera del radio y sin ubicación
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
 - Agregar al carrito con el precio actual
@@ -783,9 +829,35 @@ interface CalculatorState {
 - Con sesión: nombre y mail; "Sincronizado hace N min" / "Sincronizando…" / "N cambios sin subir · Sin conexión" /
   "No se pudo sincronizar" con **Reintentar**; **Cerrar sesión** (sincroniza antes; con pendientes, confirma "Hay N
   cambios sin subir. Si cerrás sesión, se pierden."; también borra las fotos del teléfono); **Borrar mi cuenta** con
-  confirmación (borra antes las fotos del bucket y después `delete_my_account`)
+  confirmación (borra antes las fotos del bucket y después `delete_my_account`; la membresía del grupo se borra en
+  cascada)
+- Sección **Grupo** (spec 22): el nombre del grupo y "N integrantes", o "Compartí precios con tu familia o tus
+  amigos" / "Crear o unirte a un grupo"; lleva a `/grupo`
 - Buscar sin productos propios: "Todavía no tenés productos" / "Buscá un producto en Precios Claros o leé su código
   de barras"
+
+### Grupo (`/grupo` y `/grupo/unirse`, [SPEC 22](specs/22-grupos-y-precios-compartidos.md))
+- No está en la barra de navegación: se llega desde Cuenta (link "Cuenta" con flecha para volver) o con el link de
+  invitación. Sin Supabase, "Los grupos no están disponibles"; sin sesión, "Entrá con tu cuenta para crear un grupo o
+  unirte a uno" con **Entrar**; "Cargando…" y, si falla `my_group`, "No se pudo cargar el grupo" con **Reintentar**
+- **Sin grupo**: "Compartí precios con tu familia o tus amigos", **Nombre del grupo** y **Tu nombre en el grupo**
+  (sugerido: la primera palabra del nombre de la cuenta, `defaultNickname`) y **Crear grupo**; debajo, "Para unirte a
+  un grupo, pedile el link a alguien que ya esté."
+- **Con grupo**: el nombre como título (quien administra: **Cambiar nombre** en línea, Enter guarda y Escape
+  cancela) con las iniciales de los integrantes y "Vos y N integrantes más"; **Invitar**: el link en un campo de
+  solo lectura, **Copiar link** (aviso fijo "Link copiado", 3 s), **Compartir** (con `navigator.share`: "Sumate a
+  <grupo> en El Changuito") y, para quien administra, **Generar link nuevo** (confirma "El link anterior deja de
+  servir."); **Integrantes (N de 20)** con la inicial, el apodo, "Vos" y "Administra", y **Sacar** para quien
+  administra (`ConfirmDialog`); **Tu nombre en el grupo** (Guardar aparece al cambiarlo); el interruptor
+  **Compartir mis precios** (`role="switch"`) con qué ve el grupo; **Salir del grupo** en rojo con `ConfirmDialog`
+  ("Sos el único integrante: al salir se borra el grupo." si está solo). Los errores van junto a su sección
+  (`role="alert"`); `not_in_group` o `not_admin` vuelven a pedir el grupo
+- **Unirse** (`/grupo/unirse?c=…`): "Te invitaron a <grupo> (N integrantes)" (`group_preview`, también sin sesión).
+  Sin sesión, `SignInForm` con "Entrá con tu cuenta para unirte" y la vuelta del login a esta página; sin grupo,
+  **Tu nombre en el grupo**, qué ve el grupo y **Unirme al grupo**; en este grupo, "Ya estás en este grupo" con **Ver
+  el grupo**; en otro, "Ya estás en <actual>. Para unirte a <nuevo> tenés que salir de ese." y **Salir y unirme**
+  (`ConfirmDialog`). Código inexistente o regenerado: "El link de invitación no es válido o cambió. Pedile uno nuevo
+  a alguien del grupo."; completo: "El grupo está completo (20 integrantes)."; al unirse, lleva a `/grupo`
 
 ### Calculadora de precio unitario (`/calculadora`)
 - Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
@@ -903,6 +975,8 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_cargas` | Registro de cada ejecución: estado `ok` / `omitida` / `error`, conteos, omitidos y detalle |
 | `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
 | `user_records` | Datos de cada usuario (spec 21): `user_id`, `collection` (`products` / `prices` / `cart` / `purchases` / `settings`), `id`, `data` (JSON del registro), `deleted`, `modified_at` (dispositivo; gana el último) y `synced_at` (servidor; cursor). RLS: cada usuario lee, crea y modifica solo sus filas; sin delete. Trigger `user_records_touch`; `delete_my_account()` borra el usuario y sus filas en cascada |
+| `groups` | Grupos (spec 22): `id`, `name` (1–40), `invite_code` (único) y `created_at`. RLS sin políticas ni permisos: solo las funciones |
+| `group_members` | Integrantes (spec 22): `group_id`, `user_id` (único: un grupo a la vez; cascada al borrar la cuenta), `nickname` (1–30), `role` (`admin` / `member`), `share_prices` y `joined_at`. Trigger `group_members_after_delete` (nuevo administrador o grupo borrado). Funciones: `create_group`, `group_preview` (también `anon`), `join_group`, `my_group`, `rename_group`, `regenerate_invite`, `remove_member`, `set_nickname`, `set_share_prices`, `leave_group` y `group_prices` |
 
 - **Storage** (spec 27): bucket **privado** `fotos-propias`, JPEG de hasta 300 KB (`file_size_limit` 307200,
   `allowed_mime_types` `image/jpeg`), un archivo por foto en `<user_id>/<id>.jpg`. Políticas en `storage.objects`
@@ -1161,7 +1235,9 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Cuenta optativa con Google o código por mail y sincronización de los datos con Supabase (spec 21)
 - [x] Fotos propias de los productos: comprimidas, en el teléfono y con cuenta en un bucket privado; "Solo la ves
   vos" (spec 27)
-- [ ] Supabase: grupos, precios compartidos y validación (specs 22 y 23), tiempo real (Fase 2)
+- [x] Grupos con link de invitación y precios compartidos en Comercios cercanos, "¿Cuánto sale acá?" y el detalle
+  (spec 22)
+- [ ] Supabase: validación de precios (spec 23), tiempo real (Fase 2)
 
 ---
 

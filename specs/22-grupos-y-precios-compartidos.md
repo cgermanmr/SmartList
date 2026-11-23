@@ -1,6 +1,6 @@
 # SPEC 22 — Grupos y precios compartidos
 
-> **Estado:** Aprobada
+> **Estado:** Implementado
 > **Depende de:** [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 24](24-comercios-cercanos-en-el-lector.md), [SPEC 26](26-cargar-precio-en-el-comercio.md)
 > **Fecha:** 2026-11-23
 > **Objetivo:** Crear un grupo, invitar con un link y ver los precios que cargaron los demás integrantes en productos con código de barras ("Cargado por Ana · 12/11") en Comercios cercanos, "¿Cuánto sale acá?" y el detalle del producto.
@@ -212,7 +212,7 @@ la app traduce (`groupErrorMessage`): `invalid_code`, `group_full`, `already_in_
 |---|---|
 | `create_group(p_name, p_nickname) → uuid` | Crea el grupo con un código nuevo y al que llama como `admin` |
 | `group_preview(p_code) → (name, members)` | Nombre y cantidad de integrantes de un código; nada si no existe |
-| `join_group(p_code, p_nickname) → uuid` | Se une como `member`; controla el límite de 20 y que no esté en otro |
+| `join_group(p_code, p_nickname, p_leave default false) → uuid` | Se une como `member`; controla el límite de 20 y que no esté en otro; con `p_leave` sale antes del actual en la misma transacción ("Salir y unirme") |
 | `my_group() → jsonb` | `null` sin grupo; si no, `{ id, name, inviteCode, role, sharePrices, nickname, members: [{ userId, nickname, role, joinedAt }] }` |
 | `rename_group(p_name)` | Solo `admin` |
 | `regenerate_invite() → text` | Solo `admin`; devuelve el código nuevo |
@@ -220,7 +220,7 @@ la app traduce (`groupErrorMessage`): `invalid_code`, `group_full`, `already_in_
 | `set_nickname(p_nickname)` | El propio |
 | `set_share_prices(p_share boolean)` | El propio |
 | `leave_group()` | Borra la fila propia (el trigger hace el resto) |
-| `group_prices(p_eans text[])` | `(ean, amount, date, store, barrio, store_ref jsonb, member)` de los otros integrantes con `share_prices`, últimos 60 días; ignora lo que pase de 20 EAN |
+| `group_prices(p_eans text[])` | `(ean, amount, date, store, barrio, store_ref jsonb, member, member_id)` de los otros integrantes con `share_prices`, últimos 60 días; ignora lo que pase de 20 EAN |
 
 ### En la app
 
@@ -250,6 +250,7 @@ export interface GroupPrice {
   date: string;       // ISO
   store: StoreRef;    // storeRef, o { name: store, barrio } si el precio es de antes de la spec 26
   member: string;     // apodo actual
+  memberId: string;   // user_id: distingue a dos integrantes con el mismo apodo
 }
 ```
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { GroupNearPrice } from './group';
 import type { NearbyPrice } from './sepa';
 import { shelfComparison } from './shelf-price';
 
@@ -52,6 +53,61 @@ describe('shelfComparison · comercios cercanos', () => {
 });
 
 // ── Contra la referencia ────────────────────────────────────
+// ── Con precios del grupo (spec 22) ─────────────────────────
+function mate(amount: number, distanceKm = 0.25, store = 'Almacén Don Luis'): GroupNearPrice {
+  return {
+    price: {
+      ean: '7790387000016', amount, date: '2026-11-12T15:00:00.000Z', store: { name: store, lat: -34.6, lng: -58.4 },
+      member: 'Ana', memberId: 'u2',
+    },
+    distanceKm,
+  };
+}
+
+describe('shelfComparison · precios del grupo', () => {
+  const nearby = [near(3890), near(4050, 'Coto', 0.8, '2-1-1')];
+
+  it('el del grupo es el más barato: la línea suma quién y cuándo', () => {
+    expect(shelfComparison({ price: 4300, nearby, group: [mate(3200)] })).toEqual([
+      { text: 'En Almacén Don Luis — 250 m sale $1.100,00 menos (Ana · 12/11)', tone: 'bad' },
+    ]);
+  });
+
+  it('igual al del grupo', () => {
+    expect(shelfComparison({ price: 3200, nearby, group: [mate(3200)] })).toEqual([
+      { text: 'Igual que en Almacén Don Luis — 250 m (Ana · 12/11)', tone: 'same' },
+    ]);
+  });
+
+  it('más barato que todos, sin cambios', () => {
+    expect(shelfComparison({ price: 3000, nearby, group: [mate(3200)] })).toEqual([
+      { text: 'Más barato que en los comercios cerca', tone: 'good' },
+    ]);
+  });
+
+  it('del grupo, el más barato y, a igual precio, el más cerca', () => {
+    const group = [mate(3500, 1.2, 'Lejos'), mate(3300, 0.9, 'Kiosco'), mate(3300, 0.4, 'Cerca')];
+    expect(shelfComparison({ price: 3400, group })[0].text).toBe('En Cerca — 400 m sale $100,00 menos (Ana · 12/11)');
+  });
+
+  it('a igual precio entre Precios Claros y el grupo, el más cerca', () => {
+    expect(shelfComparison({ price: 4000, nearby, group: [mate(3890, 0.2)] })[0].text)
+      .toBe('En Almacén Don Luis — 200 m sale $110,00 menos (Ana · 12/11)');
+    expect(shelfComparison({ price: 4000, nearby, group: [mate(3890, 0.9)] })[0].text)
+      .toBe('En Día — 600 m sale $110,00 menos');
+  });
+
+  it('solo del grupo, sin Precios Claros cerca, no compara contra la referencia', () => {
+    expect(shelfComparison({ price: 3000, group: [mate(3200)], reference: 3500 })).toEqual([
+      { text: 'Más barato que en los comercios cerca', tone: 'good' },
+    ]);
+  });
+
+  it('sin cercanos de ninguno, la referencia como antes', () => {
+    expect(shelfComparison({ price: 3000, nearby: [], group: [], reference: 3500 })[0].tone).toBe('good');
+  });
+});
+
 describe('shelfComparison · referencia', () => {
   it('sin cercanos con precio, por debajo de la referencia', () => {
     expect(shelfComparison({ price: 900, nearby: [], reference: 1000 })).toEqual([

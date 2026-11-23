@@ -7,11 +7,13 @@ import { AddToCartButton, EditLink } from '@/components/CatalogActions';
 import NearbyStores, { NearbyLine } from '@/components/NearbyStores';
 import ProductImage from '@/components/ProductImage';
 import SepaPriceTable, { Chevron, ReferenceLine } from '@/components/SepaPriceTable';
+import { useGroupPrices } from '@/components/useGroupPrices';
 import { useNearbyPrices } from '@/components/useNearby';
 import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
 import { formatDayMonth, formatMoney } from '@/lib/format';
+import { groupPricesNear } from '@/lib/group';
 import { uniqueId } from '@/lib/ids';
 import { Product, StoreRef } from '@/lib/models';
 import { productImageSrc } from '@/lib/photo';
@@ -59,6 +61,8 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
   const photoUrl = useProductPhotos(scan.status === 'own' ? [scan.product] : []);
   // Un useNearbyPrices propio: la oferta no depende de la búsqueda de texto; la caché evita pedir dos veces
   const nearby = useNearbyPrices(eans);
+  // Precios del grupo (spec 22): solo los de dentro del radio, así que solo con ubicación
+  const groupPrices = useGroupPrices(location ? eans : []).get(scan.ean);
   const [now] = useState(() => new Date());
   const [pricesOpen, setPricesOpen] = useState(false);
   // Precio de la góndola: no se guarda; la oferta se vuelve a montar con cada código (key={scan.ean})
@@ -107,17 +111,20 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
   const near = known ? nearby.get(scan.ean) : undefined;
   // En un propio, sus precios cargados a mano con comercio van al final de la lista, como en las tarjetas de Buscar
   const ownStorePrices = own && near !== undefined ? getRecentStorePrices(prices, own.id, now) : [];
+  const groupNear = Array.isArray(near) ? groupPricesNear(groupPrices ?? [], location ?? undefined, nearby.radiusKm) : [];
   const hasNear = Array.isArray(near) && near.length > 0;
-  const showList = Array.isArray(near) && near.length + ownStorePrices.length > 0;
+  const showList = Array.isArray(near) && near.length + ownStorePrices.length + groupNear.length > 0;
   const showSummary = !hasNear && near !== 'loading' && summary !== undefined;
   const askLocation = sepaEnabled && location === null;
 
   // ── ¿Cuánto sale acá? ──────────────────────────────────────
-  // Contra el más barato cercano; si no hay cercanos con precio, contra la referencia; y contra el último propio
+  // Contra el más barato cercano (de Precios Claros o del grupo); si no hay cercanos con precio, contra la
+  // referencia; y contra el último propio
   const comparing = near === 'loading' || lookup.isLoading(scan.ean);
   const shelfLines = hasShelfPrice ? shelfComparison({
     price: shelfPrice,
     nearby: hasNear ? near : undefined,
+    group: groupNear,
     approx: nearby.approx,
     reference: near === 'loading' ? undefined : summary?.reference,
     last: last && { amount: last.amount, date: last.date },
@@ -200,6 +207,7 @@ export default function ScanOffer({ scan, onAdded, onMap }: Props) {
                 prices={near}
                 approx={nearby.approx}
                 ownPrices={ownStorePrices}
+                groupPrices={groupPrices}
                 origin={location ?? undefined}
                 radiusKm={nearby.radiusKm}
                 limit={OPEN_STORES}

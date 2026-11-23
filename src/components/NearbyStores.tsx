@@ -4,6 +4,7 @@ import { Map as MapIcon } from 'lucide-react';
 import { useState } from 'react';
 import { formatDayMonth, formatIsoDate, formatMoney } from '@/lib/format';
 import { formatDistance, LatLng } from '@/lib/geo';
+import { GroupPrice, groupPriceNote, groupPricesNear } from '@/lib/group';
 import { Price, StoreRef } from '@/lib/models';
 import { ownPricesNear } from '@/lib/price-form';
 import { isStaleDate, latestBranchDate, NearbyPrice, storeRefFromBranch } from '@/lib/sepa';
@@ -56,7 +57,12 @@ interface Props {
    * con los de Precios Claros, con su distancia y Mapa (spec 26); los demás van al final, sin distancia
    */
   ownPrices?: Price[];
-  /** Ubicación de la app y radio: para la distancia de los precios propios */
+  /**
+   * Precios del grupo de este producto (spec 22, latestGroupPrices): solo los de un comercio con coordenadas dentro
+   * del radio, mezclados con los demás con su distancia, "Cargado por Ana · 12/11" y Mapa
+   */
+  groupPrices?: GroupPrice[];
+  /** Ubicación de la app y radio: para la distancia de los precios propios y del grupo */
   origin?: LatLng;
   radiusKm?: number;
   /** Elegir un comercio con su precio; sin esto las filas no llevan botón */
@@ -79,7 +85,7 @@ interface Row {
   detail: string;
   /** Distancia, o "Cargado por vos · dd/mm" */
   aside: string;
-  /** "Cargado por vos · dd/mm" debajo, en un precio propio con distancia */
+  /** "Cargado por vos · dd/mm" (o "Cargado por Ana · dd/mm") debajo, en un precio propio o del grupo con distancia */
   note?: string;
   distanceKm: number;
   cheapest: boolean;
@@ -91,9 +97,12 @@ function ownLabel(price: Price): string {
   return `Cargado por vos · ${formatDayMonth(price.date)}`;
 }
 
-function ownDetail(price: Price): string {
-  const store = priceStoreRef(price);
+function storeDetail(store: StoreRef): string {
   return store.address ? [store.address, store.barrio].filter(Boolean).join(', ') : store.barrio ?? '';
+}
+
+function ownDetail(price: Price): string {
+  return storeDetail(priceStoreRef(price));
 }
 
 /**
@@ -101,10 +110,11 @@ function ownDetail(price: Price): string {
  * de los cercanos (empatados, todos) se marca con fondo y con texto, no solo con color. En 375 px cada fila apila
  * nombre y dirección arriba y precio y botón abajo.
  */
-export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], origin, radiusKm, onChoose, action = 'Agregar', currentKey, onMap, limit = VISIBLE_STORES }: Props) {
+export default function NearbyStores({ id, productName, prices, approx, ownPrices = [], groupPrices = [], origin, radiusKm, onChoose, action = 'Agregar', currentKey, onMap, limit = VISIBLE_STORES }: Props) {
   const [showAll, setShowAll] = useState(false);
   const [today] = useState(() => new Date());
   const own = ownPricesNear(ownPrices, origin, radiusKm);
+  const group = groupPricesNear(groupPrices, origin, radiusKm);
 
   // Sucursales y precios propios dentro del radio, por precio y después distancia
   const near: Row[] = [
@@ -125,6 +135,17 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
       detail: ownDetail(p),
       aside: distanceLabel(distanceKm, approx),
       note: ownLabel(p),
+      distanceKm,
+      cheapest: false,
+      mappable: true,
+    })),
+    ...group.map(({ price: p, distanceKm }) => ({
+      key: `grupo-${p.memberId}-${storeKey(p.store)}`,
+      store: p.store,
+      price: p.amount,
+      detail: storeDetail(p.store),
+      aside: distanceLabel(distanceKm, approx),
+      note: groupPriceNote(p),
       distanceKm,
       cheapest: false,
       mappable: true,

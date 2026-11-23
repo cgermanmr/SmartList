@@ -36,9 +36,13 @@ export function isIosStandalone(userAgent: string, standalone: boolean): boolean
   return standalone && /iPhone|iPad|iPod/.test(userAgent);
 }
 
-/** Vuelta del login: la página de la cuenta, en el mismo origen (local, preview o producción) */
-function returnUrl(): string {
-  return `${window.location.origin}/cuenta`;
+/**
+ * Vuelta del login, en el mismo origen (local, preview o producción): la página de la cuenta o, desde la invitación a
+ * un grupo (spec 22), esa página. Solo rutas propias: una que no empieza con una sola barra vuelve a /cuenta
+ */
+function returnUrl(path = '/cuenta'): string {
+  const safe = path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\') ? path : '/cuenta';
+  return `${window.location.origin}${safe}`;
 }
 
 function client() {
@@ -46,16 +50,16 @@ function client() {
   return supabase;
 }
 
-export async function signInWithGoogle(): Promise<void> {
-  const { error } = await client().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: returnUrl() } });
+export async function signInWithGoogle(redirectTo?: string): Promise<void> {
+  const { error } = await client().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: returnUrl(redirectTo) } });
   if (error) throw error;
 }
 
 /** Manda el mail con el código y el link */
-export async function sendEmailCode(email: string): Promise<void> {
+export async function sendEmailCode(email: string, redirectTo?: string): Promise<void> {
   const { error } = await client().auth.signInWithOtp({
     email: email.trim(),
-    options: { emailRedirectTo: returnUrl(), shouldCreateUser: true },
+    options: { emailRedirectTo: returnUrl(redirectTo), shouldCreateUser: true },
   });
   if (error) throw error;
 }

@@ -4,6 +4,7 @@ import { ArrowLeft, Camera, ImageOff, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import GroupPricesCard from '@/components/GroupPricesCard';
 import NearbyStoresCard from '@/components/NearbyStoresCard';
 import { PhotoStatus, usePhotoPicker } from '@/components/PhotoField';
 import PriceChart from '@/components/PriceChart';
@@ -221,6 +222,7 @@ export default function ProductDetail() {
 
       {/* Comercios cerca de la ubicación que tienen el producto: solo con EAN */}
       <NearbyStoresCard product={product} />
+      <GroupPricesCard product={product} />
 
       {/* Gráfico de evolución de precios (solo si hay más de 3 registros) */}
       {prices.length > 3 && (

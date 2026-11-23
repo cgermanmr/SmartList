@@ -26,7 +26,23 @@ export default function PrivacyPage() {
           Supabase (servidores en la nube) y solo tu cuenta puede leerlos.
         </p>
         <p>
-          Tus precios son privados: no se comparten con otras personas.
+          Tus precios son privados: no se comparten con otras personas, salvo con tu grupo si te unís a uno.
+        </p>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Grupos</h2>
+        <p>
+          Si creás un grupo o te unís a uno, los demás integrantes ven tus precios de productos con código de barras de
+          los últimos 60 días: el monto, la fecha y el comercio con su dirección y su ubicación. También ven el nombre
+          que elegiste para el grupo. Nunca ven tu mail ni tus otros datos (productos sin código, carrito, compras,
+          fotos).
+        </p>
+        <p>
+          Los precios no se copian: se consultan en el momento a tu cuenta. Dejás de compartirlos al apagar{' '}
+          <strong>Compartir mis precios</strong>, al salir del grupo o al borrar la cuenta, y desde ahí el grupo ya no
+          los ve (como mucho 5 minutos después, en un teléfono que ya los tenía en pantalla). Quien administra el grupo
+          también puede sacarte.
         </p>
       </section>
 
@@ -63,7 +79,7 @@ export default function PrivacyPage() {
         <p>
           En <Link href="/cuenta" className="font-semibold text-primary-700 underline underline-offset-2">Cuenta</Link>,
           {' '}<strong>Borrar mi cuenta</strong> elimina tu cuenta y todos tus datos guardados, fotos incluidas, en todos
-          tus dispositivos. No se puede deshacer. Cerrar sesión borra los datos y las fotos de este teléfono; siguen en
+          tus dispositivos, y te saca de tu grupo. No se puede deshacer. Cerrar sesión borra los datos y las fotos de este teléfono; siguen en
           tu cuenta.
         </p>
       </section>
