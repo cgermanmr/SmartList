@@ -30,10 +30,10 @@ export function useGroupPrices(eans: readonly (string | undefined)[]): Map<strin
   const [answered, setAnswered] = useState<Answered>(NONE);
 
   useEffect(() => {
-    if (!active) return undefined;
+    if (!active || !userId) return undefined;
     let stale = false;
     const requested = key.split(',');
-    getGroupPrices(requested).then(
+    getGroupPrices(userId, requested).then(
       byEan => {
         if (stale) return;
         setAnswered(prev => {
@@ -49,7 +49,7 @@ export function useGroupPrices(eans: readonly (string | undefined)[]): Map<strin
       () => { /* sin conexión o sin Supabase: la pantalla queda sin precios del grupo */ },
     );
     return () => { stale = true; };
-  }, [active, key, owner]);
+  }, [active, key, owner, userId]);
 
   return active && answered.owner === owner ? answered.prices : EMPTY;
 }

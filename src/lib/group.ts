@@ -265,13 +265,17 @@ export function subscribeGroupPrices(listener: () => void): () => void {
   return () => { listeners.delete(listener); };
 }
 
-/** Precios del grupo de varios EAN (todos, sin filtrar por comercio): una consulta de a 20 con los que faltan */
-export async function getGroupPrices(eans: string[]): Promise<Map<string, GroupPrice[]>> {
+/**
+ * Precios del grupo de varios EAN (todos, sin filtrar por comercio): una consulta de a 20 con los que faltan. La caché
+ * va por cuenta + EAN: si la sesión vence y entra otra cuenta sin cerrar sesión, no ve lo que se le respondió a la otra
+ */
+export async function getGroupPrices(userId: string, eans: string[]): Promise<Map<string, GroupPrice[]>> {
   if (!supabase) return new Map();
   const now = Date.now();
   const unique = [...new Set(eans)];
+  const keyOf = (ean: string) => `${userId}|${ean}`;
   const missing = unique.filter(ean => {
-    const entry = groupPriceCache.get(ean);
+    const entry = groupPriceCache.get(keyOf(ean));
     return !entry || now - entry.at > GROUP_PRICE_TTL_MS;
   });
 
@@ -279,15 +283,17 @@ export async function getGroupPrices(eans: string[]): Promise<Map<string, GroupP
     const batch = missing.slice(i, i + GROUP_PRICE_BATCH);
     const request = fetchGroupPrices(batch);
     for (const ean of batch) {
+      const key = keyOf(ean);
       const entry: CacheEntry = { at: now, prices: request.then(byEan => byEan.get(ean) ?? []) };
-      groupPriceCache.set(ean, entry);
+      groupPriceCache.set(key, entry);
       entry.prices.catch(() => {
-        if (groupPriceCache.get(ean) === entry) groupPriceCache.delete(ean);
+        if (groupPriceCache.get(key) === entry) groupPriceCache.delete(key);
       });
     }
   }
 
-  const entries = await Promise.all(unique.map(async ean => [ean, await groupPriceCache.get(ean)!.prices] as const));
+  const entries = await Promise.all(
+    unique.map(async ean => [ean, await groupPriceCache.get(keyOf(ean))!.prices] as const));
   return new Map(entries);
 }
 
