@@ -93,14 +93,17 @@ supabase/
 │                               #   20261124000000_validacion_endurecer.sql (huella del precio votado, spec 23)
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
-├── manifest.json               # PWA: tema #5b2a86, display standalone
 ├── icon.svg                    # Ícono de la app y favicon (changuito amarillo sobre berenjena)
-└── icon-maskable.svg           # El mismo dibujo en el 60 % central, con el fondo a sangre (purpose maskable)
+├── icon-maskable.svg           # El mismo dibujo en el 60 % central, con el fondo a sangre (purpose maskable)
+├── icon-dev.svg, icon-local.svg # Los de DEV y LOCAL (spec 32): colores invertidos y cinta con el texto en trazos
+└── icon-dev-maskable.svg, icon-local-maskable.svg # Los mismos para el recorte redondo
 src/
 ├── app/                        # App Router: cada carpeta = ruta, page.tsx = página
 │   ├── layout.tsx              # Header (Logo, AppName, WhatsAppButton, CartSummary), NavBar,
 │   │                           #   <StoreHydrator>{children}, footer (desde md); fuentes de next/font, metadata
 │   │                           #   (con Open Graph) y viewport
+│   ├── apple-icon.tsx          # apple-touch-icon: PNG de 180 × 180 del entorno (ImageResponse, en el build; spec 32)
+│   ├── manifest.json/route.ts  # Manifest de la PWA según el entorno, estático (spec 32)
 │   ├── opengraph-image.tsx     # Imagen de la vista previa del link (1200 × 630, ImageResponse, en el build; spec 30)
 │   ├── globals.css             # Tailwind v4 + @theme (primary, accent, gray, fuentes) + @layer components
 │   ├── page.tsx                # Buscar
@@ -125,6 +128,7 @@ src/
 ├── assets/                     # Rubik-SemiBold.ttf (OFL, Rubik-OFL.txt) para opengraph-image: el build no la descarga
 ├── components/
 │   ├── AppName.tsx             # "El Changuito" en el header; con carrito y menos de 430 px, sr-only (spec 30)
+│   ├── EnvBadge.tsx            # Etiqueta DEV / LOCAL del header; nada en producción (spec 32)
 │   ├── WhatsAppButton.tsx      # Link de WhatsApp para compartir la app (spec 30)
 │   ├── WhatsAppIcon.tsx        # Logo de WhatsApp en SVG propio (currentColor)
 │   ├── ShareCartLink.tsx       # "Compartir por WhatsApp" de un carrito, un comercio o una compra (spec 31): botón o
@@ -232,6 +236,8 @@ src/
     │                           #   fetchPendingValidations, fetchOwnPriceVotes; spec 23)
     ├── price-validation.ts     # Validación (spec 23): tipos, priceValidation, myVote, validationSummary,
     │                           #   pendingValidations, votesFromJson, ownVotesByPrice
+    ├── app-env.ts              # Entorno del build (spec 32): resolveAppEnv (lo usa next.config.ts), APP_ENV, envLabel,
+    │                           #   installName, pageTitle, iconPath y buildManifest
     ├── share.ts                # Compartir (spec 30): APP_URL, APP_DESCRIPTION, SHARE_TEXT y whatsappUrl (wa.me)
     ├── shared-cart.ts          # Compartir el carrito (spec 31): sharedFromItems, shareMessage, encodeSharedCart /
     │                           #   decodeSharedCart, findSharedPayload, sharedCartUrl, resolveSharedCart
@@ -267,6 +273,10 @@ src/
   de estado durante el render), no con una `key` que borraría lo escrito.
   `Date.now()` / `Math.random()` no pueden ejecutarse durante el prerender: generarlos en handlers o en funciones
   que se llamen en el cliente (`defaultPrices()`, `newId()`).
+- **Entorno del build** ([SPEC 32](specs/32-identificar-version-dev.md)) — `next.config.ts` lo calcula una vez con
+  `resolveAppEnv` (variables `VERCEL` y `VERCEL_ENV`) y lo escribe en el código (`env: { APP_ENV }`): `production`
+  (sin marca), `preview` (**DEV**: `dev` y los PR) o `local` (**LOCAL**: fuera de Vercel). En Vercel sin un
+  `VERCEL_ENV` conocido, **el build falla**. Todo lo que cambia por entorno sale de `APP_ENV` (`lib/app-env.ts`)
 - **Validación de navegación instantánea** — `experimental.instantInsights.validationLevel: 'manual-warning'` en
   `next.config.ts`: solo se validan los segmentos que exporten `instant`.
 - **Estado (Zustand)** — un único `useStore` en `src/lib/store.ts`. Las páginas leen con selectores
@@ -990,8 +1000,15 @@ interface CalculatorState {
 - **Contador del carrito** (`CartBadge`) en amarillo sobre el ícono de su pestaña; "99+" si pasa de 99
 - **Footer** solo desde `md`
 - **Áreas seguras**: `viewportFit: 'cover'` y `env(safe-area-inset-*)` en el header y la barra inferior
-- `manifest.json` con `display: standalone` → instalable desde el navegador; `theme-color` en `viewport` del layout.
-  Dos íconos SVG: `icon.svg` (`any`) e `icon-maskable.svg` (`maskable`). No hay `apple-touch-icon` en PNG
+- **DEV y LOCAL** ([SPEC 32](specs/32-identificar-version-dev.md)): fuera de producción cambian el nombre instalado
+  ("DEV Changuito" / "LOCAL Changuito"), el título de la pestaña ("DEV · El Changuito", con `template` en la metadata),
+  los íconos (colores invertidos y cinta) y el header, con la etiqueta `EnvBadge` al lado del nombre, dentro del link a
+  `/` (`aria-label="El Changuito, versión DEV"`). La etiqueta se ve siempre: cede el nombre y, a 320 px con carrito, el
+  logo. La vista previa del link y lo que se comparte son los de producción
+- `/manifest.json` (route handler: `app/manifest.ts` cambiaría la dirección) con `display: standalone` → instalable
+  desde el navegador; en producción su contenido no cambia. `theme-color` en `viewport` del layout. Dos íconos SVG por
+  entorno (`any` y `maskable`) y, para el iPhone, `apple-icon.tsx` en PNG opaco. El link `apple-touch-icon` va en
+  `icons.apple` de la metadata: con `icons` definido, Next no agrega solo el del archivo
 - **No hay service worker**: la app no funciona offline sin conexión inicial (los datos sí persisten en localStorage)
 
 ---
@@ -1027,7 +1044,7 @@ npm run sepa:images # Imágenes de productos → sepa_imagenes (ver Base de prec
 - **Datos viejos / de ejemplo** — DevTools → Application → Local Storage → borrar las claves `preciolocal_*`
 - **`LayoutProps` no encontrado en `tsc`** — es un tipo global que genera Next: correr `npm run build` (o `npx next typegen`)
 - **Build falla por `useParams`/`usePathname` fuera de Suspense o por `Date.now()` en prerender** — ver *Cache Components* en Arquitectura
-- **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `manifest.json` válido
+- **PWA no se instala** — requiere HTTPS (automático en Vercel) y un `/manifest.json` válido
 - **No aparece el botón del lector de códigos** — el navegador no tiene `getUserMedia`: pasa sin HTTPS (por ejemplo, abriendo la app
   desde otro equipo por la IP local). Para probar en el celular, usar la URL de preview de Vercel
 - **"Sin permiso para usar la cámara"** — el permiso quedó bloqueado para el sitio: habilitarlo desde el candado de la
@@ -1195,7 +1212,7 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 | `primary-700` | `#5b2a86` | **Color de marca** (header, botones, pestaña activa, `theme_color` PWA) |
 | `primary-800` | `#48216b` | Hover de `.btn-primary` |
 | `primary-900` | `#371a52` | `active` de `.btn-primary`, aviso de Buscar |
-| `accent-400` | `#ffd23f` | **Acento** (amarillo cartel): solo logo y contador del carrito |
+| `accent-400` | `#ffd23f` | **Acento** (amarillo cartel): logo, contador del carrito y, en DEV y LOCAL, etiqueta e íconos |
 | `gray-50` | `#faf8fc` | Fondo de la app, `background_color` PWA |
 | `gray-200` | `#e7e2ee` | Bordes de tarjetas |
 | `gray-500` | `#6f6780` | Texto secundario (el más claro permitido sobre blanco) |
@@ -1210,7 +1227,7 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 - Formas: `.card` con `rounded-2xl`; botones e inputs con `rounded-xl` y 44 px de alto; inputs con texto de 16 px
   (regla global, para que el iPhone no haga zoom al enfocarlos)
 - Ningún hex de marca en componentes: en SVG se usa `var(--color-primary-700)` (ver `PriceChart`). Excepción:
-  `opengraph-image.tsx`, que se dibuja sin CSS
+  `opengraph-image.tsx` y `apple-icon.tsx`, que se dibujan sin CSS
 
 ---
 ## Build y Despliegue
@@ -1266,6 +1283,10 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
   el portal o deja de encontrar imágenes, `gh workflow disable sepa-images.yml` y
   `Enable-ScheduledTask 'El Changuito - SEPA imagenes'` (o `install-tasks.ps1 -EnableImages`)
 - **Vercel** — proyecto `elchanguito`, repo `cgermanmr/SmartList`; **`main` → producción** (https://elchanguito.vercel.app), `dev` y PRs → URL de preview automática
+  - El build necesita `VERCEL_ENV` (spec 32): dejar encendida *Settings → Environment Variables → Automatically expose
+    System Environment Variables*. Si falla con "No se conoce el entorno de Vercel…", está apagada. Sin ella y sin
+    `VERCEL`, producción saldría como LOCAL: mirar la preview de `dev` antes de mergear a `main`
+  - Un build de otro entorno en la computadora: `VERCEL=1 VERCEL_ENV=production npm run build` (y lo mismo con `npm start`)
 - Flujo: rama por spec desde `dev` → merge a `dev` (preview) → merge `dev` → `main` (producción)
 - **Cuenta (spec 21), configuración de Auth en `supabase/config.toml`** (se aplica con `npx supabase config diff` y
   `npx supabase config push`): Site URL `https://elchanguito.vercel.app`; Redirect URLs `http://localhost:4200/**`,
@@ -1287,7 +1308,7 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Vercel y `.env.local` | App: lectura del catálogo y los precios SEPA (specs 10 y 12) |
 | `SUPABASE_DB_URL` | `.env.local` (lo usan las tareas programadas) y secret de GitHub Actions | ETL SEPA: cadena del *Session pooler* (puerto 5432). **Nunca** con prefijo `NEXT_PUBLIC_` |
 
-- El build no necesita ninguna variable de entorno: sin las de Supabase, la app funciona sin el catálogo
+- El build no necesita cargar ninguna variable de entorno (`VERCEL` y `VERCEL_ENV` las pone Vercel): sin las de Supabase, la app funciona sin el catálogo
 
 ### Instalar en el móvil
 
@@ -1355,6 +1376,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   como el más barato), página "Por validar" y los votos en el historial del autor (spec 23)
 - [x] Compartir la app por WhatsApp desde el header y vista previa del link con imagen (spec 30)
 - [x] Compartir por WhatsApp el carrito, un comercio o una compra, con un link que muestra la lista y la carga (spec 31)
+- [x] Versiones DEV y LOCAL distinguibles por nombre, ícono, título y etiqueta en el header; ícono PNG para el iPhone
+  (spec 32)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---

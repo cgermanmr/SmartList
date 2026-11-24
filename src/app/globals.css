@@ -13,7 +13,8 @@
   --color-primary-800: #48216b;
   --color-primary-900: #371a52;
 
-  /* Acento (amarillo cartel): es de marca, no de estado. Solo en el logo y el contador del carrito */
+  /* Acento (amarillo cartel): es de marca, no de estado. Solo en el logo, el contador del carrito y la
+     etiqueta de DEV y LOCAL */
   --color-accent-100: #fff4cc;
   --color-accent-400: #ffd23f;
   --color-accent-500: #f5be0b;

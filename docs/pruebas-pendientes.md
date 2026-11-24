@@ -162,6 +162,20 @@ Antes de la producción, cambiar a mano el dominio del link por el de la preview
       compartido) muestra la vista previa. En la app instalada y en Android no aparece el aviso.
 - [ ] **57.** Con sesión, el carrito cargado y los productos nuevos aparecen en el otro dispositivo.
 
+### Versión de dev (spec 32)
+
+En Vercel, antes de publicar: *Automatically expose System Environment Variables* encendida. **Desinstalar la app de
+dev borra sus datos si no tiene cuenta** (en el iPhone, siempre): son datos de prueba, pero revisar antes que sea la de
+dev. Producción no hace falta reinstalarla, salvo para ver el ícono nuevo en el iPhone.
+
+- [ ] **58.** Preview de `dev`, en la computadora: etiqueta DEV, pestaña "DEV · El Changuito", favicon amarillo con la
+      cinta y `/manifest.json` con "DEV Changuito".
+- [ ] **59.** Android: desinstalar la de dev, instalarla de nuevo desde la preview y tener también la de producción. Se
+      distinguen por el nombre y el ícono; el recorte no corta el changuito ni el texto.
+- [ ] **60.** iPhone: lo mismo. El ícono de las dos es el PNG (changuito, no una captura de la página) y se lee DEV.
+- [ ] **61.** Producción, apenas se publica: sin etiqueta, pestaña "El Changuito" y `/manifest.json` con "El Changuito".
+      La app ya instalada en Android sigue siendo la misma.
+
 ## Resultados
 
 | Prueba | Fecha | Resultado |

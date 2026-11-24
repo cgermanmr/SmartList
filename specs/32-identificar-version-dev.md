@@ -1,6 +1,6 @@
 # SPEC 32 — Identificar la versión de dev
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 06](06-migracion-nextjs-vercel.md), [SPEC 07](07-nombre-el-changuito.md), [SPEC 19](19-restyling-base-y-navegacion.md), [SPEC 30](30-compartir-por-whatsapp.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Que la versión de dev (y la local) se distinga de la de producción por su nombre, su ícono y una etiqueta en el header, sin cambiar nada de lo que ve quien usa producción salvo el ícono en el iPhone.

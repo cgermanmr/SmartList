@@ -12,5 +12,6 @@ export default function AppName() {
   // Antes de hidratar se ve, igual que en el HTML prerenderizado
   const yields = hydrated && cart.some(item => item.quantity > 0);
 
-  return <span className={yields ? 'truncate max-[430px]:sr-only' : 'truncate'}>El Changuito</span>;
+  // Cede antes que el logo, que en DEV y LOCAL también puede achicarse (spec 32)
+  return <span className={`shrink-99 truncate ${yields ? 'max-[430px]:sr-only' : ''}`}>El Changuito</span>;
 }
