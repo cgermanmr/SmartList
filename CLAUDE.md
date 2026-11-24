@@ -29,7 +29,8 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   semanal ([SPEC 17](specs/17-imagenes-de-productos.md)); cada producto propio puede llevar una foto propia, privada,
   en el teléfono y con cuenta en un bucket privado ([SPEC 27](specs/27-fotos-propias.md)). Con cuenta, un grupo
   de hasta 20 personas comparte sus precios de productos con código de barras
-  ([SPEC 22](specs/22-grupos-y-precios-compartidos.md))
+  ([SPEC 22](specs/22-grupos-y-precios-compartidos.md)) y los valida con "Está bien" / "No coincide"
+  ([SPEC 23](specs/23-validacion-de-precios.md))
 - Objetivo: lista de precios personal/familiar para comparar compras entre fechas y analizar la suba de precios y el gasto
 - Roadmap: Fase 2 (Supabase: Postgres + Auth + Realtime), Fase 3 (React Native móvil), Fase 4 (microservicios) — detalle en [`docs/roadmap.md`](docs/roadmap.md)
 - Hasta la [SPEC 06](specs/06-migracion-nextjs-vercel.md) la app era Angular 19; las specs 01–02 describen esa versión
@@ -87,7 +88,8 @@ supabase/
 ├── migrations/                 # SQL versionado: 20261031000000_sepa.sql, 20261116000000_sepa_sucursales.sql,
 │                               #   20261117000000_sepa_imagenes.sql, 20261118000000_user_records.sql,
 │                               #   20261122000000_fotos_propias.sql (bucket privado, spec 27),
-│                               #   20261123000000_grupos.sql y 20261123000001_grupos_trigger_privado.sql (spec 22)
+│                               #   20261123000000_grupos.sql y 20261123000001_grupos_trigger_privado.sql (spec 22),
+│                               #   20261123000003_validacion.sql (votos, spec 23)
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #5b2a86, display standalone
@@ -107,11 +109,12 @@ src/
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
 │   ├── gastos/page.tsx         # Panel de gasto mensual: selector de mes, resumen, gráfico y desgloses
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
-│   ├── cuenta/                 # page.tsx (sesión, estado de la sincronización, sección Grupo, cerrar sesión, borrar
+│   ├── cuenta/                 # page.tsx (sesión, estado de la sincronización, sección Grupo y Por validar (N), cerrar sesión, borrar
 │   │                           #   la cuenta) + SignInForm.tsx (Google o mail → código de 6 dígitos; redirectTo, title)
 │   ├── grupo/                  # page.tsx (estados: sin Supabase, sin sesión, cargando, error) + CreateGroup.tsx
-│   │                           #   (sin grupo) + GroupView.tsx (nombre, invitar, integrantes, apodo, Compartir mis
-│   │                           #   precios, salir); unirse/: page.tsx (Suspense) + JoinGroup.tsx (useSearchParams)
+│   │                           #   (sin grupo) + GroupView.tsx (nombre, Por validar (N), invitar, integrantes, apodo,
+│   │                           #   Compartir mis precios, salir); unirse/: page.tsx (Suspense) + JoinGroup.tsx
+│   │                           #   (useSearchParams); validar/page.tsx: Por validar (spec 23)
 │   ├── privacidad/page.tsx     # Qué se guarda, dónde y cómo borrarlo (Server Component)
 │   └── not-found.tsx           # Redirige a /
 ├── components/
@@ -169,7 +172,11 @@ src/
 │   ├── useSepaImages.ts        # Hook: imágenes de varios EAN en una sola consulta (getSepaImages), acumuladas
 │   ├── useMyGroup.ts           # Hook: el grupo propio (my_group) con retry y refresh (spec 22)
 │   ├── useGroupPrices.ts       # Hook: precios del grupo de varios EAN (getGroupPrices), solo con sesión (spec 22)
-│   ├── GroupPricesCard.tsx     # Tarjeta "Precios del grupo" del detalle (spec 22)
+│   ├── GroupPricesCard.tsx     # Tarjeta "Precios del grupo" del detalle (spec 22): insignia, resumen y votos (spec 23)
+│   ├── ValidationBadge.tsx     # Insignia "Validado" (verde) / "Dudoso" (ámbar) de un precio del grupo (spec 23)
+│   ├── PriceVoteButtons.tsx    # "Está bien" / "No coincide" (aria-pressed), "¿Cuánto viste?" y errores (spec 23)
+│   ├── usePendingValidations.ts # Hook: pending_validations() y el filtro de pendientes; visita y retry (spec 23)
+│   ├── useOwnPriceVotes.ts     # Hook: votos del grupo sobre los precios propios (my_price_votes, spec 23)
 │   ├── useProductPhotos.ts     # Hook: object URL de la foto propia de cada producto (caché de módulo por id); baja
 │   │                           #   las que faltan con sesión; forgetPhotoUrl
 │   └── ProductImage.tsx        # Imagen del producto (40/48/64/160 px) o cuadro con la inicial si no hay o no carga
@@ -180,8 +187,8 @@ src/
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
     ├── price-form.ts           # Cargar precio (spec 26): PriceProductChoice, storesAtPoint, recentStores, otherStore,
     │                           #   resolvePriceProduct, priceAt; ownPricesNear (precios propios en Comercios cercanos)
-    ├── shelf-price.ts          # "¿Cuánto sale acá?" (spec 24): shelfComparison contra el más barato cercano o la
-    │                           #   referencia, y contra el último precio propio
+    ├── shelf-price.ts          # "¿Cuánto sale acá?" (spec 24): shelfComparison contra el más barato cercano (sin los
+    │                           #   Dudosos del grupo) o la referencia, y contra el último precio propio; centsDiff
     ├── basket.ts               # ¿Dónde conviene el carrito?: basketLines, compareNearby, compareChains, savingsLine,
     │                           #   withoutEanLabel (spec 25)
     ├── format.ts               # formatMoney, formatNumber, formatPctChange, formatDateTime, initialOf, ... (es-AR);
@@ -206,7 +213,11 @@ src/
     │                           #   deleteAllRemotePhotos, clearLocalPhotos, releaseLocalPhotos
     ├── group.ts                # Grupos (spec 22): tipos, funciones puras (defaultNickname, validaciones, inviteUrl,
     │                           #   groupErrorMessage, groupPriceFromRow, latestGroupPrices, groupPricesNear,
-    │                           #   groupPriceNote), llamadas a las funciones de la base y getGroupPrices (caché 5 min)
+    │                           #   groupPriceNote, pendingPriceFromRow), llamadas a las funciones de la base,
+    │                           #   getGroupPrices (caché 5 min) y los votos (votePrice, unvotePrice,
+    │                           #   fetchPendingValidations, fetchOwnPriceVotes; spec 23)
+    ├── price-validation.ts     # Validación (spec 23): tipos, priceValidation, myVote, validationSummary,
+    │                           #   pendingValidations, votesFromJson, ownVotesByPrice
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
     │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
@@ -372,6 +383,22 @@ src/
   grupo solo con ubicación (se muestran solo dentro del radio, `groupPricesNear`); el detalle, siempre.
   El login desde la invitación vuelve a esa página (`signInWithGoogle(redirectTo)` / `sendEmailCode(…, redirectTo)`,
   solo rutas propias; las Redirect URLs de Auth ya cubren `/**`)
+- **Validación de precios del grupo** ([SPEC 23](specs/23-validacion-de-precios.md)) — cualquier integrante salvo el
+  autor vota un precio que el grupo ve: **Está bien** (`ok`) o **No coincide** (`no`, con "¿Cuánto viste?" opcional),
+  uno por integrante y precio. Tabla `price_votes` (clave `owner_id, price_id, voter_id`) con RLS y sin permisos
+  directos: `vote_price` controla que el autor sea otro integrante del mismo grupo con `share_prices` y que el precio
+  sea visible (no borrado, producto con EAN, con comercio, 60 días; si no, `price_not_found`) y **toma el monto de
+  `user_records`** (la app no lo manda). Claves foráneas `(group_id, owner_id)` y `(group_id, voter_id)` a
+  `group_members` en cascada: salir, ser sacado o borrar la cuenta borra los votos de esa persona y sobre sus precios.
+  `group_prices` suma `price_id`, `product_name` y `votes` (jsonb, con el apodo, nunca el mail). **El estado se
+  calcula en la app** (`priceValidation`): solo cuentan los votos cuyo monto votado es igual al actual (en centavos,
+  `centsDiff`); *Validado* con 2 o más `ok` y más `ok` que `no`, *Dudoso* con 2 o más `no` y al menos tantos `no`
+  como `ok` (el empate va a Dudoso). Los Dudosos se ven pero no llevan "Más barato" en `NearbyStores` ni entran en
+  `cheapestNear` de "¿Cuánto sale acá?"; un más barato del grupo Validado suma ", validado". Cada voto llama a
+  `clearGroupPrices` y las pantallas vuelven a pedir. "Por validar" sale de `pending_validations()` (14 días, hasta
+  200) filtrado con `pendingValidations` (el último de cada integrante en cada comercio por producto, sin lo votado
+  ni lo validado); la página conserva lo votado hasta la próxima visita (`visit` de `usePendingValidations`). El
+  autor ve los votos en su historial con `my_price_votes(ids)`, contados contra el monto local
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -440,6 +467,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/cuenta` | `app/cuenta/page.tsx` | — (ícono del header) | Entrar, estado de la sincronización, salir, borrar la cuenta |
 | `/grupo` | `app/grupo/page.tsx` | — (desde Cuenta) | Crear un grupo o, con grupo, invitar, integrantes, apodo, compartir, salir |
 | `/grupo/unirse` | `app/grupo/unirse/page.tsx` | — | Unirse con el link de invitación (`?c=<código>`) |
+| `/grupo/validar` | `app/grupo/validar/page.tsx` | — (desde Grupo y Cuenta) | Por validar: votar los precios del grupo de los últimos 14 días |
 | `/privacidad` | `app/privacidad/page.tsx` | — | Qué se guarda y cómo borrarlo |
 | otra | `app/not-found.tsx` | — | Redirige a `/` |
 
@@ -589,8 +617,8 @@ interface CalculatorState {
   - **¿Cuánto sale acá?** (propio o del catálogo; teclado decimal, no se guarda): con un monto mayor a 0,
     `shelfComparison` contra el más barato cercano ("Más barato que en los comercios cerca" en verde, "Igual que en
     <cadena> — <distancia>" en azul, "En <cadena> — <distancia> sale $X menos" en rojo; el más barato puede ser un
-    precio del grupo dentro del radio, spec 22, y entonces la línea suma "(Ana · 12/11)"; a igual precio, el más
-    cerca) o, sin cercanos con precio,
+    precio del grupo dentro del radio, spec 22, y entonces la línea suma "(Ana · 12/11)", o "(Ana · 12/11,
+    validado)" si está Validado; los Dudosos no cuentan, spec 23; a igual precio, el más cerca) o, sin cercanos con precio,
     contra la referencia (`referenceLabel`); en un propio con precios, "La última vez pagaste $Y (dd/mm): $X más /
     menos" o "… lo mismo". Cada línea con flecha (hacia dónde está el precio de la góndola) y `aria-live`; sin nada
     contra qué comparar, "Sin precios para comparar". Con monto, **Agregar al carrito** entra en "Sin comercio" a ese
@@ -620,7 +648,8 @@ interface CalculatorState {
   Con un grupo ([SPEC 22](specs/22-grupos-y-precios-compartidos.md)), los precios del grupo de un comercio con
   coordenadas dentro del radio se mezclan igual, con "Cargado por Ana · 12/11", distancia, Mapa y Agregar (también
   en los resultados del catálogo, que abren la lista aunque solo haya precios del grupo); fuera del radio solo se
-  ven en el detalle. `NearbyLine` resume solo Precios Claros. Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa", en
+  ven en el detalle. Cada fila del grupo lleva la insignia **Validado** o **Dudoso** (spec 23); una Dudosa nunca
+  lleva "Más barato" (el más barato se elige entre las demás). `NearbyLine` resume solo Precios Claros. Pie "Precios de lista informados a Precios Claros el dd/mm/aaaa", en
   ámbar con más de 7 días
   - **Agregar** en un comercio: crea el producto si no existe (`addSepaToCart` con `at`) y lo deja en el carrito
     con ese comercio y ese precio; si ya estaba, suma 1 y pasa a ellos. No registra precios
@@ -731,7 +760,12 @@ interface CalculatorState {
   cercanos: una fila por precio (`latestGroupPrices`) con comercio, dirección o barrio, precio, "Cargado por Ana ·
   12/11" y, con ubicación y coordenadas, la distancia ("aprox." con localidad); **Mapa** con coordenadas y
   **Agregar** (en ese comercio y a ese precio). Hasta 10 y "Ver N más"; pie "Precios cargados por tu grupo en los
-  últimos 60 días." También fuera del radio y sin ubicación
+  últimos 60 días." También fuera del radio y sin ubicación. Cada fila (spec 23) con la insignia, el resumen de votos
+  ("Validado por Ana y Lucía", "No coincide para Lucía ($3.400,00) y Pedro", "Está bien para Ana · No coincide para
+  Pedro"; el propio es "vos") y **Está bien** / **No coincide** (`PriceVoteButtons`: 44 px, `aria-pressed`, tocar el
+  marcado quita el voto; después de No coincide, "¿Cuánto viste? (opcional)" con Guardar; error junto a los botones)
+- Historial de precios (spec 23): con sesión y grupo, cada precio propio con votos que cuentan muestra la insignia y
+  el resumen de los votos con los apodos
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
 - Agregar al carrito con el precio actual
@@ -832,7 +866,8 @@ interface CalculatorState {
   confirmación (borra antes las fotos del bucket y después `delete_my_account`; la membresía del grupo se borra en
   cascada)
 - Sección **Grupo** (spec 22): el nombre del grupo y "N integrantes", o "Compartí precios con tu familia o tus
-  amigos" / "Crear o unirte a un grupo"; lleva a `/grupo`
+  amigos" / "Crear o unirte a un grupo"; lleva a `/grupo`. Con precios por validar, debajo el link **Por validar
+  (N)** a `/grupo/validar` (spec 23; no aparece con 0)
 - Buscar sin productos propios: "Todavía no tenés productos" / "Buscá un producto en Precios Claros o leé su código
   de barras"
 
@@ -844,7 +879,8 @@ interface CalculatorState {
   (sugerido: la primera palabra del nombre de la cuenta, `defaultNickname`) y **Crear grupo**; debajo, "Para unirte a
   un grupo, pedile el link a alguien que ya esté."
 - **Con grupo**: el nombre como título (quien administra: **Cambiar nombre** en línea, Enter guarda y Escape
-  cancela) con las iniciales de los integrantes y "Vos y N integrantes más"; **Invitar**: el link en un campo de
+  cancela) con las iniciales de los integrantes y "Vos y N integrantes más"; la fila **Por validar** con la cantidad
+  (sin número con 0) y chevron, a `/grupo/validar` (spec 23); **Invitar**: el link en un campo de
   solo lectura, **Copiar link** (aviso fijo "Link copiado", 3 s), **Compartir** (con `navigator.share`: "Sumate a
   <grupo> en El Changuito") y, para quien administra, **Generar link nuevo** (confirma "El link anterior deja de
   servir."); **Integrantes (N de 20)** con la inicial, el apodo, "Vos" y "Administra", y **Sacar** para quien
@@ -858,6 +894,15 @@ interface CalculatorState {
   el grupo**; en otro, "Ya estás en <actual>. Para unirte a <nuevo> tenés que salir de ese." y **Salir y unirme**
   (`ConfirmDialog`). Código inexistente o regenerado: "El link de invitación no es válido o cambió. Pedile uno nuevo
   a alguien del grupo."; completo: "El grupo está completo (20 integrantes)."; al unirse, lleva a `/grupo`
+- **Por validar** (`/grupo/validar`, [SPEC 23](specs/23-validacion-de-precios.md)): link "Grupo" con flecha para
+  volver; "Precios que cargó tu grupo en los últimos 14 días. Si sabés cuánto salen, contá si están bien." Una fila
+  por precio (`pendingValidations`): imagen de 48 px (una consulta), nombre del producto del autor, marca y
+  presentación, comercio con dirección o barrio, precio, "Cargado por Ana · 12/11", insignia, resumen de votos y
+  **Está bien** / **No coincide**. Votar no saca la fila mientras la página está abierta (queda marcada para
+  cambiarlo o quitarlo); al volver, ya no está. Hasta 20 y "Ver N más". Vacía: "No hay precios por validar" /
+  "Cuando alguien del grupo cargue un precio, aparece acá.". Sin Supabase, "Los grupos no están disponibles"; sin
+  sesión, "Entrá con tu cuenta para validar precios" con **Entrar**; sin grupo, "Unite a un grupo para validar
+  precios" con **Ir al grupo**; "Cargando…"; si falla, "No se pudo cargar" con **Reintentar**
 
 ### Calculadora de precio unitario (`/calculadora`)
 - Herramienta independiente: no lee ni modifica productos, precios, carrito ni compras
@@ -976,6 +1021,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
 | `user_records` | Datos de cada usuario (spec 21): `user_id`, `collection` (`products` / `prices` / `cart` / `purchases` / `settings`), `id`, `data` (JSON del registro), `deleted`, `modified_at` (dispositivo; gana el último) y `synced_at` (servidor; cursor). RLS: cada usuario lee, crea y modifica solo sus filas; sin delete. Trigger `user_records_touch`; `delete_my_account()` borra el usuario y sus filas en cascada |
 | `groups` | Grupos (spec 22): `id`, `name` (1–40), `invite_code` (único) y `created_at`. RLS sin políticas ni permisos: solo las funciones |
+| `price_votes` | Votos (spec 23): `group_id`, `owner_id` (autor), `price_id`, `voter_id`, `verdict` (`ok` / `no`), `amount` (monto votado, de `user_records`), `seen` ("¿Cuánto viste?", solo con `no`) y `created_at`. RLS sin permisos: solo las funciones `vote_price`, `unvote_price`, `group_prices` (con `votes`), `pending_validations` y `my_price_votes`. Cascada desde `group_members` |
 | `group_members` | Integrantes (spec 22): `group_id`, `user_id` (único: un grupo a la vez; cascada al borrar la cuenta), `nickname` (1–30), `role` (`admin` / `member`), `share_prices` y `joined_at`. Trigger `group_members_after_delete` (nuevo administrador o grupo borrado). Funciones: `create_group`, `group_preview` (también `anon`), `join_group`, `my_group`, `rename_group`, `regenerate_invite`, `remove_member`, `set_nickname`, `set_share_prices`, `leave_group` y `group_prices` |
 
 - **Storage** (spec 27): bucket **privado** `fotos-propias`, JPEG de hasta 300 KB (`file_size_limit` 307200,
@@ -1237,7 +1283,9 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   vos" (spec 27)
 - [x] Grupos con link de invitación y precios compartidos en Comercios cercanos, "¿Cuánto sale acá?" y el detalle
   (spec 22)
-- [ ] Supabase: validación de precios (spec 23), tiempo real (Fase 2)
+- [x] Validación de los precios del grupo: "Está bien" / "No coincide", Validado y Dudoso (los Dudosos no cuentan
+  como el más barato), página "Por validar" y los votos en el historial del autor (spec 23)
+- [ ] Supabase: tiempo real (Fase 2)
 
 ---
 

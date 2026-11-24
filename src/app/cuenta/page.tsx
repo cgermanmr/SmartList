@@ -1,12 +1,13 @@
 'use client';
 
-import { ChevronRight, CloudOff, LoaderCircle, RefreshCw, TriangleAlert, Users } from 'lucide-react';
+import { BadgeCheck, ChevronRight, CloudOff, LoaderCircle, RefreshCw, TriangleAlert, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { useAuth } from '@/components/useAuth';
 import { useMyGroup } from '@/components/useMyGroup';
 import { useNow } from '@/components/useNow';
+import { usePendingValidations } from '@/components/usePendingValidations';
 import { AccountUser, deleteAccountData, verifyEmailCode } from '@/lib/auth';
 import { formatTimeAgo } from '@/lib/format';
 import { pendingCount, signOutEverywhere, SyncStatus, syncNow, useSyncStatus } from '@/lib/sync-engine';
@@ -146,10 +147,15 @@ function SignedIn({ user, status }: { user: AccountUser; status: SyncStatus }) {
 
 // ── Grupo (spec 22) ──────────────────────────────────────────
 
-/** El grupo con la cantidad de integrantes, o la invitación a crear uno; los dos llevan a /grupo */
+/**
+ * El grupo con la cantidad de integrantes, o la invitación a crear uno; los dos llevan a /grupo. Con precios por
+ * validar (spec 23), debajo el link "Por validar (N)"
+ */
 function GroupSection({ userId }: { userId: string }) {
   const { status, group } = useMyGroup(userId);
   const members = group?.members.length ?? 0;
+  const validations = usePendingValidations(status === 'ready' && group ? userId : null);
+  const toValidate = validations.status === 'ready' ? validations.pending.length : 0;
 
   return (
     <section aria-labelledby="account-group" className="mt-4">
@@ -176,6 +182,15 @@ function GroupSection({ userId }: { userId: string }) {
         </span>
         <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-gray-500" />
       </Link>
+      {group && toValidate > 0 && (
+        <Link href="/grupo/validar" className="card list-row mt-2 rounded-2xl p-4">
+          <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700">
+            <BadgeCheck className="size-5" />
+          </span>
+          <span className="min-w-0 flex-1 font-semibold">Por validar ({toValidate})</span>
+          <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-gray-500" />
+        </Link>
+      )}
     </section>
   );
 }

@@ -2,6 +2,10 @@ import { displayName } from './auth';
 import { formatDayMonth } from './format';
 import { distanceKm, LatLng } from './geo';
 import type { StoreRef } from './models';
+import {
+  OwnPriceVoteRow, ownVotesByPrice, PendingPrice, PriceValidation, priceValidation, PriceVote, Verdict, votesFromJson,
+} from './price-validation';
+import { SIZE_UNITS } from './product-form';
 import { NO_BARRIO, storeKey } from './store';
 import { supabase } from './supabase';
 
@@ -41,6 +45,8 @@ export interface GroupPrice {
   store: StoreRef;    // storeRef, o { name: store, barrio } si el precio es de antes de la spec 26
   member: string;     // apodo actual
   memberId: string;   // user_id: distingue a dos integrantes con el mismo apodo
+  priceId: string;    // id del precio en user_records (spec 23)
+  validation: PriceValidation;  // votos que cuentan y estado (spec 23)
 }
 
 export interface GroupNearPrice {
@@ -80,6 +86,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   not_in_group: 'Ya no estás en el grupo.',
   not_admin: 'Solo quien administra el grupo puede hacer esto.',
   invalid_name: 'Revisá el nombre.',
+  price_not_found: 'Ese precio ya no está en el grupo.',
+  own_price: 'No podés validar tus propios precios.',
+  invalid_amount: 'Revisá el monto.',
 };
 
 /** Mensaje para el código que levanta la base; cualquier otro error se toma como de conexión */
@@ -128,6 +137,16 @@ export interface GroupPriceRow {
   store_ref: unknown;
   member: string;
   member_id: string;
+  price_id: string;
+  product_name?: string | null;
+  votes: unknown;     // jsonb: [{ voterId, member, verdict, amount, seen, at }] (spec 23)
+}
+
+/** Fila de pending_validations: la de group_prices con los datos del producto del autor */
+export interface PendingPriceRow extends GroupPriceRow {
+  brand: string | null;
+  size: number | null;
+  size_unit: string | null;
 }
 
 function text(value: unknown): string | undefined {
@@ -163,7 +182,25 @@ export function groupPriceFromRow(row: GroupPriceRow): GroupPrice | null {
     ...(chain ? { chain } : {}),
     ...(lat !== undefined && lng !== undefined ? { lat, lng } : {}),
   };
-  return { ean: row.ean, amount: row.amount, date: row.date, store, member: row.member, memberId: row.member_id };
+  return {
+    ean: row.ean, amount: row.amount, date: row.date, store, member: row.member, memberId: row.member_id,
+    priceId: row.price_id, validation: priceValidation(votesFromJson(row.votes), row.amount),
+  };
+}
+
+/** El precio por validar a partir de una fila: el de groupPriceFromRow con nombre, marca y presentación */
+export function pendingPriceFromRow(row: PendingPriceRow): PendingPrice | null {
+  const price = groupPriceFromRow(row);
+  if (!price) return null;
+  const brand = text(row.brand);
+  const unit = SIZE_UNITS.find(u => u === row.size_unit);
+  const size = typeof row.size === 'number' && row.size > 0 && unit ? row.size : undefined;
+  return {
+    ...price,
+    productName: text(row.product_name) ?? '',
+    ...(brand ? { brand } : {}),
+    ...(size !== undefined && unit ? { size, sizeUnit: unit } : {}),
+  };
 }
 
 // ── Llamadas a la base ───────────────────────────────────────
@@ -229,6 +266,35 @@ export async function setSharePrices(share: boolean): Promise<void> {
 export async function leaveGroup(): Promise<void> {
   await call('leave_group');
   clearGroupPrices();
+}
+
+// ── Validación (spec 23) ─────────────────────────────────────
+// Cada voto vacía la caché de precios del grupo: las pantallas abiertas vuelven a pedirlos con el estado nuevo.
+
+/** Vota un precio de otro integrante; con seen, "¿Cuánto viste?" (solo con 'no'). El monto lo toma la base */
+export async function votePrice(ownerId: string, priceId: string, verdict: Verdict, seen?: number): Promise<void> {
+  await call('vote_price', { p_owner: ownerId, p_price_id: priceId, p_verdict: verdict, p_seen: seen ?? null });
+  clearGroupPrices();
+}
+
+export async function unvotePrice(ownerId: string, priceId: string): Promise<void> {
+  await call('unvote_price', { p_owner: ownerId, p_price_id: priceId });
+  clearGroupPrices();
+}
+
+/** Los precios de los demás de los últimos 14 días con sus votos (sin filtrar: lo hace pendingValidations) */
+export async function fetchPendingValidations(): Promise<PendingPrice[]> {
+  const rows = await call<PendingPriceRow[] | null>('pending_validations');
+  return (rows ?? []).map(pendingPriceFromRow).filter((price): price is PendingPrice => price !== null);
+}
+
+const OWN_VOTES_MAX = 100;
+
+/** Los votos sobre los precios propios de esos id (hasta 100), por id de precio */
+export async function fetchOwnPriceVotes(priceIds: string[]): Promise<Map<string, PriceVote[]>> {
+  const rows = await call<OwnPriceVoteRow[] | null>('my_price_votes',
+    { p_price_ids: priceIds.slice(0, OWN_VOTES_MAX) });
+  return ownVotesByPrice(rows ?? []);
 }
 
 // ── Precios del grupo: caché de 5 minutos ────────────────────

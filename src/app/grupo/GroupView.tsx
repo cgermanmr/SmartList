@@ -1,8 +1,10 @@
 'use client';
 
-import { Check, Copy, LogOut, Pencil, RefreshCw, Share2, UserMinus } from 'lucide-react';
+import { BadgeCheck, Check, ChevronRight, Copy, LogOut, Pencil, RefreshCw, Share2, UserMinus } from 'lucide-react';
+import Link from 'next/link';
 import { FormEvent, KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import { usePendingValidations } from '@/components/usePendingValidations';
 import { initialOf } from '@/lib/format';
 import {
   Group, GROUP_MAX_MEMBERS, GroupMember, groupErrorMessage, inviteUrl, leaveGroup, regenerateInvite, removeMember,
@@ -24,7 +26,7 @@ interface Props {
   onChange: () => Promise<void>;
 }
 
-/** Con grupo: nombre, invitar, integrantes, apodo, Compartir mis precios y salir */
+/** Con grupo: nombre, Por validar, invitar, integrantes, apodo, Compartir mis precios y salir */
 export default function GroupView({ group, userId, onChange }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<{ section: Section; text: string } | null>(null);
@@ -68,6 +70,8 @@ export default function GroupView({ group, userId, onChange }: Props) {
     <>
       <GroupName group={group} admin={admin} busy={busy === 'name'} error={errorOf('name')}
         onSave={name => run('name', 'name', () => renameGroup(name))} />
+
+      <PendingRow userId={userId} />
 
       <InviteCard
         group={group}
@@ -270,6 +274,28 @@ function MemberStack({ members }: { members: GroupMember[] }) {
         </span>
       )}
     </div>
+  );
+}
+
+// ── Por validar (spec 23) ────────────────────────────────────
+
+/** Link a /grupo/validar con la cantidad (la misma llamada y el mismo filtro que la página); con 0, sin número */
+function PendingRow({ userId }: { userId: string }) {
+  const { status, pending } = usePendingValidations(userId);
+  const count = status === 'ready' ? pending.length : 0;
+  return (
+    <Link href="/grupo/validar" className="card list-row mt-4 rounded-2xl p-4">
+      <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-700">
+        <BadgeCheck className="size-5" />
+      </span>
+      <span className="min-w-0 flex-1 font-semibold">Por validar</span>
+      {count > 0 && (
+        <span className="min-w-7 shrink-0 rounded-full bg-primary-700 px-2 py-0.5 text-center text-sm font-semibold tabular-nums text-white">
+          {count}
+        </span>
+      )}
+      <ChevronRight aria-hidden="true" className="size-5 shrink-0 text-gray-500" />
+    </Link>
   );
 }
 

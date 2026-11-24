@@ -32,7 +32,7 @@ export interface ShelfInput {
 const REFERENCE_TONE: Record<ReferenceStatus, ShelfTone> = { below: 'good', inline: 'same', above: 'bad' };
 
 /** Diferencia en centavos, para que 3890,001 y 3890 cuenten como iguales */
-function centsDiff(a: number, b: number): number {
+export function centsDiff(a: number, b: number): number {
   return Math.round(a * 100) - Math.round(b * 100);
 }
 
@@ -41,18 +41,24 @@ interface Cheapest {
   distanceKm: number;
   /** La cadena o, si es del grupo, el nombre del comercio */
   name: string;
-  /** " (Ana · 12/11)" si es del grupo */
+  /** " (Ana · 12/11)" si es del grupo; " (Ana · 12/11, validado)" si está Validado (spec 23) */
   who: string;
 }
 
-/** El más barato cercano entre Precios Claros (ya ordenados) y el grupo; a igual precio, el más cerca */
+/**
+ * El más barato cercano entre Precios Claros (ya ordenados) y el grupo; a igual precio, el más cerca. Los precios del
+ * grupo Dudosos no cuentan (spec 23)
+ */
 function cheapestNear(nearby: NearbyPrice[] | undefined, group: GroupNearPrice[] | undefined): Cheapest | undefined {
   const options: Cheapest[] = [];
   const branch = nearby?.[0];
   if (branch) options.push({ price: branch.price, distanceKm: branch.distanceKm, name: branch.branch.chain, who: '' });
   for (const { price, distanceKm } of group ?? []) {
+    if (price.validation.status === 'dudoso') continue;
+    const validated = price.validation.status === 'validado' ? ', validado' : '';
     options.push({
-      price: price.amount, distanceKm, name: price.store.name, who: ` (${price.member} · ${formatDayMonth(price.date)})`,
+      price: price.amount, distanceKm, name: price.store.name,
+      who: ` (${price.member} · ${formatDayMonth(price.date)}${validated})`,
     });
   }
   return options.reduce<Cheapest | undefined>((best, option) => {

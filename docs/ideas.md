@@ -26,7 +26,7 @@ enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se imple
 ## Comercios y comunidad
 
 - **Comunidad abierta:** precios públicos para todos los usuarios, no solo para un grupo, después de la validación.
-  Se construye sobre las specs 22 y 23. Requiere:
+  Se construye sobre las specs 22 y 23 (hechas: grupos y validación dentro del grupo). Requiere:
   - tabla pública aparte de `user_records`, solo con precios que tengan EAN y un comercio identificable;
   - validación por usuarios cercanos al comercio (alguien de otra ciudad no puede confirmar un precio);
   - controles contra el abuso: límite por día, nadie valida lo propio, reputación simple y vencimiento del precio

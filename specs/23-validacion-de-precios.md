@@ -1,6 +1,6 @@
 # SPEC 23 — Validación de precios del grupo
 
-> **Estado:** Aprobada
+> **Estado:** Implementado
 > **Depende de:** [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 22](22-grupos-y-precios-compartidos.md)
 > **Fecha:** 2026-11-23
 > **Objetivo:** Que los integrantes de un grupo digan "Está bien" o "No coincide" a los precios que cargaron los demás, para que cada precio del grupo quede *Validado*, *Dudoso* o sin validar, y que los dudosos no cuenten como el más barato.

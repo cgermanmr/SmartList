@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   GroupPrice, GroupPriceRow, defaultNickname, groupErrorMessage, groupPriceFromRow, groupPriceNote, groupPricesNear,
-  inviteUrl, latestGroupPrices, validGroupName, validNickname,
+  inviteUrl, latestGroupPrices, pendingPriceFromRow, validGroupName, validNickname,
 } from './group';
 
 // ── defaultNickname ───────────────────────────────────────
@@ -53,6 +53,12 @@ describe('groupErrorMessage', () => {
     expect(groupErrorMessage('invalid_code')).toContain('no es válido o cambió');
   });
 
+  it('traduce los códigos de la validación (spec 23)', () => {
+    expect(groupErrorMessage('price_not_found')).toBe('Ese precio ya no está en el grupo.');
+    expect(groupErrorMessage('own_price')).toBe('No podés validar tus propios precios.');
+    expect(groupErrorMessage('invalid_amount')).toBe('Revisá el monto.');
+  });
+
   it('cualquier otro error es de conexión', () => {
     expect(groupErrorMessage('Failed to fetch')).toBe('No se pudo guardar. Revisá la conexión.');
     expect(groupErrorMessage(undefined)).toBe('No se pudo guardar. Revisá la conexión.');
@@ -64,7 +70,7 @@ describe('groupErrorMessage', () => {
 function price(overrides: Partial<GroupPrice>): GroupPrice {
   return {
     ean: '7790000000001', amount: 100, date: '2026-11-20T12:00:00.000Z', store: { name: 'Super Luna' },
-    member: 'Ana', memberId: 'u1', ...overrides,
+    member: 'Ana', memberId: 'u1', priceId: 'p1', validation: { status: 'sin_validar', votes: [] }, ...overrides,
   };
 }
 
@@ -115,7 +121,7 @@ describe('groupPricesNear', () => {
 describe('groupPriceFromRow', () => {
   const row: GroupPriceRow = {
     ean: '7790000000001', amount: 1500, date: '2026-11-20T12:00:00.000Z', store: 'Almacén Don Luis',
-    barrio: 'Caballito', store_ref: null, member: 'Ana', member_id: 'u1',
+    barrio: 'Caballito', store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [],
   };
 
   it('con storeRef, el comercio completo (solo los campos conocidos)', () => {
@@ -125,6 +131,7 @@ describe('groupPriceFromRow', () => {
     };
     expect(groupPriceFromRow({ ...row, store_ref: storeRef })).toEqual({
       ean: '7790000000001', amount: 1500, date: '2026-11-20T12:00:00.000Z', member: 'Ana', memberId: 'u1',
+      priceId: 'p1', validation: { status: 'sin_validar', votes: [] },
       store: {
         name: 'Almacén Don Luis', address: 'Av. Rivadavia 5100', barrio: 'Caballito', lat: -34.6, lng: -58.43,
         sepaId: '10-1-123', chain: 'Don Luis',
@@ -142,6 +149,18 @@ describe('groupPriceFromRow', () => {
     expect(store).toEqual({ name: 'Kiosco' });
   });
 
+  it('el estado sale de los votos sobre el monto actual (spec 23)', () => {
+    const votes = [
+      { voterId: 'u2', member: 'Lucía', verdict: 'ok', amount: 1500, at: '2026-11-21T10:00:00.000Z' },
+      { voterId: 'u3', member: 'Pedro', verdict: 'ok', amount: 1500, at: '2026-11-21T11:00:00.000Z' },
+      { voterId: 'u4', member: 'Sol', verdict: 'no', amount: 1400, at: '2026-11-21T12:00:00.000Z' },
+    ];
+    const validation = groupPriceFromRow({ ...row, votes })?.validation;
+    expect(validation?.status).toBe('validado');
+    expect(validation?.votes.map(v => v.voterId)).toEqual(['u2', 'u3']);
+    expect(groupPriceFromRow({ ...row, votes: null })?.validation).toEqual({ status: 'sin_validar', votes: [] });
+  });
+
   it('sin comercio, sin monto positivo o con fecha ilegible queda afuera', () => {
     expect(groupPriceFromRow({ ...row, store: null })).toBeNull();
     expect(groupPriceFromRow({ ...row, store: '  ', store_ref: { name: '' } })).toBeNull();
@@ -153,5 +172,31 @@ describe('groupPriceFromRow', () => {
 describe('groupPriceNote', () => {
   it('quién lo cargó y el día', () => {
     expect(groupPriceNote(price({ member: 'Ana', date: '2026-11-12T15:00:00.000Z' }))).toBe('Cargado por Ana · 12/11');
+  });
+});
+
+describe('pendingPriceFromRow', () => {
+  const row = {
+    ean: '7790000000001', amount: 3200, date: '2026-11-20T12:00:00.000Z', store: 'Almacén Don Luis', barrio: null,
+    store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [], product_name: ' Yerba Playadito ',
+    brand: 'Playadito', size: 1, size_unit: 'kg',
+  };
+
+  it('el precio con nombre, marca y presentación del autor', () => {
+    expect(pendingPriceFromRow(row)).toMatchObject({
+      priceId: 'p1', productName: 'Yerba Playadito', brand: 'Playadito', size: 1, sizeUnit: 'kg',
+      store: { name: 'Almacén Don Luis' },
+    });
+  });
+
+  it('presentación solo con un número positivo y una unidad conocida', () => {
+    expect(pendingPriceFromRow({ ...row, size_unit: 'litros' })).not.toHaveProperty('size');
+    expect(pendingPriceFromRow({ ...row, size: 0 })).not.toHaveProperty('sizeUnit');
+    expect(pendingPriceFromRow({ ...row, brand: ' ', product_name: null })).toMatchObject({ productName: '' });
+    expect(pendingPriceFromRow({ ...row, brand: ' ' })).not.toHaveProperty('brand');
+  });
+
+  it('sin comercio queda afuera', () => {
+    expect(pendingPriceFromRow({ ...row, store: null })).toBeNull();
   });
 });

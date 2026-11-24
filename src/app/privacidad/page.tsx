@@ -44,6 +44,12 @@ export default function PrivacyPage() {
           los ve (como mucho 5 minutos después, en un teléfono que ya los tenía en pantalla). Quien administra el grupo
           también puede sacarte.
         </p>
+        <p>
+          Podés decir si un precio de otro integrante <strong>Está bien</strong> o <strong>No coincide</strong>. Tu
+          voto, con el nombre que elegiste para el grupo y el monto que pongas en <strong>¿Cuánto viste?</strong>, lo
+          ven quien cargó el precio y el resto del grupo. Tus votos y los votos sobre tus precios se borran al salir del
+          grupo (o si te sacan) y al borrar la cuenta.
+        </p>
       </section>
 
       <section className="space-y-2">

@@ -11,13 +11,16 @@ import PriceChart from '@/components/PriceChart';
 import ProductImage from '@/components/ProductImage';
 import ReferencePrice from '@/components/ReferencePrice';
 import SepaLinkDialog from '@/components/SepaLinkDialog';
+import { useOwnPriceVotes } from '@/components/useOwnPriceVotes';
 import { forgetPhotoUrl, useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
+import ValidationBadge from '@/components/ValidationBadge';
 import { formatMoney, formatShortDateTime, formatSize } from '@/lib/format';
 import { uniqueId } from '@/lib/ids';
 import { CartItem, Price, Product } from '@/lib/models';
 import { productImageSrc } from '@/lib/photo';
 import { discardPhoto, savePhoto } from '@/lib/photo-sync';
+import { priceValidation, validationSummary } from '@/lib/price-validation';
 import { imageSource, sepaEnabled } from '@/lib/sepa';
 import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
@@ -74,6 +77,9 @@ export default function ProductDetail() {
     await discardPhoto(id).catch(() => undefined);
   }
   const picker = usePhotoPicker(blob => void replacePhoto(blob));
+  // Votos del grupo sobre los precios propios de un producto con EAN (spec 23): sin sesión o sin grupo, ninguno
+  const ownVotes = useOwnPriceVotes(
+    product?.ean ? getPricesForProduct(allPrices, product.id).slice(0, 100).map(price => price.id) : []);
   useEffect(() => {
     if (previousEan.current === ean) return;
     previousEan.current = ean;
@@ -236,54 +242,66 @@ export default function ProductDetail() {
         <div className="lg:col-span-2">
           <h2 className="text-xl font-bold mb-4">Historial de Precios</h2>
           <div className="space-y-2">
-            {prices.map(price => (
-              <div key={price.id} className="card p-4">
-                {editingPriceId !== price.id ? (
-                  // Modo visualización
-                  <div className="flex justify-between items-center">
+            {prices.map(price => {
+              // Solo cuentan los votos sobre el monto local: si se editó y todavía no se sincronizó, no se muestran
+              const validation = priceValidation(ownVotes.get(price.id) ?? [], price.amount);
+              return (
+                <div key={price.id} className="card p-4">
+                  {editingPriceId !== price.id ? (
+                    // Modo visualización
+                    <>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-semibold">${formatMoney(price.amount)}</p>
+                          <p className="text-sm text-gray-600">{price.barrio} - {price.store}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-xs text-gray-500">{formatShortDateTime(price.date)}</p>
+                          <button
+                            onClick={() => startEdit(price)}
+                            className="flex size-11 items-center justify-center rounded-lg text-gray-500 hover:text-primary-700 transition-colors"
+                            title="Editar precio"
+                            aria-label={`Editar precio de $${formatMoney(price.amount)}`}>
+                            <Pencil aria-hidden="true" className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                      {validation.votes.length > 0 && (
+                        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-700">
+                          <ValidationBadge status={validation.status} />
+                          <span className="break-words">{validationSummary(validation, '')}</span>
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    // Modo edición inline
                     <div>
-                      <p className="font-semibold">${formatMoney(price.amount)}</p>
-                      <p className="text-sm text-gray-600">{price.barrio} - {price.store}</p>
+                      <p className="text-sm text-gray-500 mb-2">
+                        {price.barrio} - {price.store} · {formatShortDateTime(price.date)}
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-gray-600 font-semibold">$</span>
+                        <input
+                          type="number"
+                          value={editingAmount}
+                          onChange={e => setEditingAmount(e.target.value)}
+                          step="0.01"
+                          min="0"
+                          aria-label="Nuevo monto"
+                          className="input-field w-32"
+                          onKeyUp={e => {
+                            if (e.key === 'Enter') saveEdit(price);
+                            if (e.key === 'Escape') setEditingPriceId(null);
+                          }}
+                        />
+                        <button onClick={() => saveEdit(price)} className="btn-primary py-1 px-3 text-sm">Guardar</button>
+                        <button onClick={() => setEditingPriceId(null)} className="btn-secondary py-1 px-3 text-sm">Cancelar</button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <p className="text-xs text-gray-500">{formatShortDateTime(price.date)}</p>
-                      <button
-                        onClick={() => startEdit(price)}
-                        className="flex size-11 items-center justify-center rounded-lg text-gray-500 hover:text-primary-700 transition-colors"
-                        title="Editar precio"
-                        aria-label={`Editar precio de $${formatMoney(price.amount)}`}>
-                        <Pencil aria-hidden="true" className="size-4" />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  // Modo edición inline
-                  <div>
-                    <p className="text-sm text-gray-500 mb-2">
-                      {price.barrio} - {price.store} · {formatShortDateTime(price.date)}
-                    </p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-gray-600 font-semibold">$</span>
-                      <input
-                        type="number"
-                        value={editingAmount}
-                        onChange={e => setEditingAmount(e.target.value)}
-                        step="0.01"
-                        min="0"
-                        aria-label="Nuevo monto"
-                        className="input-field w-32"
-                        onKeyUp={e => {
-                          if (e.key === 'Enter') saveEdit(price);
-                          if (e.key === 'Escape') setEditingPriceId(null);
-                        }}
-                      />
-                      <button onClick={() => saveEdit(price)} className="btn-primary py-1 px-3 text-sm">Guardar</button>
-                      <button onClick={() => setEditingPriceId(null)} className="btn-secondary py-1 px-3 text-sm">Cancelar</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

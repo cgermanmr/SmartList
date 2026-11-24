@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GroupNearPrice } from './group';
+import type { ValidationStatus } from './price-validation';
 import type { NearbyPrice } from './sepa';
 import { shelfComparison } from './shelf-price';
 
@@ -54,11 +55,12 @@ describe('shelfComparison · comercios cercanos', () => {
 
 // ── Contra la referencia ────────────────────────────────────
 // ── Con precios del grupo (spec 22) ─────────────────────────
-function mate(amount: number, distanceKm = 0.25, store = 'Almacén Don Luis'): GroupNearPrice {
+function mate(amount: number, distanceKm = 0.25, store = 'Almacén Don Luis', status: ValidationStatus = 'sin_validar'):
+  GroupNearPrice {
   return {
     price: {
       ean: '7790387000016', amount, date: '2026-11-12T15:00:00.000Z', store: { name: store, lat: -34.6, lng: -58.4 },
-      member: 'Ana', memberId: 'u2',
+      member: 'Ana', memberId: 'u2', priceId: 'p1', validation: { status, votes: [] },
     },
     distanceKm,
   };
@@ -101,6 +103,23 @@ describe('shelfComparison · precios del grupo', () => {
     expect(shelfComparison({ price: 3000, group: [mate(3200)], reference: 3500 })).toEqual([
       { text: 'Más barato que en los comercios cerca', tone: 'good' },
     ]);
+  });
+
+  it('un precio del grupo Dudoso no cuenta como el más barato (spec 23)', () => {
+    expect(shelfComparison({ price: 4300, nearby, group: [mate(3200, 0.25, 'Almacén Don Luis', 'dudoso')] }))
+      .toEqual([{ text: 'En Día — 600 m sale $410,00 menos', tone: 'bad' }]);
+  });
+
+  it('solo Dudosos del grupo: como sin cercanos, contra la referencia', () => {
+    expect(shelfComparison({ price: 3000, group: [mate(3200, 0.25, 'Almacén Don Luis', 'dudoso')], reference: 3500 })[0])
+      .toEqual({ text: '14,3 % por debajo de la referencia', tone: 'good' });
+  });
+
+  it('el más barato del grupo Validado suma ", validado"', () => {
+    expect(shelfComparison({ price: 4300, nearby, group: [mate(3200, 0.25, 'Almacén Don Luis', 'validado')] }))
+      .toEqual([{ text: 'En Almacén Don Luis — 250 m sale $1.100,00 menos (Ana · 12/11, validado)', tone: 'bad' }]);
+    expect(shelfComparison({ price: 3200, group: [mate(3200, 0.25, 'Almacén Don Luis', 'validado')] })[0].text)
+      .toBe('Igual que en Almacén Don Luis — 250 m (Ana · 12/11, validado)');
   });
 
   it('sin cercanos de ninguno, la referencia como antes', () => {

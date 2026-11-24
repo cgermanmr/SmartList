@@ -28,8 +28,9 @@ Pendiente dentro de la fase:
 - ~~Grupos y precios compartidos con el grupo~~ → hecho en la
   [SPEC 22](../specs/22-grupos-y-precios-compartidos.md): un grupo a la vez, precios consultados a pedido con
   `group_prices`. Evolución: sumar los precios propios y del grupo a "¿Dónde conviene el carrito?" (spec 25)
-- Validación de precios por varias personas (spec 23); la comunidad abierta queda para después (ver
-  [ideas](ideas.md))
+- ~~Validación de precios por varias personas~~ → hecho en la
+  [SPEC 23](../specs/23-validacion-de-precios.md): votos del grupo en `price_votes`, estado calculado en la app; la
+  comunidad abierta queda para después (ver [ideas](ideas.md))
 - Backups
 - Analytics: búsquedas, reportes de precios, estadísticas de uso
 - Comunidad: calificaciones de comercios, comentarios en precios, reputación de usuarios

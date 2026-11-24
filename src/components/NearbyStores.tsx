@@ -7,8 +7,10 @@ import { formatDistance, LatLng } from '@/lib/geo';
 import { GroupPrice, groupPriceNote, groupPricesNear } from '@/lib/group';
 import { Price, StoreRef } from '@/lib/models';
 import { ownPricesNear } from '@/lib/price-form';
+import type { ValidationStatus } from '@/lib/price-validation';
 import { isStaleDate, latestBranchDate, NearbyPrice, storeRefFromBranch } from '@/lib/sepa';
 import { priceStoreRef, storeKey } from '@/lib/store';
+import ValidationBadge from './ValidationBadge';
 
 /** Comercios que se ven antes de tocar "Ver más", si no se pide otro límite */
 const VISIBLE_STORES = 10;
@@ -59,7 +61,8 @@ interface Props {
   ownPrices?: Price[];
   /**
    * Precios del grupo de este producto (spec 22, latestGroupPrices): solo los de un comercio con coordenadas dentro
-   * del radio, mezclados con los demás con su distancia, "Cargado por Ana · 12/11" y Mapa
+   * del radio, mezclados con los demás con su distancia, "Cargado por Ana · 12/11" y Mapa. Con la insignia de su
+   * estado (spec 23); uno Dudoso nunca lleva "Más barato"
    */
   groupPrices?: GroupPrice[];
   /** Ubicación de la app y radio: para la distancia de los precios propios y del grupo */
@@ -87,6 +90,8 @@ interface Row {
   aside: string;
   /** "Cargado por vos · dd/mm" (o "Cargado por Ana · dd/mm") debajo, en un precio propio o del grupo con distancia */
   note?: string;
+  /** Estado de un precio del grupo (spec 23) */
+  validation?: ValidationStatus;
   distanceKm: number;
   cheapest: boolean;
   /** Botón Mapa: las sucursales y los precios propios dentro del radio */
@@ -146,15 +151,17 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
       detail: storeDetail(p.store),
       aside: distanceLabel(distanceKm, approx),
       note: groupPriceNote(p),
+      validation: p.validation.status,
       distanceKm,
       cheapest: false,
       mappable: true,
     })),
   ].sort((a, b) => a.price - b.price || a.distanceKm - b.distanceKm || a.key.localeCompare(b.key));
-  const lowest = near[0]?.price;
+  // Los del grupo Dudosos no cuentan para "Más barato": el más barato se elige entre los demás (spec 23)
+  const lowest = near.find(row => row.validation !== 'dudoso')?.price;
 
   const rows: Row[] = [
-    ...near.map(row => ({ ...row, cheapest: row.price === lowest })),
+    ...near.map(row => ({ ...row, cheapest: row.validation !== 'dudoso' && row.price === lowest })),
     ...own.rest.map(p => ({
       key: `propio-${p.id}`,
       store: priceStoreRef(p),
@@ -183,7 +190,12 @@ export default function NearbyStores({ id, productName, prices, approx, ownPrice
                   <span className="shrink-0 text-sm text-gray-600">{row.aside}</span>
                 </div>
                 {row.detail && <p className="text-sm text-gray-600 break-words">{row.detail}</p>}
-                {row.note && <p className="text-sm text-gray-600">{row.note}</p>}
+                {row.note && (
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600">
+                    <span>{row.note}</span>
+                    {row.validation && <ValidationBadge status={row.validation} />}
+                  </p>
+                )}
               </div>
               <div className="mt-2 flex items-center justify-between gap-3 sm:mt-0 sm:shrink-0 sm:justify-end">
                 <span className="flex flex-wrap items-center gap-x-2">
