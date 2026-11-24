@@ -22,7 +22,7 @@ const NO_PRICES: PendingPrice[] = [];
 /**
  * Precios por validar (spec 23) con una sola llamada a `pending_validations()`. Solo con sesión (`userId`). Se pide al
  * montar, cada vez que la pantalla vuelve a mostrarse (con `<Activity>` los efectos se desmontan al ocultarla) y con
- * cada `clearGroupPrices` (cada voto): mientras tanto queda lo anterior, sin "Cargando…".
+ * cada `refreshGroupPrices` (cada voto): mientras tanto queda lo anterior, sin "Cargando…".
  */
 export function usePendingValidations(userId: string | null): PendingValidations {
   const version = useSyncExternalStore(subscribeGroupPrices, groupPricesVersion, () => 0);

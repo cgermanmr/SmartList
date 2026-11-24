@@ -60,7 +60,7 @@ function mate(amount: number, distanceKm = 0.25, store = 'Almacén Don Luis', st
   return {
     price: {
       ean: '7790387000016', amount, date: '2026-11-12T15:00:00.000Z', store: { name: store, lat: -34.6, lng: -58.4 },
-      member: 'Ana', memberId: 'u2', priceId: 'p1', validation: { status, votes: [] },
+      member: 'Ana', memberId: 'u2', priceId: 'p1', fingerprint: 'f1', validation: { status, votes: [] },
     },
     distanceKm,
   };

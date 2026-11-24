@@ -166,7 +166,7 @@ function PendingRow({ price, image, userId }: { price: PendingPrice; image?: str
           {summary && <p className="mt-1 text-sm text-gray-700 break-words">{summary}</p>}
         </div>
       </div>
-      <PriceVoteButtons key={`${price.priceId}|${price.amount}`} price={price} myUserId={userId} />
+      <PriceVoteButtons price={price} myUserId={userId} />
     </li>
   );
 }

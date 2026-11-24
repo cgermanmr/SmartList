@@ -56,8 +56,12 @@ Es también la base de la comunidad abierta ([ideas](../docs/ideas.md)), que que
 - Un voto por integrante y precio: **Está bien** (`ok`) o **No coincide** (`no`). Votar otra vez lo reemplaza.
 - **¿Cuánto viste?** es opcional y solo va con `no`: monto mayor a 0 (el mismo rango que `group_prices`). No crea un
   precio propio.
-- Cada voto guarda el **monto votado**, que la base toma de `user_records` (no lo manda la app). Si el autor cambia el
-  monto, los votos anteriores **dejan de contar** y el precio vuelve a "Por validar" para todos.
+- Cada voto guarda el **monto votado**, que la base toma de `user_records` (no lo manda la app), y la **huella** de lo
+  votado: EAN, monto, fecha y comercio. Si el autor cambia cualquiera de esos datos (también con "Cambiar vínculo"), los
+  votos anteriores **dejan de contar** y el precio vuelve a "Por validar" para todos. Si vuelve a lo que era, cuentan
+  otra vez.
+- El voto lleva la huella del precio que se mostró. Si el autor lo cambió mientras tanto, la base lo rechaza con
+  `price_changed` ("El precio cambió mientras lo mirabas. Revisalo y votá de nuevo.") y la pantalla vuelve a pedirlo.
 - Al **salir del grupo, ser sacado o borrar la cuenta**, se borran en cascada los votos de esa persona y los votos
   sobre sus precios. "Salir y unirme" (spec 22) también.
 - Un precio borrado por el autor deja de verse (sus votos quedan sin uso en la base).
@@ -115,8 +119,8 @@ Con los votos de los integrantes actuales cuyo monto votado es igual al monto ac
 - Mientras se guarda, los botones quedan deshabilitados (`aria-busy`). Error junto a los botones (`role="alert"`):
   sin conexión, "No se pudo guardar. Revisá la conexión."; `price_not_found`, "Ese precio ya no está en el grupo.";
   `not_in_group`, el mensaje de la spec 22.
-- Cada voto vacía la caché de precios del grupo (`clearGroupPrices`): las pantallas abiertas vuelven a pedirlos con
-  el estado nuevo.
+- Cada voto vuelve a pedir los precios del grupo (`refreshGroupPrices`): las pantallas abiertas muestran el estado nuevo
+  y, hasta que llega, lo anterior.
 
 ### Resumen de votos (`validationSummary`)
 
@@ -157,6 +161,7 @@ create table public.price_votes (
   amount     double precision not null,   -- monto votado, tomado de user_records
   seen       double precision check (seen > 0 and seen < 1e9),  -- "¿Cuánto viste?"
   created_at timestamptz      not null default now(),
+  fingerprint text            not null,   -- huella de lo votado (20261124000000_validacion_endurecer.sql)
   primary key (owner_id, price_id, voter_id),
   check (voter_id <> owner_id),
   check (seen is null or verdict = 'no'),
@@ -169,13 +174,14 @@ create index price_votes_voter on public.price_votes (group_id, voter_id);
 
 - RLS activado **sin permisos directos**, como `groups` y `group_members`: todo pasa por funciones
   `security definer` con `search_path = ''` que validan con `auth.uid()`.
-- Códigos de error nuevos, traducidos por `groupErrorMessage`: `price_not_found`, `own_price`, `invalid_amount`.
+- Códigos de error nuevos, traducidos por `groupErrorMessage`: `price_not_found`, `own_price`, `invalid_amount`,
+  `price_changed`.
 
 | Función | Qué hace |
 |---|---|
-| `vote_price(p_owner uuid, p_price_id text, p_verdict text, p_seen double precision default null)` | Controla que el autor sea otro integrante del mismo grupo con `share_prices`, que el precio exista, no esté borrado, sea de un producto con EAN y de los últimos 60 días (si no, `price_not_found`) y que `p_seen` esté en rango; guarda el voto con el monto actual (`insert … on conflict do update`) |
+| `vote_price(p_owner uuid, p_price_id text, p_fingerprint text, p_verdict text, p_seen double precision default null)` | Controla que el autor sea otro integrante del mismo grupo con `share_prices`, que el precio exista, no esté borrado, sea de un producto con EAN y de los últimos 60 días (si no, `price_not_found`) que la huella sea la actual (si no, `price_changed`) y que `p_seen` esté en rango; guarda el voto con el monto y la huella (`insert … on conflict do update`) |
 | `unvote_price(p_owner uuid, p_price_id text)` | Borra el voto propio, si existe |
-| `group_prices(p_eans text[])` | Igual que en la spec 22, con tres columnas más: `price_id text`, `product_name text` y `votes jsonb` (`[{ voterId, member, verdict, amount, seen, at }]`, de los integrantes actuales, en orden de voto). Cambia el tipo de retorno: `drop function` y `create`, con los mismos `revoke`/`grant` |
+| `group_prices(p_eans text[])` | Igual que en la spec 22, con cuatro columnas más: `price_id text`, `product_name text`, `fingerprint text` y `votes jsonb` (solo los votos con la huella actual: `[{ voterId, member, verdict, amount, seen, at }]`, de los integrantes actuales, en orden de voto). Cambia el tipo de retorno: `drop function` y `create`, con los mismos `revoke`/`grant` |
 | `pending_validations()` | Los precios de los demás integrantes con `share_prices`, de productos con EAN y con comercio, de los últimos 14 días: las columnas de `group_prices` más `brand`, `size` y `size_unit` del producto. Hasta 200, del más nuevo al más viejo |
 | `my_price_votes(p_price_ids text[])` | Los votos de los integrantes actuales sobre los precios propios de esos `id` (ignora lo que pase de 100): `(price_id, voter_id, member, verdict, amount, seen, at)` |
 
@@ -224,7 +230,7 @@ export function validationSummary(validation: PriceValidation, myUserId: string)
 export function pendingValidations(prices: PendingPrice[], myUserId: string): PendingPrice[];
 ```
 
-`GroupPrice` (`src/lib/group.ts`) suma `priceId: string` y `validation: PriceValidation`, armados en
+`GroupPrice` (`src/lib/group.ts`) suma `priceId: string`, `fingerprint: string` y `validation: PriceValidation`, armados en
 `groupPriceFromRow` con `priceValidation(votes, amount)`. `latestGroupPrices` y `groupPricesNear` no cambian.
 
 Llamadas a la base (sin tests automáticos), con `.retry(false)`: `votePrice`, `unvotePrice`, `fetchPendingValidations`
@@ -313,6 +319,10 @@ Comercios cercanos (fila del grupo):
 - [ ] Con 2 "Está bien" y 2 "No coincide", el precio queda Dudoso.
 - [ ] "¿Cuánto sale acá?" no usa un precio del grupo Dudoso como el más barato; uno Validado suma ", validado".
 - [ ] Cambiar el monto de un precio votado hace que sus votos dejen de contar: sin insignia y de nuevo en "Por validar".
+- [ ] Cambiar el vínculo, el comercio o la fecha de un precio votado también hace que sus votos dejen de contar.
+- [ ] Votar un precio que el autor cambió mientras se miraba muestra "El precio cambió mientras lo mirabas. Revisalo y
+      votá de nuevo." con el precio nuevo, y no registra el voto.
+- [ ] Un producto con un `size` enorme (`1e400`) no rompe "Por validar".
 - [ ] `/grupo/validar` lista los precios de los demás de los últimos 14 días sin votar ni validar, el último de cada
       integrante en cada comercio por producto; uno de 15 días no aparece.
 - [ ] Un precio Dudoso que no voté aparece en "Por validar"; uno que voté, no (al volver a la página).
@@ -355,8 +365,12 @@ Comercios cercanos (fila del grupo):
   autor (solo él lo escribe, RLS de la spec 21) y los votos son de los demás.
 - **Funciones `security definer` sin permisos directos**, como la spec 22: las reglas (mismo grupo, no lo propio,
   precio visible) quedan en un solo lugar.
-- **Votar vacía la caché del grupo** (`clearGroupPrices`) en lugar de actualizarla a mano: ya existe y las pantallas
-  saben volver a pedir.
+- **Votar vuelve a pedir los precios del grupo** (`refreshGroupPrices`) en lugar de actualizar la caché a mano. No los
+  descarta como `clearGroupPrices`: la tarjeta se desmontaría y se perderían "¿Cuánto viste?" y los avisos.
+- **Huella de lo votado** (revisión de seguridad del 24/11/2026): el monto solo no alcanza, porque el autor puede
+  cambiar el producto, el comercio o la fecha de un precio ya validado. Se calcula en la base y la app la devuelve tal
+  cual, así el mismo valor detecta un precio que cambió mientras se miraba. El nombre del producto no entra:
+  corregirlo no cambia lo votado. Los votos de antes de la huella dejan de contar.
 - **Contador solo en `/grupo` y `/cuenta`** (elegido): sin punto en el header, que hoy avisa solo de la
   sincronización.
 - **Numeración**: la spec conserva el número 23 que le reservó la spec 21, aunque ya existan specs posteriores.

@@ -135,7 +135,7 @@ function pending(overrides: Partial<PendingPrice> = {}, votes: PriceVote[] = [])
   const amount = overrides.amount ?? 3200;
   return {
     ean: '7790000000001', amount, date: '2026-11-20T12:00:00.000Z', store: { name: 'Almacén Don Luis' },
-    member: 'Ana', memberId: 'u1', priceId: 'p1', productName: 'Yerba', ...overrides,
+    member: 'Ana', memberId: 'u1', priceId: 'p1', fingerprint: 'f1', productName: 'Yerba', ...overrides,
     validation: priceValidation(votes, amount),
   };
 }

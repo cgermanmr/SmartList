@@ -89,7 +89,8 @@ supabase/
 │                               #   20261117000000_sepa_imagenes.sql, 20261118000000_user_records.sql,
 │                               #   20261122000000_fotos_propias.sql (bucket privado, spec 27),
 │                               #   20261123000000_grupos.sql y 20261123000001_grupos_trigger_privado.sql (spec 22),
-│                               #   20261123000003_validacion.sql (votos, spec 23)
+│                               #   20261123000003_validacion.sql (votos, spec 23),
+│                               #   20261124000000_validacion_endurecer.sql (huella del precio votado, spec 23)
 └── prod-ca-2021.crt            # Certificado público de Supabase para la conexión SSL
 public/
 ├── manifest.json               # PWA: tema #5b2a86, display standalone
@@ -388,14 +389,19 @@ src/
   uno por integrante y precio. Tabla `price_votes` (clave `owner_id, price_id, voter_id`) con RLS y sin permisos
   directos: `vote_price` controla que el autor sea otro integrante del mismo grupo con `share_prices` y que el precio
   sea visible (no borrado, producto con EAN, con comercio, 60 días; si no, `price_not_found`) y **toma el monto de
-  `user_records`** (la app no lo manda). Claves foráneas `(group_id, owner_id)` y `(group_id, voter_id)` a
+  `user_records`** (la app no lo manda). La app manda la **huella** (`fingerprint`, md5 de EAN, monto en centavos,
+  fecha y comercio; la dan `group_prices` y `pending_validations`) del precio que mostró: si ya no es la misma,
+  `price_changed`. El voto la guarda y las funciones solo devuelven los votos con la huella actual: si el autor cambia
+  el vínculo, el comercio, la fecha o el monto, dejan de contar. Claves foráneas `(group_id, owner_id)` y
+  `(group_id, voter_id)` a
   `group_members` en cascada: salir, ser sacado o borrar la cuenta borra los votos de esa persona y sobre sus precios.
   `group_prices` suma `price_id`, `product_name` y `votes` (jsonb, con el apodo, nunca el mail). **El estado se
   calcula en la app** (`priceValidation`): solo cuentan los votos cuyo monto votado es igual al actual (en centavos,
   `centsDiff`); *Validado* con 2 o más `ok` y más `ok` que `no`, *Dudoso* con 2 o más `no` y al menos tantos `no`
   como `ok` (el empate va a Dudoso). Los Dudosos se ven pero no llevan "Más barato" en `NearbyStores` ni entran en
   `cheapestNear` de "¿Cuánto sale acá?"; un más barato del grupo Validado suma ", validado". Cada voto llama a
-  `clearGroupPrices` y las pantallas vuelven a pedir. "Por validar" sale de `pending_validations()` (14 días, hasta
+  `refreshGroupPrices`: las pantallas vuelven a pedir y conservan lo anterior mientras tanto (`clearGroupPrices` lo
+  descarta). "Por validar" sale de `pending_validations()` (14 días, hasta
   200) filtrado con `pendingValidations` (el último de cada integrante en cada comercio por producto, sin lo votado
   ni lo validado); la página conserva lo votado hasta la próxima visita (`visit` de `usePendingValidations`). El
   autor ve los votos en su historial con `my_price_votes(ids)`, contados contra el monto local
@@ -1021,7 +1027,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 | `sepa_imagenes` | Por EAN: `url` de la imagen (`null` = se buscó y no hay), `fuente` (`off` / `preciosclaros`) y `revisado`; sin clave foránea a `sepa_productos` (spec 17) |
 | `user_records` | Datos de cada usuario (spec 21): `user_id`, `collection` (`products` / `prices` / `cart` / `purchases` / `settings`), `id`, `data` (JSON del registro), `deleted`, `modified_at` (dispositivo; gana el último) y `synced_at` (servidor; cursor). RLS: cada usuario lee, crea y modifica solo sus filas; sin delete. Trigger `user_records_touch`; `delete_my_account()` borra el usuario y sus filas en cascada |
 | `groups` | Grupos (spec 22): `id`, `name` (1–40), `invite_code` (único) y `created_at`. RLS sin políticas ni permisos: solo las funciones |
-| `price_votes` | Votos (spec 23): `group_id`, `owner_id` (autor), `price_id`, `voter_id`, `verdict` (`ok` / `no`), `amount` (monto votado, de `user_records`), `seen` ("¿Cuánto viste?", solo con `no`) y `created_at`. RLS sin permisos: solo las funciones `vote_price`, `unvote_price`, `group_prices` (con `votes`), `pending_validations` y `my_price_votes`. Cascada desde `group_members` |
+| `price_votes` | Votos (spec 23): `group_id`, `owner_id` (autor), `price_id`, `voter_id`, `verdict` (`ok` / `no`), `amount` (monto votado, de `user_records`), `seen` ("¿Cuánto viste?", solo con `no`), `fingerprint` (huella del precio votado) y `created_at`. RLS sin permisos: solo las funciones `vote_price`, `unvote_price`, `group_prices` (con `votes`), `pending_validations` y `my_price_votes`. Cascada desde `group_members` |
 | `group_members` | Integrantes (spec 22): `group_id`, `user_id` (único: un grupo a la vez; cascada al borrar la cuenta), `nickname` (1–30), `role` (`admin` / `member`), `share_prices` y `joined_at`. Trigger `group_members_after_delete` (nuevo administrador o grupo borrado). Funciones: `create_group`, `group_preview` (también `anon`), `join_group`, `my_group`, `rename_group`, `regenerate_invite`, `remove_member`, `set_nickname`, `set_share_prices`, `leave_group` y `group_prices` |
 
 - **Storage** (spec 27): bucket **privado** `fotos-propias`, JPEG de hasta 300 KB (`file_size_limit` 307200,

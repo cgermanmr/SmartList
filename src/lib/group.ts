@@ -46,6 +46,7 @@ export interface GroupPrice {
   member: string;     // apodo actual
   memberId: string;   // user_id: distingue a dos integrantes con el mismo apodo
   priceId: string;    // id del precio en user_records (spec 23)
+  fingerprint: string;  // huella de lo que se vota (EAN, monto, fecha y comercio): vuelve a la base con el voto
   validation: PriceValidation;  // votos que cuentan y estado (spec 23)
 }
 
@@ -89,6 +90,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   price_not_found: 'Ese precio ya no está en el grupo.',
   own_price: 'No podés validar tus propios precios.',
   invalid_amount: 'Revisá el monto.',
+  price_changed: 'El precio cambió mientras lo mirabas. Revisalo y votá de nuevo.',
 };
 
 /** Mensaje para el código que levanta la base; cualquier otro error se toma como de conexión */
@@ -140,6 +142,7 @@ export interface GroupPriceRow {
   price_id: string;
   product_name?: string | null;
   votes: unknown;     // jsonb: [{ voterId, member, verdict, amount, seen, at }] (spec 23)
+  fingerprint: string;
 }
 
 /** Fila de pending_validations: la de group_prices con los datos del producto del autor */
@@ -184,7 +187,7 @@ export function groupPriceFromRow(row: GroupPriceRow): GroupPrice | null {
   };
   return {
     ean: row.ean, amount: row.amount, date: row.date, store, member: row.member, memberId: row.member_id,
-    priceId: row.price_id, validation: priceValidation(votesFromJson(row.votes), row.amount),
+    priceId: row.price_id, fingerprint: row.fingerprint, validation: priceValidation(votesFromJson(row.votes), row.amount),
   };
 }
 
@@ -269,17 +272,30 @@ export async function leaveGroup(): Promise<void> {
 }
 
 // ── Validación (spec 23) ─────────────────────────────────────
-// Cada voto vacía la caché de precios del grupo: las pantallas abiertas vuelven a pedirlos con el estado nuevo.
+// Cada voto vuelve a pedir los precios del grupo (refreshGroupPrices): las pantallas abiertas muestran el estado nuevo.
 
-/** Vota un precio de otro integrante; con seen, "¿Cuánto viste?" (solo con 'no'). El monto lo toma la base */
-export async function votePrice(ownerId: string, priceId: string, verdict: Verdict, seen?: number): Promise<void> {
-  await call('vote_price', { p_owner: ownerId, p_price_id: priceId, p_verdict: verdict, p_seen: seen ?? null });
-  clearGroupPrices();
+/**
+ * Vota un precio de otro integrante; con seen, "¿Cuánto viste?" (solo con 'no'). El monto lo toma la base, que rechaza
+ * el voto (price_changed) si el precio ya no es el que se mostró: se vuelven a pedir los precios para verlo
+ */
+export async function votePrice(
+  price: Pick<GroupPrice, 'memberId' | 'priceId' | 'fingerprint'>, verdict: Verdict, seen?: number,
+): Promise<void> {
+  try {
+    await call('vote_price', {
+      p_owner: price.memberId, p_price_id: price.priceId, p_fingerprint: price.fingerprint, p_verdict: verdict,
+      p_seen: seen ?? null,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.message === 'price_changed') refreshGroupPrices();
+    throw e;
+  }
+  refreshGroupPrices();
 }
 
 export async function unvotePrice(ownerId: string, priceId: string): Promise<void> {
   await call('unvote_price', { p_owner: ownerId, p_price_id: priceId });
-  clearGroupPrices();
+  refreshGroupPrices();
 }
 
 /** Los precios de los demás de los últimos 14 días con sus votos (sin filtrar: lo hace pendingValidations) */
@@ -312,18 +328,33 @@ interface CacheEntry {
 
 const groupPriceCache = new Map<string, CacheEntry>();
 let version = 0;
+let epoch = 0;
 const listeners = new Set<() => void>();
 
 /** Vacía la caché: al crear, unirse, salir, sacar a alguien, pausar o reanudar, cerrar sesión y borrar la cuenta */
 export function clearGroupPrices(): void {
+  epoch += 1;
+  refreshGroupPrices();
+}
+
+/**
+ * Vuelve a pedir los precios después de votar: lo que ya se ve sirve hasta que llega la respuesta. Si la pantalla lo
+ * descartara, se perderían "¿Cuánto viste?" y el aviso de un precio que cambió
+ */
+export function refreshGroupPrices(): void {
   groupPriceCache.clear();
   version += 1;
   for (const listener of listeners) listener();
 }
 
-/** Cambia con cada clearGroupPrices (para useSyncExternalStore) */
+/** Cambia cada vez que hay que volver a pedir los precios (para useSyncExternalStore) */
 export function groupPricesVersion(): number {
   return version;
+}
+
+/** Cambia solo con clearGroupPrices: lo que se respondió antes ya no se puede mostrar */
+export function groupPricesEpoch(): number {
+  return epoch;
 }
 
 export function subscribeGroupPrices(listener: () => void): () => void {

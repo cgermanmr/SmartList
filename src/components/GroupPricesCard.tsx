@@ -9,7 +9,7 @@ import { uniqueId } from '@/lib/ids';
 import { Product, StoreRef } from '@/lib/models';
 import { validationSummary } from '@/lib/price-validation';
 import { mapStops, MapStop } from '@/lib/route';
-import { storeKey, useStore } from '@/lib/store';
+import { useStore } from '@/lib/store';
 import BranchMap from './BranchMap';
 import PriceVoteButtons from './PriceVoteButtons';
 import { useAuth } from './useAuth';
@@ -64,7 +64,7 @@ export default function GroupPricesCard({ product }: { product: Product }) {
           const detail = storeDetail(price.store);
           const summary = myUserId ? validationSummary(price.validation, myUserId) : '';
           return (
-            <li key={`${price.memberId}|${storeKey(price.store)}`} className="px-3 py-3">
+            <li key={`${price.memberId}|${price.priceId}`} className="px-3 py-3">
               <div className="sm:flex sm:items-center sm:gap-4">
                 <div className="min-w-0 sm:flex-1">
                   <div className="flex items-baseline gap-2">
@@ -103,9 +103,7 @@ export default function GroupPricesCard({ product }: { product: Product }) {
                 </div>
               </div>
               {summary && <p className="mt-2 text-sm text-gray-700 break-words">{summary}</p>}
-              {myUserId && (
-                <PriceVoteButtons key={`${price.priceId}|${price.amount}`} price={price} myUserId={myUserId} />
-              )}
+              {myUserId && <PriceVoteButtons price={price} myUserId={myUserId} />}
             </li>
           );
         })}

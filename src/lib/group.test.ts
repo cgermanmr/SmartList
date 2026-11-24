@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  GroupPrice, GroupPriceRow, defaultNickname, groupErrorMessage, groupPriceFromRow, groupPriceNote, groupPricesNear,
-  inviteUrl, latestGroupPrices, pendingPriceFromRow, validGroupName, validNickname,
+  GroupPrice, GroupPriceRow, clearGroupPrices, defaultNickname, groupErrorMessage, groupPriceFromRow, groupPriceNote,
+  groupPricesEpoch, groupPricesNear, groupPricesVersion, inviteUrl, latestGroupPrices, pendingPriceFromRow,
+  refreshGroupPrices, subscribeGroupPrices, validGroupName, validNickname,
 } from './group';
 
 // ── defaultNickname ───────────────────────────────────────
@@ -57,6 +58,7 @@ describe('groupErrorMessage', () => {
     expect(groupErrorMessage('price_not_found')).toBe('Ese precio ya no está en el grupo.');
     expect(groupErrorMessage('own_price')).toBe('No podés validar tus propios precios.');
     expect(groupErrorMessage('invalid_amount')).toBe('Revisá el monto.');
+    expect(groupErrorMessage('price_changed')).toBe('El precio cambió mientras lo mirabas. Revisalo y votá de nuevo.');
   });
 
   it('cualquier otro error es de conexión', () => {
@@ -70,7 +72,8 @@ describe('groupErrorMessage', () => {
 function price(overrides: Partial<GroupPrice>): GroupPrice {
   return {
     ean: '7790000000001', amount: 100, date: '2026-11-20T12:00:00.000Z', store: { name: 'Super Luna' },
-    member: 'Ana', memberId: 'u1', priceId: 'p1', validation: { status: 'sin_validar', votes: [] }, ...overrides,
+    member: 'Ana', memberId: 'u1', priceId: 'p1', fingerprint: 'f1', validation: { status: 'sin_validar', votes: [] },
+    ...overrides,
   };
 }
 
@@ -121,7 +124,7 @@ describe('groupPricesNear', () => {
 describe('groupPriceFromRow', () => {
   const row: GroupPriceRow = {
     ean: '7790000000001', amount: 1500, date: '2026-11-20T12:00:00.000Z', store: 'Almacén Don Luis',
-    barrio: 'Caballito', store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [],
+    barrio: 'Caballito', store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [], fingerprint: 'f1',
   };
 
   it('con storeRef, el comercio completo (solo los campos conocidos)', () => {
@@ -131,7 +134,7 @@ describe('groupPriceFromRow', () => {
     };
     expect(groupPriceFromRow({ ...row, store_ref: storeRef })).toEqual({
       ean: '7790000000001', amount: 1500, date: '2026-11-20T12:00:00.000Z', member: 'Ana', memberId: 'u1',
-      priceId: 'p1', validation: { status: 'sin_validar', votes: [] },
+      priceId: 'p1', fingerprint: 'f1', validation: { status: 'sin_validar', votes: [] },
       store: {
         name: 'Almacén Don Luis', address: 'Av. Rivadavia 5100', barrio: 'Caballito', lat: -34.6, lng: -58.43,
         sepaId: '10-1-123', chain: 'Don Luis',
@@ -169,6 +172,21 @@ describe('groupPriceFromRow', () => {
   });
 });
 
+describe('refreshGroupPrices y clearGroupPrices', () => {
+  it('votar vuelve a pedir sin descartar lo que se ve; salir del grupo también lo descarta', () => {
+    let calls = 0;
+    const unsubscribe = subscribeGroupPrices(() => { calls += 1; });
+    const [version, epoch] = [groupPricesVersion(), groupPricesEpoch()];
+
+    refreshGroupPrices();
+    expect([groupPricesVersion(), groupPricesEpoch()]).toEqual([version + 1, epoch]);
+    clearGroupPrices();
+    expect([groupPricesVersion(), groupPricesEpoch()]).toEqual([version + 2, epoch + 1]);
+    expect(calls).toBe(2);
+    unsubscribe();
+  });
+});
+
 describe('groupPriceNote', () => {
   it('quién lo cargó y el día', () => {
     expect(groupPriceNote(price({ member: 'Ana', date: '2026-11-12T15:00:00.000Z' }))).toBe('Cargado por Ana · 12/11');
@@ -178,8 +196,8 @@ describe('groupPriceNote', () => {
 describe('pendingPriceFromRow', () => {
   const row = {
     ean: '7790000000001', amount: 3200, date: '2026-11-20T12:00:00.000Z', store: 'Almacén Don Luis', barrio: null,
-    store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [], product_name: ' Yerba Playadito ',
-    brand: 'Playadito', size: 1, size_unit: 'kg',
+    store_ref: null, member: 'Ana', member_id: 'u1', price_id: 'p1', votes: [], fingerprint: 'f1',
+    product_name: ' Yerba Playadito ', brand: 'Playadito', size: 1, size_unit: 'kg',
   };
 
   it('el precio con nombre, marca y presentación del autor', () => {

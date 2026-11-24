@@ -27,7 +27,8 @@ const VERDICT_STYLE: Record<Verdict, string> = {
 /**
  * "Está bien" y "No coincide" sobre un precio de otro integrante (spec 23). Tocar uno vota (o cambia el voto); tocar
  * el marcado lo quita. Después de "No coincide", "¿Cuánto viste? (opcional)" con Guardar, que vuelve a votar con el
- * monto. Cada voto vacía la caché del grupo: las pantallas vuelven a pedir los precios con el estado nuevo
+ * monto. Cada voto hace que las pantallas vuelvan a pedir los precios con el estado nuevo. La key
+ * no lleva el monto: si el autor lo cambia mientras se vota, el aviso se tiene que seguir viendo
  */
 export default function PriceVoteButtons({ price, myUserId }: { price: GroupPrice; myUserId: string }) {
   const seenId = useId();
@@ -39,6 +40,14 @@ export default function PriceVoteButtons({ price, myUserId }: { price: GroupPric
   const [error, setError] = useState('');
   const [askSeen, setAskSeen] = useState(false);
   const [seen, setSeen] = useState('');
+
+  // El autor cambió el precio: lo votado era sobre el de antes. El error queda (puede ser price_changed)
+  const [voted, setVoted] = useState(price.fingerprint);
+  if (voted !== price.fingerprint) {
+    setVoted(price.fingerprint);
+    setLocal(null);
+    setAskSeen(false);
+  }
 
   // Llegó el voto desde la base (o cambió en otro lado): manda lo que dicen las props
   if (local && local.base !== propVerdict) setLocal(null);
@@ -66,7 +75,7 @@ export default function PriceVoteButtons({ price, myUserId }: { price: GroupPric
       await run(() => unvotePrice(price.memberId, price.priceId), null);
       return;
     }
-    const ok = await run(() => votePrice(price.memberId, price.priceId, choice), choice);
+    const ok = await run(() => votePrice(price, choice), choice);
     if (ok && choice === 'no') {
       setSeen('');
       setAskSeen(true);
@@ -78,7 +87,7 @@ export default function PriceVoteButtons({ price, myUserId }: { price: GroupPric
   async function saveSeen() {
     const amount = parseSeen(seen);
     if (amount === null) return;
-    if (await run(() => votePrice(price.memberId, price.priceId, 'no', amount), 'no')) setAskSeen(false);
+    if (await run(() => votePrice(price, 'no', amount), 'no')) setAskSeen(false);
   }
 
   const button = (choice: Verdict) => {
