@@ -1,6 +1,6 @@
 # SPEC 31 — Compartir el carrito por WhatsApp
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 02](02-boton-repetir-historial.md), [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 12](12-precio-de-referencia-sepa.md), [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md), [SPEC 30](30-compartir-por-whatsapp.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Enviar por WhatsApp el carrito, un comercio del carrito o una compra del historial como una lista legible con un link que muestra esos productos en la app y los carga en el carrito de quien lo recibe.

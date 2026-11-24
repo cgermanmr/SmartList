@@ -106,6 +106,23 @@ export async function getSepaProduct(ean: string): Promise<SepaProduct | null> {
   return data ? toSepaProduct(data) : null;
 }
 
+const PRODUCT_BATCH = 100;
+
+/** Productos del catálogo por EAN, de a 100 (spec 31); los que no están en el catálogo no están en el mapa */
+export async function getSepaProducts(eans: string[]): Promise<Map<string, SepaProduct>> {
+  const client = supabase;
+  if (!client) return new Map();
+  const unique = [...new Set(eans)];
+  const batches: string[][] = [];
+  for (let i = 0; i < unique.length; i += PRODUCT_BATCH) batches.push(unique.slice(i, i + PRODUCT_BATCH));
+  const products = await Promise.all(batches.map(async batch => {
+    const { data, error } = await client.from('sepa_productos').select(COLUMNS).in('ean', batch).retry(false);
+    if (error) throw error;
+    return data.map(toSepaProduct);
+  }));
+  return new Map(products.flat().map(product => [product.ean, product]));
+}
+
 // ── Precios por cadena ─────────────────────────────────────
 // Caché de módulo por EAN, válida durante la sesión: guarda la promesa, así dos pantallas que piden el mismo EAN a la
 // vez comparten la consulta, y también los "sin precios" ([]). Si la consulta falla, sus EAN salen de la caché.

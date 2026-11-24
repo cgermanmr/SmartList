@@ -150,6 +150,18 @@ No se probó la interfaz, ni Storage real, ni el login.
 - [ ] **53.** El favicon y el ícono instalado muestran el changuito; el aviso "… en el carrito" se ve entero sobre la
       barra inferior.
 
+### Compartir el carrito (spec 31)
+
+Antes de la producción, cambiar a mano el dominio del link por el de la preview (el link es siempre el de producción).
+
+- [ ] **54.** Android e iPhone, con y sin la app instalada, y WhatsApp Web: **Compartir por WhatsApp** abre WhatsApp con
+      la lista y el link completo; al tocarlo se ve la vista previa.
+- [ ] **55.** En los tres, listas de 40 y de 100 productos con nombre (sin código): WhatsApp no corta el mensaje y el link
+      abre. Si falla, bajar `MAX_MESSAGE_ITEMS` o `MAX_SHARED_ITEMS` y anotarlo en las decisiones de la spec.
+- [ ] **56.** iPhone: en Safari aparece **Copiar link**; pegarlo en la app instalada (Carrito → Cargar un carrito
+      compartido) muestra la vista previa. En la app instalada y en Android no aparece el aviso.
+- [ ] **57.** Con sesión, el carrito cargado y los productos nuevos aparecen en el otro dispositivo.
+
 ## Resultados
 
 | Prueba | Fecha | Resultado |

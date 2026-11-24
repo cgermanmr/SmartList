@@ -10,8 +10,10 @@ import BranchMap from '@/components/BranchMap';
 import CartCompareCard from '@/components/CartCompareCard';
 import CartStoreDialog from '@/components/CartStoreDialog';
 import NumberInput from '@/components/NumberInput';
+import PasteCartDialog from '@/components/PasteCartDialog';
 import ProductImage from '@/components/ProductImage';
 import { REFERENCE_TEXT_CLASS } from '@/components/ReferencePrice';
+import ShareCartLink from '@/components/ShareCartLink';
 import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
 import { useSepaReferenceLookup } from '@/components/useSepaReferences';
@@ -201,6 +203,7 @@ export default function CartPage() {
         <div className="text-center py-12">
           <p className="text-gray-500 text-lg mb-4">Tu carrito está vacío</p>
           <Link href="/" className="btn-primary inline-block">Volver a Buscar</Link>
+          <div className="mt-4"><PasteCartDialog /></div>
         </div>
       </div>
     );
@@ -226,6 +229,7 @@ export default function CartPage() {
             group={group}
             eanOf={eanOf}
             references={references}
+            shareable={groups.length > 1}
             imageOf={imageOf}
             onChangeStore={setStoreItemId}
             onMap={store => setMap({ stops: mapStops([store]) })}
@@ -257,18 +261,23 @@ export default function CartPage() {
             </span>
           )}
         </p>
-        {/* Con un solo comercio en el mapa alcanza el botón de su encabezado */}
-        {located.length >= 2 && (
-          <button type="button" onClick={showTour} className="btn-secondary inline-flex w-full items-center justify-center gap-2 bg-white sm:w-auto">
-            <RouteIcon aria-hidden="true" className="size-5" />
-            Ver recorrido
-          </button>
-        )}
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+          {/* Con un solo comercio en el mapa alcanza el botón de su encabezado */}
+          {located.length >= 2 && (
+            <button type="button" onClick={showTour} className="btn-secondary inline-flex items-center justify-center gap-2 bg-white">
+              <RouteIcon aria-hidden="true" className="size-5" />
+              Ver recorrido
+            </button>
+          )}
+          <ShareCartLink items={cart} references={references} className="bg-white" />
+        </div>
       </div>
 
       <button onClick={clear} className="btn-secondary w-full sm:w-auto min-h-11">
         Vaciar carrito
       </button>
+
+      <div className="mt-4 text-center sm:text-left"><PasteCartDialog /></div>
 
       <CartStoreDialog item={storeItem} stores={getCartStores(cart)} onClose={() => setStoreItemId(null)} />
       <BranchMap stops={map?.stops ?? null} notes={map?.notes} onClose={() => setMap(null)} />
@@ -291,6 +300,8 @@ interface StoreGroupProps {
   group: CartGroup;
   eanOf: (productId: string) => string | undefined;
   references: Map<string, ReferenceSummary>;
+  /** Con un solo grupo alcanza el "Compartir por WhatsApp" de todo el carrito */
+  shareable: boolean;
   imageOf: (productId: string) => string | undefined;
   onChangeStore: (itemId: string) => void;
   /** Ver el comercio en el mapa (solo se ofrece si tiene coordenadas) */
@@ -300,7 +311,9 @@ interface StoreGroupProps {
   payment: ReactNode;
 }
 
-function StoreGroup({ group, eanOf, references, imageOf, onChangeStore, onMap, onCheckout, payment }: StoreGroupProps) {
+function StoreGroup({
+  group, eanOf, references, shareable, imageOf, onChangeStore, onMap, onCheckout, payment,
+}: StoreGroupProps) {
   const titleId = useId();
   const store = group.store;
   const detail = storeDetail(store);
@@ -361,13 +374,22 @@ function StoreGroup({ group, eanOf, references, imageOf, onChangeStore, onMap, o
                 Completá los precios para comprar
               </p>
             )}
-            <button
-              onClick={onCheckout}
-              disabled={blocked}
-              aria-describedby={blocked ? blockedId : undefined}
-              className="btn-primary w-full sm:w-auto min-h-11 truncate disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary-700">
-              {store ? `Comprar en ${store.name}` : 'Registrar compra'}
-            </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+              {shareable && (
+                <ShareCartLink
+                  items={group.items}
+                  references={references}
+                  iconLabel={`Compartir ${store ? store.name : 'Sin comercio'} por WhatsApp`}
+                />
+              )}
+              <button
+                onClick={onCheckout}
+                disabled={blocked}
+                aria-describedby={blocked ? blockedId : undefined}
+                className="btn-primary min-w-0 flex-1 min-h-11 truncate sm:flex-none disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-primary-700">
+                {store ? `Comprar en ${store.name}` : 'Registrar compra'}
+              </button>
+            </div>
           </div>
         )}
       </div>

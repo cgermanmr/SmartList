@@ -20,7 +20,6 @@ enlazan acá con `→ spec NN` y se borran de la bandeja cuando la spec se imple
 ## Compras
 
 - Listas de compra personalizadas (ver [03 — Lista compartida](features/03-lista-compartida.md))
-- Compartir carrito
 - Presupuesto mensual con aviso al acercarse al límite
 
 ## Comercios y comunidad

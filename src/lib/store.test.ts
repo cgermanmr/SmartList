@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CartItem, Price, Product, Purchase, StoreRef } from './models';
 import type { SepaProduct } from './sepa';
+import type { SharedLoad } from './shared-cart';
 import { CALCULATOR_KEY, CART_KEY, LOCATION_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
 import {
   filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, getRecentStorePrices,
-  NO_BARRIO, groupCartByStore, initialCartPrice, priceStoreRef, storeKey, useStore,
+  NO_BARRIO, groupCartByStore, initialCartPrice, priceStoreRef, purchaseStoreRef, storeKey, useStore,
 } from './store';
 
 // localStorage en memoria para el entorno de Node
@@ -738,5 +739,58 @@ describe('priceStoreRef', () => {
   it('un precio con storeRef de una sucursal tiene el storeKey de su sepaId', () => {
     const ref = priceStoreRef({ store: 'Coto', barrio: NO_BARRIO, storeRef: { name: 'Coto', sepaId: '10-1-123' } });
     expect(storeKey(ref)).toBe('sepa:10-1-123');
+  });
+});
+
+describe('loadSharedCart', () => {
+  const load = (items: CartItem[], products: Product[] = []): SharedLoad => ({ products, items });
+  const coto: StoreRef = { name: 'Coto' };
+  const dia: StoreRef = { name: 'Día' };
+
+  it('combinar suma la cantidad y conserva el comercio y el precio que ya tenía', () => {
+    useStore.setState({ cart: [item('1', 100, 2, coto)] });
+    useStore.getState().loadSharedCart(load([item('1', 50, 3, dia), item('2', 10, 1, dia)]), true);
+    const { cart } = useStore.getState();
+    expect(cart).toHaveLength(2);
+    expect(cart[0]).toMatchObject({ productId: '1', price: 100, quantity: 5, subtotal: 500, store: coto });
+    expect(cart[1]).toMatchObject({ productId: '2', price: 10, store: dia });
+  });
+
+  it('reemplazar deja solo lo compartido', () => {
+    useStore.setState({ cart: [item('1', 100), item('3', 1)] });
+    useStore.getState().loadSharedCart(load([item('1', 50, 3, dia)]), false);
+    expect(useStore.getState().cart).toEqual([item('1', 50, 3, dia)]);
+  });
+
+  it('agrega los productos nuevos y no registra precios', () => {
+    const own: Product = { id: '1', name: 'Pan' };
+    useStore.setState({ products: [own], prices: [], cart: [] });
+    useStore.getState().loadSharedCart(load([item('2', 50)], [{ id: '2', name: 'Leche' }]), false);
+    expect(useStore.getState().products).toEqual([own, { id: '2', name: 'Leche' }]);
+    expect(useStore.getState().prices).toEqual([]);
+  });
+
+  it('es un solo cambio del store', () => {
+    let changes = 0;
+    const stop = useStore.subscribe(() => { changes++; });
+    useStore.getState().loadSharedCart(load([item('2', 50), item('4', 5)], [{ id: '2', name: 'Leche' }]), true);
+    stop();
+    expect(changes).toBe(1);
+  });
+
+  it('sin productos nuevos no toca la colección de productos', () => {
+    const { products } = useStore.getState();
+    useStore.getState().loadSharedCart(load([item('2', 50)]), true);
+    expect(useStore.getState().products).toBe(products);
+  });
+});
+
+describe('purchaseStoreRef', () => {
+  const purchase = { id: 'c', date: '2026-11-12T12:00:00Z', items: [], total: 0 };
+
+  it('arma el comercio de una compra; "Sin especificar" no es un barrio', () => {
+    expect(purchaseStoreRef({ ...purchase, store: 'Coto', barrio: 'Once' })).toEqual({ name: 'Coto', barrio: 'Once' });
+    expect(purchaseStoreRef({ ...purchase, store: 'Coto', barrio: NO_BARRIO })).toEqual({ name: 'Coto' });
+    expect(purchaseStoreRef(purchase)).toBeUndefined();
   });
 });

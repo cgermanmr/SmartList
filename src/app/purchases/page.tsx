@@ -5,15 +5,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ReactNode, useState } from 'react';
 import ProductImage from '@/components/ProductImage';
+import ShareCartLink from '@/components/ShareCartLink';
 import SpendingVariation from '@/components/SpendingVariation';
 import { useProductPhotos } from '@/components/useProductPhotos';
 import { useSepaImages } from '@/components/useSepaImages';
+import { useSepaReferences } from '@/components/useSepaReferences';
 import { formatDateTime, formatMoney, formatNumber, monthName } from '@/lib/format';
 import { CartItem, Purchase } from '@/lib/models';
 import { paymentLabel } from '@/lib/payment-methods';
 import { productImageSrc } from '@/lib/photo';
 import { monthKey, monthSummary, monthVariation, previousMonth } from '@/lib/spending';
-import { getPriceStats, useStore } from '@/lib/store';
+import { getPriceStats, purchaseStoreRef, useStore } from '@/lib/store';
 
 export default function PurchasesPage() {
   const router = useRouter();
@@ -32,6 +34,8 @@ export default function PurchasesPage() {
   const eanOf = (productId: string) => products.find(p => p.id === productId)?.ean;
   const expandedPurchase = purchases.find(p => p.id === expandedId);
   const images = useSepaImages(expandedPurchase?.items.map(item => eanOf(item.productId)) ?? []);
+  // Compartir (spec 31): un producto con referencia está en el catálogo y viaja sin el nombre
+  const references = useSepaReferences(expandedPurchase?.items.map(item => eanOf(item.productId)) ?? []);
   // La foto propia va antes que la del catálogo (spec 27)
   const photoUrl = useProductPhotos(expandedPurchase?.items.map(item => products.find(p => p.id === item.productId)) ?? []);
   const imageOf = (productId: string) => {
@@ -133,8 +137,14 @@ export default function PurchasesPage() {
                     ))}
                   </div>
 
-                  <div className="px-4 py-3 bg-gray-50 flex justify-end">
-                    <p className="text-lg font-bold text-green-700">Total: ${formatMoney(purchase.total)}</p>
+                  <div className="px-4 py-3 bg-gray-50 flex flex-col gap-2 sm:flex-row-reverse sm:items-center sm:justify-between">
+                    <p className="text-right text-lg font-bold text-green-700">Total: ${formatMoney(purchase.total)}</p>
+                    <ShareCartLink
+                      items={purchase.items.map(item => ({ ...item, store: item.store ?? purchaseStoreRef(purchase) }))}
+                      references={references}
+                      purchaseDate={purchase.date}
+                      className="bg-white"
+                    />
                   </div>
                 </div>
               )}

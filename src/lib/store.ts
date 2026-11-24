@@ -5,6 +5,7 @@ import { DEFAULT_RADIUS, RadiusKm, UserLocation } from './location';
 import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
 import { productFromSepa } from './product-form';
 import type { SepaProduct } from './sepa';
+import type { SharedLoad } from './shared-cart';
 import type { SyncData } from './sync';
 import {
   PRODUCTS_KEY, PRICES_KEY, CART_KEY, PURCHASES_KEY, CALCULATOR_KEY, LOCATION_KEY,
@@ -56,6 +57,11 @@ export interface AppState {
   updateCartItemPrice: (itemId: string, price: number) => void;
   clearCart: () => void;
   loadPurchaseToCart: (purchase: Purchase, merge?: boolean) => void;
+  /**
+   * Carga un carrito compartido (spec 31) en un solo cambio: suma los productos nuevos y, con `merge`, los ítems al
+   * carrito (un producto que ya estaba suma la cantidad y conserva comercio y precio); sin `merge` lo reemplaza
+   */
+  loadSharedCart: (load: SharedLoad, merge: boolean) => void;
   savePurchase: (purchase: Purchase) => void;
   saveCalculator: (state: CalculatorState) => void;
   resetCalculator: () => void;
@@ -192,6 +198,16 @@ export const useStore = create<AppState>()((set, get) => ({
     return { cart: base };
   }),
 
+  loadSharedCart: (load, merge) => set(s => {
+    const cart: CartItem[] = merge ? [...s.cart] : [];
+    for (const item of load.items) {
+      const index = cart.findIndex(i => i.productId === item.productId);
+      if (index >= 0) cart[index] = withQuantity(cart[index], cart[index].quantity + item.quantity);
+      else cart.push(item);
+    }
+    return load.products.length > 0 ? { products: [...s.products, ...load.products], cart } : { cart };
+  }),
+
   // ── Compras ───────────────────────────────────────────────
   savePurchase: purchase => set(s => ({ purchases: [purchase, ...s.purchases] })), // más reciente primero
 
@@ -213,7 +229,7 @@ function withQuantity(item: CartItem, quantity: number): CartItem {
 }
 
 /** Comercio de una compra guardada como texto; el barrio "Sin especificar" no es un barrio */
-function purchaseStoreRef(purchase: Purchase): StoreRef | undefined {
+export function purchaseStoreRef(purchase: Purchase): StoreRef | undefined {
   const name = purchase.store?.trim();
   if (!name) return undefined;
   const barrio = purchase.barrio?.trim();
@@ -368,16 +384,16 @@ export function storeKey(store?: StoreRef): string {
   return `${name}|${normalizeText(store.barrio)}`;
 }
 
-export interface CartGroup {
+export interface CartGroup<T = CartItem> {
   key: string;
   store?: StoreRef;    // el del primer ítem del grupo; undefined en "Sin comercio"
-  items: CartItem[];
+  items: T[];
   total: number;
 }
 
 /** Grupos en el orden en que se agregó el primer ítem de cada comercio; "Sin comercio" al final */
-export function groupCartByStore(cart: CartItem[]): CartGroup[] {
-  const groups = new Map<string, CartGroup>();
+export function groupCartByStore<T extends Pick<CartItem, 'store' | 'subtotal'>>(cart: T[]): CartGroup<T>[] {
+  const groups = new Map<string, CartGroup<T>>();
   for (const item of cart) {
     const key = storeKey(item.store);
     const group = groups.get(key);

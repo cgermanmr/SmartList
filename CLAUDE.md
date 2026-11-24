@@ -109,6 +109,8 @@ src/
 │   │                           #   PriceForm.tsx: pestaña Cargar precio (spec 26) y ?tab=precio&ean=…&monto=…
 │   ├── product/[id]/           # page.tsx (Suspense) + ProductDetail.tsx (useParams); vincular con el catálogo
 │   ├── cart/page.tsx           # Carrito y checkout con medio de pago
+│   │                           #   compartido/ (spec 31): page.tsx (vista previa, lee location.hash) + LoadDialog.tsx
+│   │                           #   (Combinar / Reemplazar) + InstalledAppNotice.tsx (Copiar link en el iPhone)
 │   ├── purchases/page.tsx      # Historial de compras, Repetir compra, tarjeta del gasto del mes (link a /gastos)
 │   ├── gastos/page.tsx         # Panel de gasto mensual: selector de mes, resumen, gráfico y desgloses
 │   ├── calculadora/page.tsx    # Calculadora de precio unitario
@@ -123,7 +125,13 @@ src/
 ├── assets/                     # Rubik-SemiBold.ttf (OFL, Rubik-OFL.txt) para opengraph-image: el build no la descarga
 ├── components/
 │   ├── AppName.tsx             # "El Changuito" en el header; con carrito y menos de 430 px, sr-only (spec 30)
-│   ├── WhatsAppButton.tsx      # Link de WhatsApp para compartir la app, con el logo en SVG propio (spec 30)
+│   ├── WhatsAppButton.tsx      # Link de WhatsApp para compartir la app (spec 30)
+│   ├── WhatsAppIcon.tsx        # Logo de WhatsApp en SVG propio (currentColor)
+│   ├── ShareCartLink.tsx       # "Compartir por WhatsApp" de un carrito, un comercio o una compra (spec 31): botón o
+│   │                           #   ícono; con más de 100 productos, el texto del tope
+│   ├── PasteCartDialog.tsx     # "Cargar un carrito compartido": link y <dialog> para pegar el mensaje o el link
+│   ├── useSharedCart.ts        # Hook de la vista previa: catálogo de los EAN no propios (con retry), sucursales y
+│   │                           #   referencias; nombre y comercio de cada ítem y resolve() para cargar
 │   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname (y las rutas
 │   │                           #   de `match`: Historial en /gastos); NavLinks sin activo como fallback
 │   ├── CartBadge.tsx           # Contador del carrito sobre el ícono de su pestaña
@@ -225,13 +233,16 @@ src/
     ├── price-validation.ts     # Validación (spec 23): tipos, priceValidation, myVote, validationSummary,
     │                           #   pendingValidations, votesFromJson, ownVotesByPrice
     ├── share.ts                # Compartir (spec 30): APP_URL, APP_DESCRIPTION, SHARE_TEXT y whatsappUrl (wa.me)
+    ├── shared-cart.ts          # Compartir el carrito (spec 31): sharedFromItems, shareMessage, encodeSharedCart /
+    │                           #   decodeSharedCart, findSharedPayload, sharedCartUrl, resolveSharedCart
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
     │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
     ├── sync-remote.ts          # Llamadas a user_records: pushRecords (upsert de a 500), pullRows (de a 1.000)
     ├── sync-engine.ts          # Motor: cola persistida, startSync/stopSync/syncNow, primera sesión, cerrar sesión,
     │                           #   cuenta borrada; vuelta de fotos (syncPhotos) y syncUserId; useSyncStatus para la UI
-    ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct) y sepa_precios
+    ├── sepa.ts                 # Consultas a sepa_productos (searchSepaProducts, getSepaProduct,
+    │                           #   getSepaProducts de a 100 EAN) y sepa_precios
     │                           #   (getSepaPrices, con caché); referenceSummary, vsReference y funciones puras;
     │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
     │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch); imágenes
@@ -411,6 +422,18 @@ src/
   200) filtrado con `pendingValidations` (el último de cada integrante en cada comercio por producto, sin lo votado
   ni lo validado); la página conserva lo votado hasta la próxima visita (`visit` de `usePendingValidations`). El
   autor ve los votos en su historial con `my_price_votes(ids)`, contados contra el monto local
+- **Compartir el carrito** ([SPEC 31](specs/31-compartir-carrito-por-whatsapp.md)) — una **copia del momento** que
+  viaja entera en el link, después del `#` de `/cart/compartido` (no llega a ningún servidor: sin base, sin cuenta y
+  sin vencimiento). `sharedFromItems` deja producto, cantidad, precio (un ítem en $0, sin precio) y comercio: un
+  producto con EAN y precio de referencia viaja solo con el EAN, los demás también con el nombre; un comercio con
+  `sepaId`, solo nombre y `sepaId`; uno a mano, nombre, barrio y dirección, **nunca las coordenadas**. Formato versión
+  1: registros separados por `.` y campos por `-`, números en base 36 y textos en base 62 (solo letras, dígitos, `.`
+  y `-`); el último registro lleva la cantidad de productos, para detectar un link cortado. `decodeSharedCart` valida
+  todo (1 a 100 productos, textos de hasta 200 caracteres, `toGtin13`…): un dato inválido invalida el link. El mensaje
+  (`shareMessage`) lista hasta 40; el link lleva todos y es siempre el de producción. La página lee `location.hash` con
+  `useSyncExternalStore`: `null` en el prerender y mientras la dirección todavía es la de otra página (al navegar
+  cambia recién al mostrarse); al volver a mostrarse con `<Activity>` se suscribe y lee de nuevo. `loadSharedCart(load,
+  merge)` agrega productos e ítems en un solo `set`
 - **Códigos de barras** — `ean` se guarda siempre como GTIN-13 (`toGtin13`) y es único entre los productos propios
   (`checkEan`). Marca y presentación se copian del catálogo al agregar o vincular y no se actualizan solas
 - **Lector de códigos de barras** ([SPEC 11](specs/11-lector-codigo-de-barras.md)) — `createDetector` usa el
@@ -472,6 +495,7 @@ Al leer de localStorage, `Price.date` vuelve como **string**: siempre comparar c
 | `/` | `app/page.tsx` | Buscar | Búsqueda de productos |
 | `/upload` | `app/upload/page.tsx` | Cargar | Cargar precio o producto nuevo; `?tab=producto&ean=…` |
 | `/cart` | `app/cart/page.tsx` | Carrito | Carrito y checkout |
+| `/cart/compartido` | `app/cart/compartido/page.tsx` | Carrito | Vista previa de un carrito o una compra compartidos (datos en el `#`) |
 | `/purchases` | `app/purchases/page.tsx` | Historial | Historial de compras |
 | `/gastos` | `app/gastos/page.tsx` | Historial | Panel de gasto mensual (se abre desde Historial) |
 | `/calculadora` | `app/calculadora/page.tsx` | Calculadora | Comparar presentaciones por precio unitario |
@@ -814,6 +838,12 @@ interface CalculatorState {
   coordenadas (los del SEPA) y, con 2 o más, **Ver recorrido** junto al total: todos esos comercios en el orden
   del carrito, hasta 9 ("Se muestran los primeros 9 comercios"). Los que no tienen coordenadas se aclaran en el
   mapa ("1 comercio sin ubicación no aparece en el mapa")
+- **Compartir por WhatsApp** ([SPEC 31](specs/31-compartir-carrito-por-whatsapp.md), `ShareCartLink`): debajo del
+  total, el carrito entero; en el pie de cada comercio (con más de un grupo y sin el medio de pago abierto), un ícono
+  de 44 px con solo sus productos. Link a `wa.me` con la lista agrupada por comercio, subtotales, total y el link a
+  `/cart/compartido`. También con ítems sin precio. Con más de 100 productos, "Se pueden compartir hasta 100 productos"
+- **Cargar un carrito compartido** (al pie, también con el carrito vacío): `<dialog>` para pegar el mensaje o el link
+  (de cualquier dominio) y **Ver carrito**; si no lo hay, "No hay un carrito compartido en ese texto"
 - Imagen de 40 px a la izquierda del nombre de cada ítem (una consulta para todo el carrito)
 - Editar cantidad y precio de cada ítem; eliminar
 - **Ítem sin precio** (entró en $0 desde el catálogo, spec 18): campo en ámbar con "Completar precio" y sin
@@ -832,12 +862,30 @@ interface CalculatorState {
   comercio, también `storeRef` con el comercio del grupo, spec 26) y saca del
   carrito solo esos ítems (`removeCartItems`); los demás grupos quedan
 
+### Carrito compartido (`/cart/compartido`, [SPEC 31](specs/31-compartir-carrito-por-whatsapp.md))
+- Vista previa de solo lectura: "Carrito compartido" o "Compra del dd/mm/aaaa", "N productos · $total", una tarjeta por
+  comercio (nombre, dirección o barrio, subtotal) y por ítem imagen de 40 px, nombre (propio, del catálogo, del link o
+  "Producto <EAN>"), "2 × $1.600,00" y subtotal, o "Sin precio". Abrirla no cambia ningún dato
+- **Cargar en mi carrito** (fijo abajo): con el carrito vacío, carga y va a `/cart`; con productos, **Combinar**,
+  **Reemplazar** o **Cancelar** (`LoadDialog`). "Buscando productos…" deshabilitado mientras se consultan el catálogo
+  (los EAN no propios), las sucursales (si hay un `sepaId`) y las referencias que hacen falta; si fallan las dos
+  últimas se carga igual. Si falla el catálogo, "No se pudo consultar Precios Claros" con **Reintentar**, y el botón
+  queda deshabilitado solo si a algún producto le falta el nombre
+- La carga (`resolveSharedCart`): usa el producto propio con ese EAN (o, sin EAN, con el mismo nombre) o lo crea sin
+  categoría; de un carrito vale el precio del link (sin precio, `initialCartPrice`); de una compra, el último propio, la
+  referencia o el del link. Combinar suma la cantidad y conserva comercio y precio. No registra precios
+- Errores: "El link no es válido.", "El link está incompleto. Pedí que te lo manden de nuevo." y "Este link es de una
+  versión más nueva de la app. Recargá la página.", con **Ir al carrito**
+- En Safari del iPhone fuera de la app instalada (`navigator.standalone === false`): **Copiar link**, para pegarlo en la
+  app ("Link copiado", 3 s)
+
 ### Historial de compras (`/purchases`)
 - **Tarjeta del gasto del mes** (solo con compras), link a `/gastos`: "Noviembre: $5.000,00" y debajo la variación
   contra el mes anterior ("54,5 % menos que octubre" en verde, "X % más…" en rojo, "Igual que…" en azul), "Todavía
   no compraste este mes" o nada si el mes anterior no tiene compras; "Ver gastos" con chevron
 - Lista expandible de compras (`aria-expanded` / `aria-controls`); el medio de pago se muestra con `paymentLabel`
   (una compra vieja con `'efectivo'` dice "Efectivo")
+- **Compartir por WhatsApp** en el pie de la compra expandida (spec 31): "Compra del dd/mm/aaaa" con su fecha local
 - Por ítem: imagen de 40 px (por el EAN del producto propio; si el producto ya no existe, la inicial del nombre
   guardado) y variación % del precio pagado vs último precio registrado
 - "Repetir" (botón hermano del de expandir, con `aria-label` "Repetir compra del dd/MM/yyyy"): si el carrito tiene
@@ -1306,6 +1354,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Validación de los precios del grupo: "Está bien" / "No coincide", Validado y Dudoso (los Dudosos no cuentan
   como el más barato), página "Por validar" y los votos en el historial del autor (spec 23)
 - [x] Compartir la app por WhatsApp desde el header y vista previa del link con imagen (spec 30)
+- [x] Compartir por WhatsApp el carrito, un comercio o una compra, con un link que muestra la lista y la carga (spec 31)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---

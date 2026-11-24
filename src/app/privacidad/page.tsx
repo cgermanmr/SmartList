@@ -81,6 +81,15 @@ export default function PrivacyPage() {
       </section>
 
       <section className="space-y-2">
+        <h2 className="text-lg font-semibold">Compartir por WhatsApp</h2>
+        <p>
+          Al compartir un carrito o una compra por WhatsApp, el mensaje lleva los productos, las cantidades, los precios
+          y los comercios (nombre, barrio y dirección; nunca tu ubicación). Los datos van dentro del link y no los
+          guardamos: los ve quien recibe el mensaje y cualquiera a quien se lo reenvíe.
+        </p>
+      </section>
+
+      <section className="space-y-2">
         <h2 className="text-lg font-semibold">Cómo borrar tus datos</h2>
         <p>
           En <Link href="/cuenta" className="font-semibold text-primary-700 underline underline-offset-2">Cuenta</Link>,
