@@ -24,7 +24,8 @@ Pendiente dentro de la fase:
   local primero en `user_records`; las variables se cargan a mano en Vercel, no con la integración
 - [08 — Consulta de precios y aportes](features/08-consulta-y-aportes.md), en este orden: ¿dónde conviene el
   carrito? (spec 25), comercios cercanos en el lector (spec 24), cargar precio en el comercio (spec 26), fotos
-  propias (spec 27), grupos (spec 22), validación (spec 23) y supervisión de fotos (spec 28)
+  propias (spec 27), grupos (spec 22), validación (spec 23) y fotos de la comunidad
+  (spec 28, postergada: se retoma con los comercios, feature 04)
 - ~~Grupos y precios compartidos con el grupo~~ → hecho en la
   [SPEC 22](../specs/22-grupos-y-precios-compartidos.md): un grupo a la vez, precios consultados a pedido con
   `group_prices`. Evolución: sumar los precios propios y del grupo a "¿Dónde conviene el carrito?" (spec 25)

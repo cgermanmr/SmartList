@@ -1,11 +1,15 @@
 # 08 — Consulta de precios y aportes de los usuarios
 
-- **Estado:** Analizado
+- **Estado:** Hecho (specs 22 a 27); la spec 28 está postergada
 - **Fase:** 1–2 (consulta: Supabase de solo lectura; aportes y fotos: cuenta y Storage)
 
 > Analizado el 21/11/2026 a partir de cómo se espera que se use la app. Reúne lo que falta para ese uso y ordena
 > las specs 24 a 28. Las specs 22 (grupos) y 23 (validación) de la [spec 21](../../specs/21-cuenta-y-sincronizacion.md)
 > siguen vigentes.
+>
+> **24/11/2026:** las fotos de la comunidad ([spec 28](../../specs/28-fotos-de-la-comunidad.md)) quedan postergadas: las
+> fotos que ven otras personas se retoman con los comercios adheridos ([feature 04](04-promociones-comercios.md)). Lo
+> que este archivo dice de la spec 28 queda como referencia.
 
 ## Problema
 
@@ -26,7 +30,7 @@ puede no corresponder al producto o ser inapropiada.
 | Leer el código en la góndola | Lector en Buscar (spec 11). La oferta del lector (`ScanOffer`), propio o del catálogo, muestra los comercios cercanos (resumen + 3) o los precios por cadena, y "¿Cuánto sale acá?" compara el precio de la góndola contra el más barato cercano, la referencia y el último precio propio (spec 24, hecha). "Cargar precio acá" lleva a Cargar precio con el producto y el monto (spec 26, hecha) | — |
 | Armar el carrito antes de ir | Agregar desde el catálogo sin dar de alta el producto (spec 18), carrito por comercio (spec 14), "Cerca tuyo" **ítem por ítem** al cambiar el comercio (spec 15), recorrido en el mapa (spec 16) | **Comparar el carrito entero** contra los comercios cercanos: es la pieza que más valor da |
 | Cargar un precio | Pestaña "Cargar precio" de `/upload` (spec 26, hecha): comercio obligatorio por GPS (sucursales a menos de 200 m), usados u "Otro comercio"; producto propio, del catálogo, con un código desconocido o sin código, creado al guardar; `Price.storeRef` con dirección y coordenadas | — |
-| Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). Foto propia (spec 27, hecha): en Cargar precio (B y C), Agregar producto y el detalle; comprimida, en IndexedDB y, con cuenta, en el bucket privado `fotos-propias`; "Solo la ves vos" | Supervisarla y compartirla con la comunidad (spec 28) |
+| Fotos de productos | Imágenes de Open Food Facts y del portal (spec 17). Foto propia (spec 27, hecha): en Cargar precio (B y C), Agregar producto y el detalle; comprimida, en IndexedDB y, con cuenta, en el bucket privado `fotos-propias`; "Solo la ves vos" | Compartirla con la comunidad (spec 28, postergada) |
 | Precios privados | `localStorage` y, con cuenta, `user_records` con RLS (spec 21). Grupos (spec 22, hecha): un grupo a la vez de hasta 20 integrantes por link de invitación; cada uno ve los precios con código de barras de los demás de los últimos 60 días en Comercios cercanos, "¿Cuánto sale acá?" y el detalle (Precios del grupo), consultados a pedido con `group_prices`. Validación (spec 23, hecha): "Está bien" / "No coincide" sobre los precios de los demás, estado *Validado* o *Dudoso* (los Dudosos no cuentan como el más barato) y la página "Por validar" | Precios propios y del grupo en "¿Dónde conviene el carrito?" |
 
 ## Alcance MVP
@@ -41,7 +45,7 @@ Orden de implementación (no sigue la numeración):
 | 4 | [27 — Fotos propias](../../specs/27-fotos-propias.md) (hecha) | Foto del producto: compresión, guardado en el teléfono y, con cuenta, en Storage privado; leyenda "Solo la ves vos" |
 | 5 | [22 — Grupos y precios compartidos](../../specs/22-grupos-y-precios-compartidos.md) (hecha) | Un grupo a la vez (hasta 20), link de invitación, apodos y "Compartir mis precios"; los precios del grupo en Comercios cercanos, "¿Cuánto sale acá?" y el detalle |
 | 6 | [23 — Validación de precios del grupo](../../specs/23-validacion-de-precios.md) (hecha) | "Está bien" / "No coincide" con "¿Cuánto viste?"; *Validado* con 2 ok y mayoría, *Dudoso* con 2 no y al menos tantos como ok; página "Por validar" (14 días) y votos en Precios del grupo |
-| 7 | 28 — Supervisión de fotos | Moderación automática, cola manual y publicación de las aprobadas |
+| — | [28 — Fotos de la comunidad](../../specs/28-fotos-de-la-comunidad.md) (postergada) | Compartir una foto propia, revisión manual y publicación de las aprobadas |
 
 ### Spec 26 — Cargar precio en el comercio
 
