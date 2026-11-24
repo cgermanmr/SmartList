@@ -13,6 +13,7 @@ en la app: features analizados, roadmap por fases e ideas sueltas.
 |---|---|
 | [`features/`](features/) | Un archivo por feature, con problema, alcance MVP, modelo de datos y dependencias |
 | [`roadmap.md`](roadmap.md) | Fases técnicas del proyecto (backend, móvil, microservicios) |
+| [`pruebas-pendientes.md`](pruebas-pendientes.md) | Pruebas a mano de lo implementado que todavía no se verificó |
 | [`ideas.md`](ideas.md) | Bandeja de ideas sin analizar; cuando una madura, pasa a `features/` |
 
 ## Features priorizados
