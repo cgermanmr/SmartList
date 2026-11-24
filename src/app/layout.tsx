@@ -3,11 +3,14 @@ import { Nunito_Sans, Rubik } from 'next/font/google';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import AccountButton from '@/components/AccountButton';
+import AppName from '@/components/AppName';
 import CartSummary from '@/components/CartSummary';
 import Logo from '@/components/Logo';
 import NavBar, { NavLinks } from '@/components/NavBar';
 import StoreHydrator from '@/components/StoreHydrator';
 import SyncManager from '@/components/SyncManager';
+import WhatsAppButton from '@/components/WhatsAppButton';
+import { APP_DESCRIPTION, APP_URL } from '@/lib/share';
 import './globals.css';
 
 // Fuentes servidas desde el propio dominio: Rubik para títulos y precios, Nunito Sans para el texto
@@ -15,8 +18,18 @@ const rubik = Rubik({ subsets: ['latin'], display: 'swap', variable: '--font-rub
 const nunitoSans = Nunito_Sans({ subsets: ['latin'], display: 'swap', variable: '--font-nunito-sans' });
 
 export const metadata: Metadata = {
+  // Las imágenes de la vista previa (opengraph-image) se publican con la dirección de producción
+  metadataBase: new URL(APP_URL),
   title: 'El Changuito',
-  description: 'PWA para comparar precios y gestionar compras',
+  description: APP_DESCRIPTION,
+  // Sin `url` ni canonical: un link a otra página (por ejemplo, una invitación a un grupo) conserva su dirección
+  openGraph: {
+    type: 'website',
+    locale: 'es_AR',
+    siteName: 'El Changuito',
+    title: 'El Changuito',
+    description: APP_DESCRIPTION,
+  },
   manifest: '/manifest.json',
   icons: { icon: '/icon.svg' },
 };
@@ -35,12 +48,16 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
         <div className="flex h-dvh flex-col bg-gray-50">
           <header className="bg-primary-700 pt-[env(safe-area-inset-top)] text-white">
             <div className="mx-auto flex h-13 max-w-6xl items-center justify-between gap-3 px-4">
-              <Link
-                href="/"
-                className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl font-display text-xl font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
-                <Logo className="h-7 w-7 shrink-0 text-accent-400" />
-                <span className="truncate">El Changuito</span>
-              </Link>
+              <div className="flex min-w-0 items-center">
+                {/* El relleno lateral suma área de toque: sin el nombre a la vista, el logo solo mide 28 px */}
+                <Link
+                  href="/"
+                  className="-ml-3 flex min-h-11 min-w-0 items-center gap-2 rounded-xl pl-3 pr-1 font-display text-xl font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+                  <Logo className="h-7 w-7 shrink-0 text-accent-400" />
+                  <AppName />
+                </Link>
+                <WhatsAppButton />
+              </div>
               <div className="flex shrink-0 items-center gap-1">
                 <AccountButton />
                 <CartSummary />

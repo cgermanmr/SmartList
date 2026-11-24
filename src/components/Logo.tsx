@@ -1,8 +1,13 @@
-/** Changuito de la marca: el mismo dibujo que public/icon.svg. Toma el color del texto (currentColor) */
-export default function Logo({ className }: { className?: string }) {
+/**
+ * Changuito de la marca: el mismo dibujo que public/icon.svg. Toma el color del texto (currentColor). `size` (px) es
+ * para opengraph-image, donde no hay clases de Tailwind.
+ */
+export default function Logo({ className, size }: { className?: string; size?: number }) {
   return (
     <svg
       viewBox="0 0 24 24"
+      width={size}
+      height={size}
       fill="none"
       stroke="currentColor"
       strokeWidth="2.2"

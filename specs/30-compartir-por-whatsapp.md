@@ -1,6 +1,6 @@
 # SPEC 30 — Compartir la app por WhatsApp
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 19](19-restyling-base-y-navegacion.md), [SPEC 21](21-cuenta-y-sincronizacion.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Que un botón junto al nombre de la app abra WhatsApp con un mensaje y el link listos para enviar, y que ese link se vea con título, descripción e imagen.
@@ -149,6 +149,10 @@ probar con `?v=2` al final.
   Descartado: `navigator.share`, que ofrece otras apps pero no existe en todos los navegadores.
 - **Cede el nombre** (elegido por el usuario) cuando no entra todo: el botón queda siempre en el mismo lugar y el logo
   alcanza para reconocer la app. Descartado: ocultar el botón con carrito y cortar el nombre ("El Cha…").
+- **`max-[430px]:sr-only`** en lugar del `max-[429px]` del plan (al implementar): en Tailwind v4 `max-[N]` es *menos de*
+  N, y con 429 el nombre se seguía viendo a 429 px. El corte no cambia: a 430 px con "$12.345,67" el nombre entra entero.
+- **Área de toque del logo de 44 px** (al implementar): sin el nombre a la vista el link a `/` quedaba de 28 px de ancho;
+  suma relleno a los costados sin mover nada.
 - **`sr-only` y no `hidden`:** el link a `/` conserva su nombre accesible.
 - **Logo de WhatsApp blanco** (elegido por el usuario): se reconoce al instante. Es un SVG propio porque lucide no trae
   marcas. Descartado: verde, que en la app significa "más barato", y `Share2`, que no dice que es WhatsApp.

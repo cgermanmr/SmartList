@@ -98,8 +98,10 @@ public/
 └── icon-maskable.svg           # El mismo dibujo en el 60 % central, con el fondo a sangre (purpose maskable)
 src/
 ├── app/                        # App Router: cada carpeta = ruta, page.tsx = página
-│   ├── layout.tsx              # Header (Logo, CartSummary), NavBar, <StoreHydrator>{children}, footer (desde md);
-│   │                           #   fuentes de next/font, metadata y viewport
+│   ├── layout.tsx              # Header (Logo, AppName, WhatsAppButton, CartSummary), NavBar,
+│   │                           #   <StoreHydrator>{children}, footer (desde md); fuentes de next/font, metadata
+│   │                           #   (con Open Graph) y viewport
+│   ├── opengraph-image.tsx     # Imagen de la vista previa del link (1200 × 630, ImageResponse, en el build; spec 30)
 │   ├── globals.css             # Tailwind v4 + @theme (primary, accent, gray, fuentes) + @layer components
 │   ├── page.tsx                # Buscar
 │   ├── upload/                 # page.tsx (Suspense) + UploadForm.tsx (useSearchParams): tabs cargar precio /
@@ -118,7 +120,10 @@ src/
 │   │                           #   (useSearchParams); validar/page.tsx: Por validar (spec 23)
 │   ├── privacidad/page.tsx     # Qué se guarda, dónde y cómo borrarlo (Server Component)
 │   └── not-found.tsx           # Redirige a /
+├── assets/                     # Rubik-SemiBold.ttf (OFL, Rubik-OFL.txt) para opengraph-image: el build no la descarga
 ├── components/
+│   ├── AppName.tsx             # "El Changuito" en el header; con carrito y menos de 430 px, sr-only (spec 30)
+│   ├── WhatsAppButton.tsx      # Link de WhatsApp para compartir la app, con el logo en SVG propio (spec 30)
 │   ├── NavBar.tsx              # Barra inferior en el celular, arriba desde md; activo con usePathname (y las rutas
 │   │                           #   de `match`: Historial en /gastos); NavLinks sin activo como fallback
 │   ├── CartBadge.tsx           # Contador del carrito sobre el ícono de su pestaña
@@ -219,6 +224,7 @@ src/
     │                           #   fetchPendingValidations, fetchOwnPriceVotes; spec 23)
     ├── price-validation.ts     # Validación (spec 23): tipos, priceValidation, myVote, validationSummary,
     │                           #   pendingValidations, votesFromJson, ownVotesByPrice
+    ├── share.ts                # Compartir (spec 30): APP_URL, APP_DESCRIPTION, SHARE_TEXT y whatsappUrl (wa.me)
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
     │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
@@ -921,8 +927,15 @@ interface CalculatorState {
 
 ### Layout y PWA
 - **Shell** ([SPEC 19](specs/19-restyling-base-y-navegacion.md)): contenedor flex de alto `dvh`; el scroll es de `<main>`
-- **Header** compacto en `primary-700`: logo y nombre (link a `/`) y, con productos en el carrito, el total como link
+- **Header** compacto en `primary-700`: logo y nombre (link a `/`), el botón de WhatsApp, la cuenta y, con productos en el carrito, el total como link
   a `/cart` (`aria-label="Carrito: N productos, total $X"`)
+- **Compartir por WhatsApp** ([SPEC 30](specs/30-compartir-por-whatsapp.md), `WhatsAppButton`): link a `wa.me` fuera del
+  link a `/`, en otra pestaña, con el mensaje y **siempre** la dirección de producción (`APP_URL`); no manda datos del
+  usuario. Con productos en el carrito y menos de 430 px el nombre pasa a `sr-only` (`AppName`) y queda el logo; desde
+  430 px se trunca si el total es muy largo
+- **Vista previa del link** (Open Graph): `metadataBase` de producción, título, `APP_DESCRIPTION` y
+  `opengraph-image.tsx` (estática; lo importante en el cuadrado central de 630 px). Sin `og:url` ni canonical: un link
+  a otra página conserva su dirección. En la preview, `og:image` apunta a producción
 - **Navegación**: en el celular, barra inferior de 5 pestañas de igual ancho (ícono sobre etiqueta de 11 px), último
   hijo del layout (`order-last`, no `position: fixed`); desde `md` va arriba, debajo del header. La activa lleva
   `aria-current="page"`, color `primary-700` y una píldora `primary-100` detrás del ícono; en `/product/[id]` ninguna
@@ -1097,7 +1110,7 @@ completo, reglas y números medidos en la [SPEC 08](specs/08-base-sepa-supabase.
 - Formato siempre con `src/lib/format.ts` (nunca `toFixed` para mostrar)
 - Tailwind exclusivamente para estilos; clases reutilizables en `globals.css` (`@layer components`): `.btn-primary`, `.btn-secondary`, `.card`, `.input-field`, `.list-row` (fila tocable de una lista)
 - Íconos siempre de `lucide-react`, con `aria-hidden="true"`; un botón de solo ícono lleva `aria-label`. Sin emojis ni
-  símbolos (✕ ✓ ←) como ícono
+  símbolos (✕ ✓ ←) como ícono. Excepciones en SVG propio: `Logo` y el logo de WhatsApp (lucide no trae marcas)
 - Toque mínimo de 44 px (`min-h-11`) en botones, pestañas y botones de solo ícono; texto sobre blanco no más claro que `gray-500`
 - Grids responsivos: `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`
 - Comentarios de sección en el código con el estilo `// ── Título ─────`
@@ -1148,7 +1161,8 @@ Tokens en `@theme` de `src/app/globals.css` ([SPEC 19](specs/19-restyling-base-y
   `font-display`; **Nunito Sans** en el resto (`--font-sans`). Cifras tabulares en toda la app
 - Formas: `.card` con `rounded-2xl`; botones e inputs con `rounded-xl` y 44 px de alto; inputs con texto de 16 px
   (regla global, para que el iPhone no haga zoom al enfocarlos)
-- Ningún hex de marca en componentes: en SVG se usa `var(--color-primary-700)` (ver `PriceChart`)
+- Ningún hex de marca en componentes: en SVG se usa `var(--color-primary-700)` (ver `PriceChart`). Excepción:
+  `opengraph-image.tsx`, que se dibuja sin CSS
 
 ---
 ## Build y Despliegue
@@ -1291,6 +1305,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   (spec 22)
 - [x] Validación de los precios del grupo: "Está bien" / "No coincide", Validado y Dudoso (los Dudosos no cuentan
   como el más barato), página "Por validar" y los votos en el historial del autor (spec 23)
+- [x] Compartir la app por WhatsApp desde el header y vista previa del link con imagen (spec 30)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---
