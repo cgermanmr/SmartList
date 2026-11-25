@@ -2,7 +2,7 @@
 
 import { Check } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import BranchMap from '@/components/BranchMap';
 import { AddToCartButton, EditLink } from '@/components/CatalogActions';
 import LocationBar from '@/components/LocationBar';
@@ -46,7 +46,7 @@ export default function SearchPage() {
   // Comercio que se está viendo en el mapa (un solo BranchMap para toda la pantalla)
   const [mapStop, setMapStop] = useState<MapStop[] | null>(null);
   const showMap = (store: StoreRef) => setMapStop(mapStops([store]));
-  /** Aviso "✓ <nombre> en el carrito"; se oculta a los 3 s */
+  /** Aviso "✓ <nombre> en el carrito" o "<nombre> eliminado" (spec 33); se oculta a los 3 s */
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -104,13 +104,37 @@ export default function SearchPage() {
   const imageOf = (product: Product) =>
     productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined);
 
-  useEffect(() => () => clearTimeout(noticeTimer.current), []);
+  // Al ocultarse la página se corta el temporizador: el aviso se quita ahí, para no quedar fijo al volver
+  useEffect(() => () => {
+    clearTimeout(noticeTimer.current);
+    setNotice(null);
+  }, []);
 
-  function showNotice(name: string) {
-    setNotice(`${name} en el carrito`);
+  function showText(text: string) {
+    setNotice(text);
     clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 3000);
   }
+
+  function showNotice(name: string) {
+    showText(`${name} en el carrito`);
+  }
+
+  // Aviso que dejó otra página: "<nombre> eliminado", desde el detalle (spec 33). Se toma al mostrarse Buscar
+  const flash = useStore(s => s.flash);
+  const setFlash = useStore(s => s.setFlash);
+  const takeFlash = useEffectEvent((text: string) => {
+    showText(text);
+    setFlash(null);
+  });
+  useEffect(() => {
+    if (flash === null) return;
+    const timer = setTimeout(() => takeFlash(flash));
+    return () => clearTimeout(timer);
+  }, [flash]);
+
+  // La oferta del lector de un producto propio eliminado se cierra (se quitó el vínculo y se eliminó desde su detalle)
+  if (scan?.status === 'own' && !products.some(p => p.id === scan.product.id)) setScan(null);
 
   // ── Agregar al carrito ─────────────────────────────────────
   // Un producto del catálogo se crea solo (sin categoría) o se usa el propio con ese EAN; nunca pasa por el formulario
@@ -451,7 +475,7 @@ export default function SearchPage() {
       {/* Aviso al agregar: fijo abajo para que se vea desde cualquier parte de la lista. La región queda montada */}
       <div role="status" className="pointer-events-none fixed inset-x-4 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-10 flex justify-center md:bottom-14">
         {notice && (
-          <p className="flex max-w-sm items-start gap-2 rounded-xl bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg">
+          <p className="flex min-w-0 max-w-sm items-start gap-2 rounded-xl bg-primary-900 px-4 py-3 text-sm font-semibold text-white shadow-lg">
             <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-accent-400" />
             <span className="min-w-0 break-words">{notice}</span>
           </p>

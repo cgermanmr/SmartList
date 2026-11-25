@@ -3,8 +3,8 @@ import { CartItem, Price, Product, Purchase } from './models';
 import { defaultCalculator } from './storage';
 import { getPriceStats } from './store';
 import {
-  acknowledge, changesToRecords, dedupeByEan, dedupeCart, diffCollection, enqueue, mergeRemote, pullSince,
-  RemoteRow, snapshotRecords, SyncData, SyncRecord, withoutSamples,
+  acknowledge, changesToRecords, dedupeByEan, dedupeCart, diffCollection, enqueue, mergeRemote, pullSince, pushOrder,
+  RemoteRow, restoreTime, restoreUsedProducts, snapshotRecords, SyncData, SyncRecord, withoutSamples,
 } from './sync';
 
 // ── Fixtures ─────────────────────────────────────────────────
@@ -288,5 +288,143 @@ describe('pullSince', () => {
 
   it('sin cursor baja todo', () => {
     expect(pullSince(null)).toBeNull();
+  });
+});
+
+// ── Eliminar producto con dos dispositivos (spec 33) ─────────
+
+describe('restoreUsedProducts', () => {
+  const gone = row('products', 'a', null, AT, true);
+  /** Lo local y lo que queda al juntar el borrado de `a` */
+  function merge(local: SyncData, rows: RemoteRow[] = [gone]) {
+    return { local, merged: mergeRemote(local, rows, []), rows };
+  }
+
+  it.each<[string, Partial<SyncData>]>([
+    ['un precio', { prices: [price('p', 'a')] }],
+    ['el carrito', { cart: [item('i', 'a')] }],
+    ['una compra', { purchases: [purchase('c', '2026-11-10', [item('i', 'a')])] }],
+  ])('vuelve si lo usa %s', (_name, partial) => {
+    const { local, merged, rows } = merge(data({ products: [product('a'), product('b')], ...partial }));
+    const { data: result, restoredIds } = restoreUsedProducts(local, merged, rows);
+    expect(restoredIds).toEqual(['a']);
+    expect(result.products.map(p => p.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('también si lo usa algo que bajó en la misma vuelta', () => {
+    const { local, merged, rows } = merge(data({ products: [product('a')] }), [gone, row('prices', 'p', price('p', 'a'))]);
+    expect(restoreUsedProducts(local, merged, rows).restoredIds).toEqual(['a']);
+  });
+
+  it('vuelve con sus datos y sin la foto', () => {
+    const full: Product = {
+      id: 'a', name: 'Leche', brand: 'X', size: 1, sizeUnit: 'l', category: 'Lácteos', ean: '7793704000911',
+      photo: { id: 'f', takenAt: AT },
+    };
+    const { local, merged, rows } = merge(data({ products: [full], prices: [price('p', 'a')] }));
+    const [restored] = restoreUsedProducts(local, merged, rows).data.products;
+    expect(restored).toEqual({
+      id: 'a', name: 'Leche', brand: 'X', size: 1, sizeUnit: 'l', category: 'Lácteos', ean: '7793704000911',
+    });
+    expect('photo' in restored).toBe(false);
+  });
+
+  it('los precios y el ítem borrados con él no vuelven', () => {
+    const { local, merged, rows } = merge(
+      data({ products: [product('a')], prices: [price('p1', 'a'), price('p2', 'a')], cart: [item('i', 'a')] }),
+      [row('prices', 'p1', null, AT, true), row('cart', 'i', null, AT, true), gone],
+    );
+    const result = restoreUsedProducts(local, merged, rows).data;
+    expect(result.products.map(p => p.id)).toEqual(['a']);
+    expect(result.prices.map(p => p.id)).toEqual(['p2']);
+    expect(result.cart).toEqual([]);
+  });
+
+  it('sin uso queda borrado, con el mismo estado', () => {
+    const { local, merged, rows } = merge(data({ products: [product('a')], prices: [price('p', 'b')] }));
+    const result = restoreUsedProducts(local, merged, rows);
+    expect(result.data).toBe(merged);
+    expect(result.restoredIds).toEqual([]);
+  });
+
+  it('los precios de ejemplo no cuentan como uso', () => {
+    const { local, merged, rows } = merge(data({ products: [product('a')], prices: [price('1', 'a'), price('3', 'a')] }));
+    expect(restoreUsedProducts(local, merged, rows).data).toBe(merged);
+  });
+
+  it('un producto que este dispositivo no tenía no se inventa', () => {
+    const { local, merged, rows } = merge(data({ prices: [price('p', 'a')] }));
+    expect(restoreUsedProducts(local, merged, rows).data).toBe(merged);
+  });
+
+  it('un borrado que pierde contra un cambio local pendiente no necesita restaurarse', () => {
+    const local = data({ products: [product('a')], prices: [price('p', 'a')] });
+    const merged = mergeRemote(local, [gone], [record('products', 'a', LATER)]);
+    expect(restoreUsedProducts(local, merged, [gone]).data).toBe(merged);
+  });
+
+  it('con el código tomado por otro producto, después se unen', () => {
+    const EAN = '7793704000911';
+    const { local, merged, rows } = merge(
+      data({ products: [product('z', EAN)], prices: [price('p', 'z')] }),
+      [row('products', 'z', null, AT, true), row('products', 'b', product('b', EAN))],
+    );
+    const deduped = dedupeByEan(restoreUsedProducts(local, merged, rows).data);
+    expect(deduped.products.map(p => p.id)).toEqual(['b']);
+    expect(deduped.prices[0].productId).toBe('b');
+  });
+
+  it('aplicar dos veces las mismas filas no restaura de nuevo', () => {
+    const { local, merged, rows } = merge(data({ products: [product('a')], prices: [price('p', 'a')] }));
+    const first = restoreUsedProducts(local, merged, rows);
+    const queued = record('products', 'a', restoreTime(first.restoredIds, rows, EARLIER), first.data.products[0]);
+    const again = mergeRemote(first.data, rows, [queued]);
+    const second = restoreUsedProducts(first.data, again, rows);
+    expect(second.restoredIds).toEqual([]);
+    expect(second.data.products.map(p => p.id)).toEqual(['a']);
+  });
+});
+
+describe('restoreTime', () => {
+  const rows = [
+    row('products', 'a', null, AT, true),
+    row('products', 'b', null, LATER, true),
+    row('prices', 'a', null, '2027-01-01T00:00:00Z', true),
+  ];
+
+  it('con el reloj bien, es la hora de ahora', () => {
+    expect(restoreTime(['a'], rows, LATER)).toBe(LATER);
+  });
+
+  it('con el reloj atrasado, 1 ms después del borrado más nuevo de los restaurados', () => {
+    expect(restoreTime(['a'], rows, EARLIER)).toBe('2026-11-17T12:00:00.001Z');
+    expect(restoreTime(['a', 'b'], rows, EARLIER)).toBe('2026-11-17T13:00:00.001Z');
+  });
+
+  it('con la misma hora del borrado, también es posterior', () => {
+    expect(restoreTime(['a'], rows, AT)).toBe('2026-11-17T12:00:00.001Z');
+  });
+
+  it('entiende las fechas de Postgres', () => {
+    const deleted = row('products', 'a', null, '2026-11-17T12:00:00.5+00:00', true);
+    expect(restoreTime(['a'], [deleted], EARLIER)).toBe('2026-11-17T12:00:00.501Z');
+  });
+});
+
+describe('pushOrder', () => {
+  it('los borrados de productos, al final; el resto conserva su orden', () => {
+    const del = (collection: SyncRecord['collection'], id: string): SyncRecord =>
+      ({ collection, id, data: null, deleted: true, modifiedAt: AT });
+    const records = [
+      del('products', 'a'), record('products', 'b'), del('prices', 'p'), del('products', 'c'), del('cart', 'i'),
+      record('prices', 'q'),
+    ];
+    expect(pushOrder(records).map(r => `${r.collection}/${r.id}`)).toEqual(
+      ['products/b', 'prices/p', 'cart/i', 'prices/q', 'products/a', 'products/c']);
+  });
+
+  it('sin borrados de productos, el mismo orden', () => {
+    const records = [record('products', 'b'), record('prices', 'p')];
+    expect(pushOrder(records)).toEqual(records);
   });
 });

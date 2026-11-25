@@ -26,11 +26,18 @@ export interface AppState {
   location: UserLocation | null;
   /** Radio de búsqueda de comercios, en km */
   radiusKm: RadiusKm;
+  /** Aviso para mostrar en la próxima página (spec 33); no se guarda */
+  flash: string | null;
 
   hydrate: () => void;
   addProduct: (product: Product) => void;
   /** Copia el producto con los cambios; `ean: undefined` quita el vínculo (JSON.stringify omite la clave) */
   updateProduct: (id: string, changes: Partial<Omit<Product, 'id'>>) => void;
+  /**
+   * Saca el producto, sus precios y su ítem del carrito en un solo cambio (spec 33). Con código de barras o con compras
+   * no hace nada y devuelve false. La foto la borra quien lo llama
+   */
+  deleteProduct: (id: string) => boolean;
   addPrice: (price: Price) => void;
   updatePrice: (priceId: string, newAmount: number) => void;
   /** Un producto, un comercio: si ya está suma 1; si el ítem nuevo trae comercio, pasa a ese comercio y precio */
@@ -56,6 +63,7 @@ export interface AppState {
   updateQuantity: (itemId: string, qty: number) => void;
   updateCartItemPrice: (itemId: string, price: number) => void;
   clearCart: () => void;
+  /** Repetir compra: carga sus ítems y vuelve a crear los productos que ya no existen (spec 33), en un solo cambio */
   loadPurchaseToCart: (purchase: Purchase, merge?: boolean) => void;
   /**
    * Carga un carrito compartido (spec 31) en un solo cambio: suma los productos nuevos y, con `merge`, los ítems al
@@ -68,6 +76,7 @@ export interface AppState {
   /** null quita la ubicación y vuelve el radio a 3 km */
   setLocation: (location: UserLocation | null) => void;
   setRadius: (radiusKm: RadiusKm) => void;
+  setFlash: (text: string | null) => void;
   /** Vacía los datos del usuario (cerrar sesión, spec 21): productos, precios, carrito, compras y calculadora; la ubicación queda */
   resetUserData: () => void;
 }
@@ -81,6 +90,7 @@ export const useStore = create<AppState>()((set, get) => ({
   calculator: defaultCalculator(),
   location: null,
   radiusKm: DEFAULT_RADIUS,
+  flash: null,
 
   hydrate: () => {
     if (get().hydrated) return;
@@ -102,6 +112,17 @@ export const useStore = create<AppState>()((set, get) => ({
   updateProduct: (id, changes) => set(s => ({
     products: s.products.map(p => p.id === id ? { ...p, ...changes } : p),
   })),
+
+  deleteProduct: id => {
+    const s = get();
+    const product = s.products.find(p => p.id === id);
+    if (!product || product.ean || purchasesWithProduct(s.purchases, id) > 0) return false;
+    // Una colección sin nada que sacar conserva su referencia: no se guarda de nuevo
+    const without = <T extends { productId: string }>(list: T[]): T[] =>
+      list.some(i => i.productId === id) ? list.filter(i => i.productId !== id) : list;
+    set({ products: s.products.filter(p => p.id !== id), prices: without(s.prices), cart: without(s.cart) });
+    return true;
+  },
 
   // ── Precios ───────────────────────────────────────────────
   addPrice: price => set(s => ({ prices: [...s.prices, price] })),
@@ -195,7 +216,15 @@ export const useStore = create<AppState>()((set, get) => ({
         });
       }
     }
-    return { cart: base };
+    // Un producto que ya no existe se vuelve a crear con el mismo id, para que la compra lo siga encontrando (spec 33)
+    const known = new Set(s.products.map(p => p.id));
+    const missing: Product[] = [];
+    for (const { productId, productName } of purchase.items) {
+      if (known.has(productId)) continue;
+      known.add(productId);
+      missing.push({ id: productId, name: productName });
+    }
+    return missing.length > 0 ? { products: [...s.products, ...missing], cart: base } : { cart: base };
   }),
 
   loadSharedCart: (load, merge) => set(s => {
@@ -220,6 +249,8 @@ export const useStore = create<AppState>()((set, get) => ({
   setLocation: location => set(location ? { location } : { location: null, radiusKm: DEFAULT_RADIUS }),
 
   setRadius: radiusKm => set({ radiusKm }),
+
+  setFlash: text => set({ flash: text }),
 
   resetUserData: () => set({ products: [], prices: [], cart: [], purchases: [], calculator: defaultCalculator() }),
 }));
@@ -411,6 +442,11 @@ export function groupCartByStore<T extends Pick<CartItem, 'store' | 'subtotal'>>
 /** Comercios distintos ya usados en el carrito (para el selector) */
 export function getCartStores(cart: CartItem[]): StoreRef[] {
   return groupCartByStore(cart).flatMap(g => g.store ? [g.store] : []);
+}
+
+/** Cantidad de compras (no de ítems) que tienen el producto */
+export function purchasesWithProduct(purchases: Purchase[], productId: string): number {
+  return purchases.filter(purchase => purchase.items.some(i => i.productId === productId)).length;
 }
 
 /** Devuelve el precio de la última compra completada para un producto */

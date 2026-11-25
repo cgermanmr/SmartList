@@ -105,6 +105,10 @@ export default function PriceForm() {
     if (urlEan) resolveFromUrl(urlEan);
   }, [urlEan]);
 
+  // Un producto propio elegido y después eliminado (spec 33) deja de estar elegido; el comercio y el monto quedan
+  const products = useStore(s => s.products);
+  if (choice?.kind === 'own' && !products.some(p => p.id === choice.product.id)) setChoice(null);
+
   function focus(field: Field) {
     setFocusTarget(prev => ({ field, n: (prev?.n ?? 0) + 1 }));
   }

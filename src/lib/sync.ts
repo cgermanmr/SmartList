@@ -118,6 +118,15 @@ export function acknowledge(outbox: SyncRecord[], sent: SyncRecord[]): SyncRecor
   return outbox.filter(r => confirmed.get(recordKey(r)) !== r.modifiedAt);
 }
 
+/**
+ * Orden para subir: los borrados de productos al final, el resto como estaba. Si la subida se corta entre tandas, nadie
+ * ve un producto borrado con sus precios todavía vivos (spec 33).
+ */
+export function pushOrder(records: SyncRecord[]): SyncRecord[] {
+  const last = (r: SyncRecord) => r.collection === 'products' && r.deleted;
+  return [...records.filter(r => !last(r)), ...records.filter(last)];
+}
+
 // ── Merge ────────────────────────────────────────────────────
 
 function isRecordData(value: unknown, id: string): value is { id: string } {
@@ -163,6 +172,53 @@ export function mergeRemote(data: SyncData, rows: RemoteRow[], outbox: SyncRecor
   }
   if (lists.purchases) merged.purchases = [...merged.purchases].sort((a, b) => b.date.localeCompare(a.date));
   return merged;
+}
+
+// ── Productos eliminados que todavía se usan (spec 33) ───────
+
+/** Borrados de productos de una bajada */
+function deletedProductRows(rows: RemoteRow[]): RemoteRow[] {
+  return rows.filter(r => r.collection === 'products' && r.deleted);
+}
+
+/** Productos que usa un precio propio (los de ejemplo no cuentan), el carrito o una compra */
+function usedProductIds(data: SyncData): Set<string> {
+  return new Set([
+    ...data.prices.filter(p => !SAMPLE_PRICE_IDS.has(p.id)).map(p => p.productId),
+    ...data.cart.map(i => i.productId),
+    ...data.purchases.flatMap(purchase => purchase.items.map(i => i.productId)),
+  ]);
+}
+
+/**
+ * Restaura los productos que `rows` borró y que `merged` todavía usa: otro dispositivo eliminó uno sin saber que este
+ * lo había usado. Vuelven como estaban en este dispositivo, sin la foto (ya se mandó a borrar del bucket). Va antes de
+ * `dedupeByEan`. Sin ninguno devuelve el mismo estado.
+ */
+export function restoreUsedProducts(local: SyncData, merged: SyncData, rows: RemoteRow[]):
+  { data: SyncData; restoredIds: string[] } {
+  const deleted = new Set(deletedProductRows(rows).map(r => r.id));
+  for (const p of merged.products) deleted.delete(p.id);
+  if (deleted.size === 0) return { data: merged, restoredIds: [] };
+  const used = usedProductIds(merged);
+  const restored = local.products
+    .filter(p => deleted.has(p.id) && used.has(p.id))
+    .map(p => {
+      const back = { ...p };
+      delete back.photo;
+      return back;
+    });
+  if (restored.length === 0) return { data: merged, restoredIds: [] };
+  return { data: { ...merged, products: [...merged.products, ...restored] }, restoredIds: restored.map(p => p.id) };
+}
+
+/**
+ * Fecha para encolar los restaurados: `now` o 1 ms después del borrado más nuevo, lo que sea mayor. Con una anterior al
+ * borrado (un reloj atrasado), la base conservaría el borrado y se restaurarían en cada vuelta.
+ */
+export function restoreTime(restoredIds: string[], rows: RemoteRow[], now: string): string {
+  const deletions = deletedProductRows(rows).filter(r => restoredIds.includes(r.id)).map(r => timeOf(r.modified_at));
+  return new Date(Math.max(timeOf(now), ...deletions.map(t => t + 1))).toISOString();
 }
 
 // ── Duplicados ───────────────────────────────────────────────
@@ -223,11 +279,7 @@ export function dedupeCart(cart: CartItem[], modifiedAt: ReadonlyMap<string, str
  */
 export function withoutSamples(data: SyncData): SyncData {
   const prices = data.prices.filter(p => !SAMPLE_PRICE_IDS.has(p.id));
-  const used = new Set([
-    ...prices.map(p => p.productId),
-    ...data.cart.map(i => i.productId),
-    ...data.purchases.flatMap(purchase => purchase.items.map(i => i.productId)),
-  ]);
+  const used = usedProductIds(data);
   return { ...data, prices, products: data.products.filter(p => !SAMPLE_PRODUCT_IDS.has(p.id) || used.has(p.id)) };
 }
 

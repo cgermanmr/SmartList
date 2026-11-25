@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CartItem, Price, Product, Purchase, StoreRef } from './models';
 import type { SepaProduct } from './sepa';
 import type { SharedLoad } from './shared-cart';
 import { CALCULATOR_KEY, CART_KEY, LOCATION_KEY, PRICES_KEY, PRODUCTS_KEY, PURCHASES_KEY, defaultCalculator } from './storage';
 import {
   filterProducts, getCartStores, getCartTotal, getLastPurchasedPrice, getPriceStats, getRecentStorePrices,
-  NO_BARRIO, groupCartByStore, initialCartPrice, priceStoreRef, purchaseStoreRef, storeKey, useStore,
+  NO_BARRIO, groupCartByStore, initialCartPrice, priceStoreRef, purchasesWithProduct, purchaseStoreRef,
+  storeKey, useStore,
 } from './store';
 
 // localStorage en memoria para el entorno de Node
@@ -329,6 +330,45 @@ describe('loadPurchaseToCart', () => {
     const cart = useStore.getState().cart;
     expect(cart[0]).toMatchObject({ productId: '1', quantity: 3, store: { name: 'Día' } });
     expect(cart[1]).toMatchObject({ productId: '2', store: { name: 'Coto' } });
+  });
+
+  // ── Productos que ya no existen (spec 33) ──────────────────
+
+  it.each([false, true])('vuelve a crear los productos que faltan, con su id y su nombre (combinar: %s)', merge => {
+    useStore.setState({ products: [{ id: '2', name: 'Pan propio', category: 'Panadería' }] });
+    useStore.getState().loadPurchaseToCart(purchase, merge);
+    expect(useStore.getState().products).toEqual([
+      { id: '2', name: 'Pan propio', category: 'Panadería' },
+      { id: '1', name: 'Producto 1' },
+    ]);
+    expect(saved<Product[]>(PRODUCTS_KEY)).toHaveLength(2);
+    expect(useStore.getState().cart.map(i => i.productId)).toEqual(['1', '2']);
+  });
+
+  it('al combinar, también si el ítem ya estaba en el carrito', () => {
+    useStore.setState({ products: [{ id: '2', name: 'Pan' }], cart: [item('1', 185)] });
+    useStore.getState().loadPurchaseToCart(purchase, true);
+    expect(useStore.getState().products.map(p => p.id)).toEqual(['2', '1']);
+  });
+
+  it('el mismo producto dos veces en la compra se crea una sola vez', () => {
+    useStore.getState().loadPurchaseToCart({ ...purchase, items: [item('1', 10), { ...item('1', 10), id: 'otro' }] });
+    expect(useStore.getState().products.map(p => p.id)).toEqual(['1']);
+  });
+
+  it('crea los productos y el carrito en un solo cambio', () => {
+    const listener = vi.fn();
+    const stop = useStore.subscribe(listener);
+    useStore.getState().loadPurchaseToCart(purchase);
+    stop();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('sin productos que falten, la colección conserva su referencia', () => {
+    const products = [{ id: '1', name: 'A' }, { id: '2', name: 'B' }];
+    useStore.setState({ products });
+    useStore.getState().loadPurchaseToCart(purchase);
+    expect(useStore.getState().products).toBe(products);
   });
 });
 
@@ -792,5 +832,91 @@ describe('purchaseStoreRef', () => {
     expect(purchaseStoreRef({ ...purchase, store: 'Coto', barrio: 'Once' })).toEqual({ name: 'Coto', barrio: 'Once' });
     expect(purchaseStoreRef({ ...purchase, store: 'Coto', barrio: NO_BARRIO })).toEqual({ name: 'Coto' });
     expect(purchaseStoreRef(purchase)).toBeUndefined();
+  });
+});
+
+// ── Eliminar producto (spec 33) ──────────────────────────────
+
+describe('purchasesWithProduct', () => {
+  it('cuenta compras, no ítems', () => {
+    const purchases: Purchase[] = [
+      { id: 'c1', date: '2026-01-01', total: 30, items: [item('a', 10), { ...item('a', 10), id: 'otro' }, item('b', 10)] },
+      { id: 'c2', date: '2026-01-02', total: 10, items: [item('a', 10)] },
+      { id: 'c3', date: '2026-01-03', total: 10, items: [item('b', 10)] },
+    ];
+    expect(purchasesWithProduct(purchases, 'a')).toBe(2);
+    expect(purchasesWithProduct(purchases, 'z')).toBe(0);
+  });
+});
+
+describe('deleteProduct', () => {
+  const EAN = '7793704000911';
+  const price = (id: string, productId: string): Price =>
+    ({ id, productId, amount: 100, date: new Date('2026-11-10T10:00:00.000Z'), barrio: 'Almagro' });
+
+  beforeEach(() => {
+    useStore.getState().hydrate();
+    useStore.setState({
+      products: [{ id: 'a', name: 'Leche 1L' }, { id: 'b', name: 'Pan' }, { id: 'c', name: 'Yerba', ean: EAN }],
+      prices: [price('p1', 'a'), price('p2', 'b'), price('p3', 'a')],
+      cart: [item('b', 10), item('a', 20)],
+    });
+  });
+
+  it('saca el producto, sus precios y su ítem; lo demás queda igual', () => {
+    const before = useStore.getState();
+    expect(before.deleteProduct('a')).toBe(true);
+    const s = useStore.getState();
+    expect(s.products).toEqual([before.products[1], before.products[2]]);
+    expect(s.prices).toEqual([before.prices[1]]);
+    expect(s.cart).toEqual([before.cart[0]]);
+    expect(s.purchases).toBe(before.purchases);
+    expect(s.calculator).toBe(before.calculator);
+  });
+
+  it('en un solo cambio del store', () => {
+    const listener = vi.fn();
+    const stop = useStore.subscribe(listener);
+    useStore.getState().deleteProduct('a');
+    stop();
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('queda guardado: no vuelve al recargar', () => {
+    useStore.getState().deleteProduct('a');
+    expect(saved<Product[]>(PRODUCTS_KEY).map(p => p.id)).toEqual(['b', 'c']);
+    expect(saved<Price[]>(PRICES_KEY).map(p => p.id)).toEqual(['p2']);
+    expect(saved<CartItem[]>(CART_KEY).map(i => i.productId)).toEqual(['b']);
+  });
+
+  it('sin precios ni lugar en el carrito, esas colecciones conservan su referencia', () => {
+    useStore.setState({ prices: [price('p2', 'b')], cart: [] });
+    const before = useStore.getState();
+    before.deleteProduct('a');
+    expect(useStore.getState().prices).toBe(before.prices);
+    expect(useStore.getState().cart).toBe(before.cart);
+  });
+
+  it.each([
+    ['con código', 'c', []],
+    ['en una compra', 'a', [{ id: 'c1', date: '2026-01-01', total: 10, items: [item('a', 10)] }]],
+    ['inexistente', 'z', []],
+  ])('%s no cambia nada y devuelve false', (_name, id, purchases) => {
+    useStore.setState({ purchases });
+    const before = useStore.getState();
+    expect(before.deleteProduct(id)).toBe(false);
+    expect(useStore.getState()).toBe(before);
+  });
+});
+
+describe('flash', () => {
+  it('se deja y se borra, sin guardarse', () => {
+    useStore.getState().hydrate();
+    expect(useStore.getState().flash).toBeNull();
+    useStore.getState().setFlash('Leche 1L eliminado');
+    expect(useStore.getState().flash).toBe('Leche 1L eliminado');
+    expect(storage.getItem(PRODUCTS_KEY)).toBeNull();
+    useStore.getState().setFlash(null);
+    expect(useStore.getState().flash).toBeNull();
   });
 });

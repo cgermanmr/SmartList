@@ -92,6 +92,9 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Cómo borrar tus datos</h2>
         <p>
+          Eliminar un producto borra sus precios y su foto, también en tus otros dispositivos si tenés cuenta.
+        </p>
+        <p>
           En <Link href="/cuenta" className="font-semibold text-primary-700 underline underline-offset-2">Cuenta</Link>,
           {' '}<strong>Borrar mi cuenta</strong> elimina tu cuenta y todos tus datos guardados, fotos incluidas, en todos
           tus dispositivos, y te saca de tu grupo. No se puede deshacer. Cerrar sesión borra los datos y las fotos de este teléfono; siguen en

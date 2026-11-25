@@ -176,6 +176,19 @@ dev. Producción no hace falta reinstalarla, salvo para ver el ícono nuevo en e
 - [ ] **61.** Producción, apenas se publica: sin etiqueta, pestaña "El Changuito" y `/manifest.json` con "El Changuito".
       La app ya instalada en Android sigue siendo la misma.
 
+### Eliminar un producto (spec 33)
+
+Con una cuenta de prueba en dos dispositivos (A y B) y un producto sin código de barras, con 2 precios y una foto.
+
+- [ ] **62.** Eliminarlo en A: la confirmación dice "Se elimina en todos tus dispositivos."; desaparece de B, y la foto ya
+      no está en el bucket `fotos-propias`.
+- [ ] **63.** B sin señal: cargarle un precio. Eliminarlo en A y sincronizar. Conectar B: el producto vuelve en los dos,
+      sin la foto y solo con el precio de B, y `/cuenta` queda en "Sincronizado" (no se repite). Lo mismo si B, sin señal,
+      le cambió la cantidad en el carrito o lo compró.
+- [ ] **64.** Lo mismo que la 63 con el reloj de B atrasado 10 minutos.
+- [ ] **65.** Con TalkBack o VoiceOver, en un producto que está en una compra: el botón se anuncia deshabilitado y se lee
+      el motivo.
+
 ## Resultados
 
 | Prueba | Fecha | Resultado |

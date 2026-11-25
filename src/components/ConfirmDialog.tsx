@@ -40,7 +40,7 @@ export default function ConfirmDialog({ open, title, message, confirmLabel, dang
       className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl bg-white p-0 text-gray-900 shadow-xl backdrop:bg-black/50">
       {open && (
         <div className="p-5">
-          <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold break-words">{title}</h2>
           <p id={messageId} className="mt-2 text-gray-700">{message}</p>
           <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button type="button" onClick={onCancel} disabled={busy} className="btn-secondary">Cancelar</button>

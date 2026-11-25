@@ -4,8 +4,8 @@ import { clearLocalPhotos, releaseLocalPhotos, syncPhotos } from './photo-sync';
 import { loadFromStorage, OUTBOX_KEY, removeFromStorage, saveToStorage, SYNC_KEY } from './storage';
 import { onUserDataChange, syncDataOf, useStore } from './store';
 import {
-  acknowledge, changesToRecords, dedupeByEan, dedupeCart, enqueue, mergeRemote, pullSince, RemoteRow, snapshotRecords,
-  SyncData, SyncRecord, withoutSamples,
+  acknowledge, changesToRecords, dedupeByEan, dedupeCart, enqueue, mergeRemote, pullSince, pushOrder, RemoteRow,
+  restoreTime, restoreUsedProducts, snapshotRecords, SyncData, SyncRecord, withoutSamples,
 } from './sync';
 import { accountGone, pullRows, pushRecords, signOutHere, SyncCallError } from './sync-remote';
 
@@ -188,7 +188,7 @@ async function round(): Promise<void> {
   setStatus({ state: 'syncing', lastSync });
 
   try {
-    const sent = getOutbox();
+    const sent = pushOrder(getOutbox());
     if (sent.length > 0) {
       await pushRecords(userId, sent);
       setOutbox(acknowledge(getOutbox(), sent));
@@ -213,7 +213,10 @@ async function round(): Promise<void> {
   }
 }
 
-/** Junta las filas bajadas con lo local, resuelve duplicados y encola lo que eso cambió */
+/**
+ * Junta las filas bajadas con lo local, restaura los productos que otro dispositivo eliminó y todavía se usan (spec 33),
+ * resuelve duplicados y encola lo que eso cambió
+ */
 function applyRows(rows: RemoteRow[]): void {
   const local = syncDataOf(useStore.getState());
   const pending = getOutbox();
@@ -224,12 +227,17 @@ function applyRows(rows: RemoteRow[]): void {
   for (const r of rows) if (r.collection === 'cart') cartTimes.set(r.id, r.modified_at);
   for (const r of pending) if (r.collection === 'cart') cartTimes.set(r.id, r.modifiedAt);
 
-  const deduped = dedupeByEan(merged);
+  const { data: restored, restoredIds } = restoreUsedProducts(local, merged, rows);
+  const deduped = dedupeByEan(restored);
   const cart = dedupeCart(deduped.cart, cartTimes);
   const final = cart === deduped.cart ? deduped : { ...deduped, cart };
 
   applyData(final);
-  const extra = changesToRecords(merged, final, nowIso());
+  const now = nowIso();
+  const restoredAt = restoreTime(restoredIds, rows, now);
+  const extra = changesToRecords(merged, final, now).map(r => (
+    r.collection === 'products' && !r.deleted && restoredIds.includes(r.id) ? { ...r, modifiedAt: restoredAt } : r
+  ));
   if (extra.length > 0) {
     setOutbox(enqueue(getOutbox(), extra));
     again = true;

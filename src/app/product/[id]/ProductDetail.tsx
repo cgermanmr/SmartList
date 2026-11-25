@@ -4,6 +4,7 @@ import { ArrowLeft, Camera, ImageOff, Pencil } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import DeleteProduct from '@/components/DeleteProduct';
 import GroupPricesCard from '@/components/GroupPricesCard';
 import NearbyStoresCard from '@/components/NearbyStoresCard';
 import { PhotoStatus, usePhotoPicker } from '@/components/PhotoField';
@@ -35,6 +36,9 @@ export default function ProductDetail() {
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
+  // Eliminado desde acá (spec 33): nada que mostrar mientras se navega a Buscar. Al ocultarse la página se olvida
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => () => setLeaving(false), []);
 
   // Vincular y quitar reemplazan el botón que tenía el foco: si quedó perdido, pasa al primero de los nuevos
   const linkActions = useRef<HTMLDivElement>(null);
@@ -85,6 +89,8 @@ export default function ProductDetail() {
     previousEan.current = ean;
     if (document.activeElement === document.body) linkActions.current?.querySelector('button')?.focus();
   }, [ean]);
+
+  if (!product && leaving) return null;
 
   if (!product) {
     return (
@@ -313,6 +319,8 @@ export default function ProductDetail() {
           </button>
         </div>
       </div>
+
+      <DeleteProduct product={product} busy={picker.busy || photoSaving} onLeaving={setLeaving} />
     </div>
   );
 }

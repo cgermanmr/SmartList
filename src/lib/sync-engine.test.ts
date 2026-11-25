@@ -352,3 +352,105 @@ describe('fotos propias (spec 27)', () => {
     expect(engine.syncUserId()).toBeNull();
   });
 });
+
+describe('eliminar un producto con dos dispositivos (spec 33)', () => {
+  const ON_TIME = '2026-11-17T13:00:00+00:00';
+  const AHEAD = '2099-01-01T00:00:00+00:00';   // el otro dispositivo adelanta (o este atrasa)
+
+  type Remote = Awaited<ReturnType<typeof load>>['remote'];
+
+  /** Base en memoria con las reglas de user_records: un cambio más viejo que el guardado no lo pisa */
+  function server(remote: Remote, initial: RemoteRow[]) {
+    const rows = new Map(initial.map(r => [`${r.collection}/${r.id}`, r]));
+    let clock = Date.parse('2026-11-17T14:00:00.000Z');
+    vi.mocked(remote.pushRecords).mockImplementation(async (_userId, records) => {
+      for (const r of records) {
+        const id = `${r.collection}/${r.id}`;
+        const stored = rows.get(id);
+        if (stored && Date.parse(r.modifiedAt) < Date.parse(stored.modified_at)) continue;
+        clock += 1000;
+        rows.set(id, {
+          collection: r.collection, id: r.id, data: r.deleted ? null : r.data, deleted: r.deleted,
+          modified_at: r.modifiedAt, synced_at: new Date(clock).toISOString(),
+        });
+      }
+    });
+    // Baja siempre todo: lo más exigente con las filas repetidas
+    vi.mocked(remote.pullRows).mockImplementation(async () => [...rows.values()]);
+    return rows;
+  }
+
+  function deletedRow(collection: RemoteRow['collection'], id: string, modified: string): RemoteRow {
+    return { collection, id, data: null, deleted: true, modified_at: modified, synced_at: '2026-11-17T14:00:00+00:00' };
+  }
+
+  it('el borrado del producto se sube después de los de sus precios y su ítem', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([product('a')]));
+    storage.setItem('preciolocal_prices', JSON.stringify([price('p', 'a')]));
+    storage.setItem('preciolocal_cart', JSON.stringify([item('i', 'a')]));
+    const { remote, useStore, engine } = await load();
+    useStore.getState().deleteProduct('a');
+
+    await engine.startSync('u1');
+
+    expect(vi.mocked(remote.pushRecords).mock.calls[0][1].map(r => `${r.collection}/${r.id}/${r.deleted}`))
+      .toEqual(['prices/p/true', 'cart/i/true', 'products/a/true']);
+    expect(engine.pendingCount()).toBe(0);
+  });
+
+  it.each([
+    ['con el reloj bien', ON_TIME],
+    ['con el reloj atrasado', AHEAD],
+  ])('otro lo eliminó y este le cargó un precio: vuelve y la sincronización termina, %s', async (_name, deletedAt) => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([{ ...product('a'), photo: { id: 'f', takenAt: 'x' } }]));
+    storage.setItem('preciolocal_prices', JSON.stringify([price('viejo', 'a')]));
+    const { remote, useStore, engine } = await load();
+    useStore.getState().addPrice(price('nuevo', 'a'));
+    const rows = server(remote, [deletedRow('products', 'a', deletedAt), deletedRow('prices', 'viejo', deletedAt)]);
+
+    await engine.startSync('u1');
+
+    expect(useStore.getState().products).toEqual([product('a')]);
+    expect(useStore.getState().prices.map(p => p.id)).toEqual(['nuevo']);
+    expect(rows.get('products/a')).toMatchObject({ deleted: false, data: product('a') });
+    expect(rows.get('prices/viejo')?.deleted).toBe(true);
+    expect(engine.pendingCount()).toBe(0);
+
+    // La segunda vuelta baja las mismas filas y no encola ni sube nada
+    const pushes = vi.mocked(remote.pushRecords).mock.calls.length;
+    await engine.syncNow();
+    expect(engine.pendingCount()).toBe(0);
+    expect(vi.mocked(remote.pushRecords).mock.calls.length).toBe(pushes);
+  });
+
+  it('solo el producto restaurado lleva la fecha adelantada', async () => {
+    const EAN = '7790000000017';
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([product('a'), product('z', EAN)]));
+    const { remote, useStore, engine } = await load();
+    useStore.getState().addPrice(price('nuevo', 'a'));
+    const rows = server(remote, [deletedRow('products', 'a', AHEAD), row('products', 'b', product('b', EAN))]);
+
+    await engine.startSync('u1');
+
+    expect(rows.get('products/a')).toMatchObject({ deleted: false, modified_at: '2099-01-01T00:00:00.001Z' });
+    expect(rows.get('products/z')?.deleted).toBe(true);
+    expect(Date.parse(rows.get('products/z')!.modified_at)).toBeLessThan(Date.parse(AHEAD));
+  });
+
+  it('otro lo eliminó y acá nadie lo usa: se elimina', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([product('a')]));
+    storage.setItem('preciolocal_prices', JSON.stringify([price('p', 'a')]));
+    const { remote, useStore, engine } = await load();
+    server(remote, [deletedRow('products', 'a', ON_TIME), deletedRow('prices', 'p', ON_TIME)]);
+
+    await engine.startSync('u1');
+
+    expect(useStore.getState().products).toEqual([]);
+    expect(useStore.getState().prices).toEqual([]);
+    expect(engine.pendingCount()).toBe(0);
+  });
+});

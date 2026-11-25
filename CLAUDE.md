@@ -146,7 +146,8 @@ src/
 │   ├── useAuth.ts              # Hook: sesión de Supabase (off / loading / out / in)
 │   ├── useNow.ts               # Reloj compartido cada 30 s (0 en el prerender) para "hace N min"
 │   ├── AccountButton.tsx       # Ícono de cuenta del header (inicial con sesión; punto ámbar si falla hace > 1 h)
-│   ├── ConfirmDialog.tsx       # <dialog> de confirmación (cerrar sesión con pendientes, borrar la cuenta)
+│   ├── ConfirmDialog.tsx       # <dialog> de confirmación (cerrar sesión con pendientes, borrar la cuenta, eliminar)
+│   ├── DeleteProduct.tsx       # "Eliminar producto" al pie del detalle (spec 33): botón, motivo y confirmación
 │   ├── NumberInput.tsx         # Input numérico sobre un valor del store (conserva el texto mientras se edita)
 │   ├── PriceChart.tsx          # Gráfico de tendencia en SVG propio
 │   ├── SpendingChart.tsx       # Gasto de 6 meses en barras de HTML; cada mes con compras es un botón que lo elige
@@ -245,11 +246,13 @@ src/
     ├── app-env.ts              # Entorno del build (spec 32): resolveAppEnv (lo usa next.config.ts), APP_ENV, envLabel,
     │                           #   installName, pageTitle, iconPath y buildManifest
     ├── share.ts                # Compartir (spec 30): APP_URL, APP_DESCRIPTION, SHARE_TEXT y whatsappUrl (wa.me)
+    ├── product-delete.ts       # Eliminar producto (spec 33): deleteBlockedReason y deleteMessage
     ├── shared-cart.ts          # Compartir el carrito (spec 31): sharedFromItems, shareMessage, encodeSharedCart /
     │                           #   decodeSharedCart, findSharedPayload, sharedCartUrl, resolveSharedCart
     ├── privacy.ts              # PRIVACY_CONTACT: El Changuito · elchanguito.app@gmail.com
     ├── sync.ts                 # Sincronización pura: diffCollection, cola (enqueue/acknowledge), mergeRemote,
-    │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince
+    │                           #   dedupeByEan, dedupeCart, withoutSamples, pullSince, pushOrder,
+    │                           #   restoreUsedProducts y restoreTime (spec 33)
     ├── sync-remote.ts          # Llamadas a user_records: pushRecords (upsert de a 500), pullRows (de a 1.000)
     ├── sync-engine.ts          # Motor: cola persistida, startSync/stopSync/syncNow, primera sesión, cerrar sesión,
     │                           #   cuenta borrada; vuelta de fotos (syncPhotos) y syncUserId; useSyncStatus para la UI
@@ -290,7 +293,8 @@ src/
   puras que reciben la colección: `getPricesForProduct(prices, id)`, `getPriceStats(prices, id)`,
   `getCartTotal(cart)`, `getLastPurchasedPrice(purchases, id)`, `filterProducts(products, query)`,
   `groupCartByStore(cart)`, `getCartStores(cart)`, `storeKey(store)`, `initialCartPrice(prices, id, reference?)`,
-  `getRecentStorePrices(prices, id, now)`, `priceStoreRef(price)`.
+  `getRecentStorePrices(prices, id, now)`, `priceStoreRef(price)`, `purchasesWithProduct(purchases, id)`.
+  `flash` (no se guarda) es un aviso que deja una página para la siguiente: Buscar lo muestra y lo borra (spec 33).
   Fuera de React: `useStore.getState()`.
 - **Patrón de mutación** — las acciones devuelven arrays y objetos nuevos (`map` con spread), nunca mutan los existentes.
 - **Persistencia** — una suscripción al store guarda en su clave cada colección que cambió, solo después de hidratar.
@@ -309,6 +313,13 @@ src/
   que el guardado: descarta lo local. Cerrar sesión vacía el teléfono (la ubicación queda); una cuenta borrada desde
   otro dispositivo (`user_not_found` al retomar o FK `23503`) deja los datos sin cuenta. **La ubicación no se
   sincroniza.** Sin Supabase no hay cuenta
+- **Eliminar un producto** ([SPEC 33](specs/33-eliminar-producto.md)) — `deleteProduct(id)` saca el producto, sus
+  precios y su ítem del carrito en **un solo `set`**; con código de barras o con alguna compra no hace nada y devuelve
+  `false`. La foto la borra después `DeleteProduct` (`discardPhoto`). Con cuenta, los borrados de productos se suben
+  **al final** de la cola (`pushOrder`). Al bajar, `restoreUsedProducts` (entre `mergeRemote` y `dedupeByEan`) trae de
+  vuelta un producto que otro dispositivo eliminó y este tenía, si lo usa un precio (los de ejemplo no cuentan), el
+  carrito o una compra: como estaba, sin la foto. Se encola con `restoreTime`, siempre posterior al borrado aunque el
+  reloj atrase: con una fecha anterior la base conservaría el borrado y se restauraría en cada vuelta
 - **Catálogo SEPA (solo lectura)** — `lib/supabase.ts` crea el cliente con `NEXT_PUBLIC_SUPABASE_URL` y
   `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave publishable `sb_publishable_…`), sin sesión. Si falta alguna, `supabase` es
   `null`, `sepaEnabled` es `false` y la UI no muestra nada del catálogo (el resto funciona igual). `lib/sepa.ts`
@@ -466,7 +477,7 @@ src/
 - **IDs** — `newId()` (`Date.now().toString()`) y `uniqueId()` (con sufijo aleatorio) de `src/lib/ids.ts` (sin UUID).
   El lint (`react-hooks/purity`) no deja llamar a `Date.now()` directamente en el cuerpo de un componente.
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
-  `ConfirmDialog` (`<dialog>`) en `/cuenta`;
+  `ConfirmDialog` (`<dialog>`) en `/cuenta`, `/grupo` y al eliminar un producto;
   `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco), en el
   carrito (`CartStoreDialog`, se cierra también al ocultarse la página con `<Activity>`) y en el lector de códigos
   de barras (`BarcodeScanner`, a pantalla completa).
@@ -832,6 +843,14 @@ interface CalculatorState {
 - Gráfico de tendencia en **SVG propio** (`PriceChart`, sin librerías), solo si hay más de 3 precios
 - Historial de precios con barrio, tienda y fecha; edición inline del monto (`updatePrice`; Enter guarda, Escape cancela)
 - Agregar al carrito con el precio actual
+- **Eliminar producto** ([SPEC 33](specs/33-eliminar-producto.md), `DeleteProduct`), al pie: solo los que no tienen código
+  de barras y no están en ninguna compra. Si no, el botón queda deshabilitado (`aria-disabled`, se puede enfocar) con el
+  motivo en `aria-describedby`: "No se puede eliminar: está en 2 compras de tu historial.", o que tiene código (con
+  Supabase, "Quitá el vínculo primero"); con los dos, el de las compras. También mientras se prepara una foto.
+  `ConfirmDialog` nombra lo que se pierde (precios, foto, carrito y, con sesión, todos los dispositivos) y "No se puede
+  deshacer.". Al confirmar va a Buscar reemplazando el detalle en el historial del navegador, con el aviso "<nombre>
+  eliminado" (3 s). Cargar precio suelta el producto si estaba elegido (el comercio y el monto quedan) y la oferta del
+  lector de ese producto se cierra
 
 ### Carrito (`/cart`)
 - **Agrupado por comercio** ([SPEC 14](specs/14-carrito-por-comercio.md), `groupCartByStore`): una tarjeta por
@@ -918,7 +937,8 @@ interface CalculatorState {
 - "Repetir" (botón hermano del de expandir, con `aria-label` "Repetir compra del dd/MM/yyyy"): si el carrito tiene
   ítems abre un modal para **combinar o reemplazar** (`loadPurchaseToCart(purchase, merge)`); usa el precio actual
   registrado de cada producto y navega a `/cart`. Los ítems vuelven al comercio de la compra (el `StoreRef` guardado
-  en el ítem o `{ name: store, barrio }`); al combinar, un ítem que ya estaba conserva su comercio
+  en el ítem o `{ name: store, barrio }`); al combinar, un ítem que ya estaba conserva su comercio. Un ítem cuyo
+  producto no existe lo vuelve a crear con el mismo `id` y el nombre de la compra, en el mismo `set` (spec 33)
 
 ### Gastos (`/gastos`, [SPEC 03](specs/03-panel-gasto-mensual.md))
 - No está en la barra de navegación: se abre desde la tarjeta de Historial, que queda activa (`match` en `NavBar`).
@@ -1397,6 +1417,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   (spec 32)
 - [x] Cargar a mano, al cargar un precio, un producto que no aparece: nombre, código, marca, presentación, categoría y
   foto (spec 34)
+- [x] Eliminar desde su detalle un producto sin código de barras y sin compras, también en los demás dispositivos (spec 33)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---
