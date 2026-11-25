@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Price, Product, Purchase } from './models';
-import { otherStore, ownPricesNear, priceAt, recentStores, resolvePriceProduct, storesAtPoint } from './price-form';
+import {
+  manualOffer, manualProductForm, otherStore, ownPricesNear, priceAt, recentStores, resolvePriceProduct, storesAtPoint,
+} from './price-form';
+import { EMPTY_PRODUCT_FORM, ProductForm } from './product-form';
 import type { SepaBranch, SepaProduct } from './sepa';
 
 // ── storesAtPoint ─────────────────────────────────────────
@@ -133,19 +136,138 @@ describe('resolvePriceProduct', () => {
     expect(resolvePriceProduct({ kind: 'sepa', sepa }, [own, synced], 'n')).toEqual({ product: synced, isNew: false });
   });
 
-  it('con código fuera del catálogo → uno nuevo con nombre, marca y EAN', () => {
-    const choice = { kind: 'new' as const, ean: '7791234567896', name: ' Alfajor  Luna ', brand: ' Luna ' };
-    expect(resolvePriceProduct(choice, [own], 'n')).toEqual({
-      product: { id: 'n', name: 'Alfajor Luna', brand: 'Luna', ean: '7791234567896' }, isNew: true,
+  it('nuevo con todos los datos → sin espacios de más, con código, presentación y categoría', () => {
+    const form: ProductForm = {
+      name: ' Alfajor  Luna ', category: ' Cosas  dulces ', ean: ' 7791234567898 ', brand: ' La  Luna ', size: '50', sizeUnit: 'g',
+    };
+    expect(resolvePriceProduct({ kind: 'new', form }, [own], 'n')).toEqual({
+      product: {
+        id: 'n', name: 'Alfajor Luna', category: 'Cosas dulces', ean: '7791234567898', brand: 'La Luna', size: 50, sizeUnit: 'g',
+      },
+      isNew: true,
     });
   });
 
-  it('sin código → uno nuevo sin EAN y sin marca vacía', () => {
-    const { product, isNew } = resolvePriceProduct({ kind: 'new', name: 'Pan casero', brand: ' ' }, [own], 'n');
+  it('nuevo con un código en otro formato → normalizado a GTIN-13', () => {
+    const form = { ...EMPTY_PRODUCT_FORM, name: 'Alfajor', ean: '96385074' };
+    expect(resolvePriceProduct({ kind: 'new', form }, [own], 'n').product.ean).toBe('0000096385074');
+  });
+
+  it('nuevo con un código de un propio que apareció mientras tanto → el propio', () => {
+    const synced: Product = { id: 'p2', name: 'Alfajor', ean: '7791234567898' };
+    const form = { ...EMPTY_PRODUCT_FORM, name: 'Otro', ean: '7791234567898' };
+    expect(resolvePriceProduct({ kind: 'new', form }, [own, synced], 'n')).toEqual({ product: synced, isNew: false });
+  });
+
+  it('nuevo solo con el nombre → sin claves vacías en el JSON guardado', () => {
+    const { product, isNew } = resolvePriceProduct({ kind: 'new', form: { ...EMPTY_PRODUCT_FORM, name: 'Pan casero', brand: ' ', category: ' ' } }, [own], 'n');
     expect(isNew).toBe(true);
-    expect(product).toEqual({ id: 'n', name: 'Pan casero' });
-    expect('ean' in product).toBe(false);
-    expect('brand' in product).toBe(false);
+    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan casero' });
+  });
+
+  it('nuevo con la presentación en 0 → sin número ni unidad', () => {
+    const { product } = resolvePriceProduct({ kind: 'new', form: { ...EMPTY_PRODUCT_FORM, name: 'Pan', size: '0', sizeUnit: 'kg' } }, [own], 'n');
+    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan' });
+  });
+});
+
+// ── manualProductForm ─────────────────────────────────────
+
+describe('manualProductForm', () => {
+  it('lo escrito va al nombre, tal como se escribió', () => {
+    expect(manualProductForm('alfajor LUNA')).toEqual({ ...EMPTY_PRODUCT_FORM, name: 'alfajor LUNA' });
+  });
+
+  it('un código válido va al código, normalizado, y el nombre queda vacío', () => {
+    expect(manualProductForm(' 7790001000019 ')).toEqual({ ...EMPTY_PRODUCT_FORM, ean: '7790001000019' });
+    expect(manualProductForm('96385074').ean).toBe('0000096385074');
+    expect(manualProductForm('036000291452').ean).toBe('0036000291452');
+  });
+
+  it('un número que no es un código válido va al nombre', () => {
+    expect(manualProductForm('7790001000018')).toEqual({ ...EMPTY_PRODUCT_FORM, name: '7790001000018' });
+  });
+
+  it('en blanco, el formulario vacío', () => {
+    expect(manualProductForm('   ')).toEqual(EMPTY_PRODUCT_FORM);
+  });
+});
+
+// ── manualOffer ───────────────────────────────────────────
+
+describe('manualOffer', () => {
+  type Input = Parameters<typeof manualOffer>[0];
+
+  function offer(patch: Partial<Input> = {}) {
+    return manualOffer({
+      query: 'alfajor luna', ownCount: 0, catalog: { status: 'done', count: 0 }, catalogEnabled: true, ...patch,
+    });
+  }
+
+  const DISCREET = { prominent: false, message: null, label: '¿No está? Cargar "alfajor luna" a mano' };
+
+  it('sin texto, nada', () => {
+    expect(offer({ query: '', catalog: { status: 'idle', count: 0 } })).toBeNull();
+    expect(offer({ query: '   ', catalog: { status: 'idle', count: 0 }, catalogEnabled: false })).toBeNull();
+  });
+
+  it('buscando, nada, aunque haya propios', () => {
+    expect(offer({ catalog: { status: 'loading', count: 0 } })).toBeNull();
+    expect(offer({ catalog: { status: 'loading', count: 0 }, ownCount: 2 })).toBeNull();
+  });
+
+  it('sin propios ni resultados del catálogo, destacada', () => {
+    expect(offer()).toEqual({
+      prominent: true,
+      message: 'No encontramos "alfajor luna" en tus productos ni en Precios Claros.',
+      label: 'Cargar "alfajor luna" a mano',
+    });
+  });
+
+  it('sin propios y si falla la consulta, destacada', () => {
+    expect(offer({ catalog: { status: 'error', count: 0 } })).toEqual({
+      prominent: true, message: 'No se pudo consultar Precios Claros', label: 'Cargar "alfajor luna" a mano',
+    });
+  });
+
+  it('sin propios y sin Supabase, destacada', () => {
+    expect(offer({ catalog: { status: 'idle', count: 0 }, catalogEnabled: false })).toEqual({
+      prominent: true, message: 'No encontramos "alfajor luna" en tus productos.', label: 'Cargar "alfajor luna" a mano',
+    });
+  });
+
+  it('con menos de 3 caracteres y sin propios, discreta', () => {
+    const short = { prominent: false, message: null, label: '¿No está? Cargar "al" a mano' };
+    expect(offer({ query: 'al', catalog: { status: 'idle', count: 0 } })).toEqual(short);
+    expect(offer({ query: 'al', catalog: { status: 'idle', count: 0 }, catalogEnabled: false })).toEqual(short);
+  });
+
+  it('con algún resultado, propio o del catálogo, discreta', () => {
+    expect(offer({ ownCount: 1 })).toEqual(DISCREET);
+    expect(offer({ catalog: { status: 'done', count: 3 } })).toEqual(DISCREET);
+    expect(offer({ ownCount: 1, catalog: { status: 'error', count: 0 } })).toEqual(DISCREET);
+    expect(offer({ ownCount: 1, catalog: { status: 'idle', count: 0 }, catalogEnabled: false })).toEqual(DISCREET);
+  });
+
+  it('muestra el texto sin los espacios de los bordes', () => {
+    expect(offer({ query: ' alfajor luna ' })?.label).toBe('Cargar "alfajor luna" a mano');
+  });
+
+  it('con un código válido, dice el código normalizado', () => {
+    expect(offer({ query: '7790001000019' })).toEqual({
+      prominent: true,
+      message: 'El código 7790001000019 no está en tus productos ni en Precios Claros.',
+      label: 'Cargar el código 7790001000019 a mano',
+    });
+    expect(offer({ query: '96385074' })?.label).toBe('Cargar el código 0000096385074 a mano');
+    expect(offer({ query: '036000291452' })?.label).toBe('Cargar el código 0036000291452 a mano');
+    expect(offer({ query: '7790001000019', catalog: { status: 'idle', count: 0 }, catalogEnabled: false })?.message)
+      .toBe('El código 7790001000019 no está en tus productos.');
+    expect(offer({ query: '7790001000019', ownCount: 1 })?.label).toBe('¿No está? Cargar el código 7790001000019 a mano');
+  });
+
+  it('un número que no es un código válido va entre comillas', () => {
+    expect(offer({ query: '7790001000018' })?.label).toBe('Cargar "7790001000018" a mano');
   });
 });
 

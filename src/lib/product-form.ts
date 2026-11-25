@@ -23,6 +23,27 @@ export const SIZE_UNITS: Unit[] = ['g', 'kg', 'ml', 'l', 'u'];
 
 export const EMPTY_PRODUCT_FORM: ProductForm = { name: '', category: '', ean: '', brand: '', size: '', sizeUnit: 'g' };
 
+// ── Categorías ─────────────────────────────────────────────
+
+/** Categorías que se sugieren siempre, además de las de los productos propios */
+export const CATEGORIES = ['Lacteos', 'Almacen', 'Aceites', 'Proteina', 'Bebidas', 'Verduras', 'Frutas', 'Limpieza'];
+
+/** Compara sin distinguir mayúsculas ni acentos ("ñ" y "n" son distintas) */
+const collator = new Intl.Collator('es-AR', { sensitivity: 'base' });
+
+/**
+ * Sugerencias de categoría: las de los productos propios y las fijas, sin repetir y en orden alfabético. El orden es
+ * estable y las propias van primero: entre dos iguales queda la escritura propia
+ */
+export function categorySuggestions(products: Product[]): string[] {
+  const own = products.map(p => p.category?.trim() ?? '').filter(Boolean);
+  return [...own, ...CATEGORIES]
+    .sort(collator.compare)
+    .filter((category, i, sorted) => i === 0 || collator.compare(category, sorted[i - 1]) !== 0);
+}
+
+// ── Formulario ─────────────────────────────────────────────
+
 /** Valida y normaliza un código a GTIN-13; `exceptId` deja afuera al producto que ya lo tiene al vincular */
 export function checkEan(text: string, products: Product[], exceptId?: string): EanCheck {
   const code = text.trim();

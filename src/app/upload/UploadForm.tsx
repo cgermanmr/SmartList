@@ -3,21 +3,20 @@
 import { Check, CirclePlus, Tag } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useRef, useState } from 'react';
+import CategoryInput from '@/components/CategoryInput';
 import DuplicateProduct from '@/components/DuplicateProduct';
 import PhotoField from '@/components/PhotoField';
 import ScanButton from '@/components/ScanButton';
 import SepaSearch from '@/components/SepaSearch';
+import SizeInput from '@/components/SizeInput';
 import { toGtin13 } from '@/lib/gtin';
 import { uniqueId } from '@/lib/ids';
-import { Unit } from '@/lib/models';
 import { PhotoDraft } from '@/lib/photo';
 import { savePhoto } from '@/lib/photo-sync';
-import { checkEan, EanCheck, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, ProductForm, SIZE_UNITS } from '@/lib/product-form';
+import { checkEan, EanCheck, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, ProductForm } from '@/lib/product-form';
 import { getSepaProduct, SepaProduct, sepaEnabled } from '@/lib/sepa';
 import { useStore } from '@/lib/store';
 import PriceForm from './PriceForm';
-
-const CATEGORIES = ['Lacteos', 'Almacen', 'Aceites', 'Proteina', 'Bebidas', 'Verduras', 'Frutas', 'Limpieza'];
 
 type Message = { text: string; type: 'ok' | 'error' };
 type EanError = Extract<EanCheck, { status: 'invalid' | 'duplicate' }>;
@@ -232,19 +231,12 @@ export default function UploadForm() {
 
             <div>
               <label htmlFor="product-category" className="block font-semibold mb-2">Categoría (opcional)</label>
-              <input
+              <CategoryInput
                 id="product-category"
                 ref={categoryInput}
                 value={productForm.category}
-                onChange={e => setProductForm({ ...productForm, category: e.target.value })}
-                type="text"
-                placeholder="Ej: Almacen"
-                className="input-field"
-                list="categories"
+                onChange={category => setProductForm({ ...productForm, category })}
               />
-              <datalist id="categories">
-                {CATEGORIES.map(c => <option key={c} value={c} />)}
-              </datalist>
             </div>
 
             <div>
@@ -293,26 +285,12 @@ export default function UploadForm() {
 
             <div>
               <label htmlFor="product-size" className="block font-semibold mb-2">Presentación (Opcional)</label>
-              <div className="flex gap-2">
-                <input
-                  id="product-size"
-                  value={productForm.size}
-                  onChange={e => setProductForm({ ...productForm, size: e.target.value })}
-                  type="number"
-                  step="any"
-                  min="0"
-                  inputMode="decimal"
-                  placeholder="Ej: 500"
-                  className="input-field min-w-0 flex-1"
-                />
-                <select
-                  value={productForm.sizeUnit}
-                  onChange={e => setProductForm({ ...productForm, sizeUnit: e.target.value as Unit })}
-                  aria-label="Unidad de la presentación"
-                  className="input-field w-24 shrink-0">
-                  {SIZE_UNITS.map(unit => <option key={unit} value={unit}>{unit}</option>)}
-                </select>
-              </div>
+              <SizeInput
+                id="product-size"
+                size={productForm.size}
+                unit={productForm.sizeUnit}
+                onChange={patch => setProductForm({ ...productForm, ...patch })}
+              />
             </div>
 
             <button type="submit" className="btn-primary w-full">Agregar Producto</button>

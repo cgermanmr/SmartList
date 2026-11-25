@@ -3,22 +3,29 @@
 import { Check } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useEffectEvent, useId, useRef, useState } from 'react';
+import { ManualEanError } from '@/components/ManualProductFields';
 import PriceProductPicker, { useEanLookup } from '@/components/PriceProductPicker';
 import PriceStorePicker from '@/components/PriceStorePicker';
+import { EanAnswer } from '@/components/useManualEan';
 import { formatDayMonth, formatMoney } from '@/lib/format';
 import { toGtin13 } from '@/lib/gtin';
 import { uniqueId } from '@/lib/ids';
 import { StoreRef } from '@/lib/models';
+import { PhotoDraft } from '@/lib/photo';
 import { savePhoto } from '@/lib/photo-sync';
 import { priceAt, PriceProductChoice, resolvePriceProduct } from '@/lib/price-form';
+import { checkEan, ProductForm } from '@/lib/product-form';
 import { getPricesForProduct, useStore } from '@/lib/store';
 
 interface Errors {
   store?: string;
   product?: string;
   name?: string;
+  ean?: ManualEanError;
   amount?: string;
 }
+
+type Field = 'store' | 'product' | 'ean' | 'amount';
 
 const NOTICE_MS = 3000;
 
@@ -42,24 +49,30 @@ export default function PriceForm() {
 
   const [store, setStore] = useState<StoreRef | null>(null);
   const [choice, setChoice] = useState<PriceProductChoice | null>(null);
+  // Texto del buscador de productos: se conserva mientras hay un producto elegido, para "Cambiar" (spec 34)
+  const [query, setQuery] = useState('');
+  // Lo que se sabe del código de un producto nuevo al abrir su formulario
+  const [knownEan, setKnownEan] = useState<EanAnswer | null>(null);
   const [amount, setAmount] = useState('');
   const [errors, setErrors] = useState<Errors>({});
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { lookup, resolve, cancel } = useEanLookup(chooseProduct);
+  const { searching, resolve, cancel } = useEanLookup(chooseProduct);
 
   const storeBlock = useRef<HTMLElement>(null);
   const productInput = useRef<HTMLInputElement>(null);
+  const eanInput = useRef<HTMLInputElement>(null);
   const amountInput = useRef<HTMLInputElement>(null);
   // Guardando la foto (spec 27): un segundo envío mientras tanto no hace nada
   const saving = useRef(false);
   // Después de guardar (o ante un error), el foco va al campo que corresponde cuando ya se dibujó
-  const [focusTarget, setFocusTarget] = useState<{ field: 'store' | 'product' | 'amount'; n: number } | null>(null);
+  const [focusTarget, setFocusTarget] = useState<{ field: Field; n: number } | null>(null);
 
   useEffect(() => {
     if (!focusTarget) return;
     if (focusTarget.field === 'store') storeBlock.current?.querySelector<HTMLElement>('button, input')?.focus();
     if (focusTarget.field === 'product') productInput.current?.focus();
+    if (focusTarget.field === 'ean') eanInput.current?.focus();
     if (focusTarget.field === 'amount') amountInput.current?.focus();
   }, [focusTarget]);
 
@@ -84,7 +97,7 @@ export default function PriceForm() {
   // El código se resuelve como al leerlo con la cámara. La ref (que sobrevive a <Activity>) evita resolverlo de nuevo
   // al volver a la página con la misma URL, lo que borraría el nombre escrito en un producto nuevo
   const appliedEan = useRef<string | null>(null);
-  const resolveFromUrl = useEffectEvent((ean: string) => resolve(ean));
+  const resolveFromUrl = useEffectEvent((ean: string) => scan(ean));
 
   useEffect(() => {
     if (urlEan === appliedEan.current) return;
@@ -92,7 +105,7 @@ export default function PriceForm() {
     if (urlEan) resolveFromUrl(urlEan);
   }, [urlEan]);
 
-  function focus(field: 'store' | 'product' | 'amount') {
+  function focus(field: Field) {
     setFocusTarget(prev => ({ field, n: (prev?.n ?? 0) + 1 }));
   }
 
@@ -101,12 +114,44 @@ export default function PriceForm() {
     if (next) setErrors(e => ({ ...e, store: undefined }));
   }
 
-  function chooseProduct(next: PriceProductChoice | null) {
+  function chooseProduct(next: PriceProductChoice | null, answer: EanAnswer | null = null) {
     // Cambiar de producto descarta la foto elegida y sin guardar (spec 27)
-    const draft = choice?.kind === 'new' ? choice.photo : undefined;
-    if (draft && (next?.kind !== 'new' || next.photo !== draft)) URL.revokeObjectURL(draft.url);
+    if (choice?.kind === 'new' && choice.photo) URL.revokeObjectURL(choice.photo.url);
     setChoice(next);
-    if (next) setErrors(e => ({ ...e, product: undefined, name: undefined }));
+    setKnownEan(answer);
+    setErrors(e => ({ ...e, product: next ? undefined : e.product, name: undefined, ean: undefined }));
+    // Producto nuevo (spec 34): el foco pasa a Nombre
+    if (next?.kind === 'new') focus('product');
+  }
+
+  /** Código leído o de la URL: el buscador queda vacío */
+  function scan(ean: string) {
+    setQuery('');
+    resolve(ean);
+  }
+
+  /** "Cambiar": vuelve al buscador con el texto buscado */
+  function changeProduct() {
+    cancel();
+    chooseProduct(null);
+    focus('product');
+  }
+
+  // Sobre el valor más nuevo: la foto llega después de comprimirla, y mientras tanto se puede seguir escribiendo (o
+  // haber vuelto al buscador, y entonces no se usa)
+  function editForm(patch: Partial<ProductForm>) {
+    setChoice(c => (c?.kind === 'new' ? { ...c, form: { ...c.form, ...patch } } : c));
+    setErrors(e => ({ ...e, name: 'name' in patch ? undefined : e.name, ean: 'ean' in patch ? undefined : e.ean }));
+  }
+
+  function setPhoto(photo: PhotoDraft | null) {
+    setChoice(c => (c?.kind === 'new' ? { ...c, photo: photo ?? undefined } : c));
+  }
+
+  /** Error del código de un producto nuevo; con la colección actual, por si llegó uno por la sincronización */
+  function manualEanError(form: ProductForm): ManualEanError | undefined {
+    const { status } = checkEan(form.ean, useStore.getState().products);
+    return status === 'invalid' || status === 'duplicate' ? status : undefined;
   }
 
   // "Último precio $Y · dd/mm" de un producto propio
@@ -120,12 +165,14 @@ export default function PriceForm() {
     const next: Errors = {
       store: store ? undefined : 'Elegí el comercio',
       product: choice ? undefined : 'Elegí el producto',
-      name: choice?.kind === 'new' && !choice.name.trim() ? 'Completá el nombre' : undefined,
+      name: choice?.kind === 'new' && !choice.form.name.trim() ? 'Completá el nombre' : undefined,
+      ean: choice?.kind === 'new' ? manualEanError(choice.form) : undefined,
       amount: value === null ? 'Completá el precio' : undefined,
     };
     setErrors(next);
     if (next.store) return focus('store');
     if (next.product || next.name) return focus('product');
+    if (next.ean) return focus('ean');
     if (next.amount) return focus('amount');
     if (!store || !choice || value === null) return;
 
@@ -154,6 +201,7 @@ export default function PriceForm() {
     // Queda el comercio: se limpian producto y monto
     cancel();
     setChoice(null);
+    setQuery('');
     setAmount('');
     focus('product');
     // Sin ean ni monto en la URL, recargar no vuelve a completar el formulario con lo recién guardado
@@ -167,13 +215,22 @@ export default function PriceForm() {
 
         <PriceProductPicker
           value={choice}
-          onChange={chooseProduct}
-          lookup={lookup}
-          onScan={resolve}
-          onCancelLookup={cancel}
+          onChoose={next => { cancel(); chooseProduct(next); }}
+          onChangeProduct={changeProduct}
+          query={query}
+          onQueryChange={text => { setQuery(text); cancel(); }}
+          searching={searching}
+          onScan={scan}
+          onManual={(form, answer) => { cancel(); chooseProduct({ kind: 'new', form }, answer); }}
+          knownEan={knownEan}
+          onEditForm={editForm}
+          onPhoto={setPhoto}
+          onUse={next => { chooseProduct(next); focus('amount'); }}
           error={errors.product}
           nameError={errors.name}
+          eanError={errors.ean}
           inputRef={productInput}
+          eanRef={eanInput}
         />
 
         <section className="card p-4">

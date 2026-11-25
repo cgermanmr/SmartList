@@ -5,6 +5,9 @@
 > **Fecha:** 2026-11-21
 > **Objetivo:** Cargar el precio de cualquier producto (propio, del catálogo, con un código desconocido o sin código) en el comercio donde está el usuario, elegido por GPS o a mano, sin dar de alta el producto antes.
 
+> **Nota:** la [SPEC 34](34-cargar-producto-a-mano.md) reemplaza el link "No tiene código de barras" y los formularios
+> de los casos B y C por "Cargar … a mano" y un solo formulario.
+
 ## Por qué existe esta spec
 
 Cargar un precio es la otra mitad del uso en la góndola ([feature 08](../docs/features/08-consulta-y-aportes.md)).

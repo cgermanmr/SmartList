@@ -1,97 +1,98 @@
 'use client';
 
+import { CirclePlus } from 'lucide-react';
 import { Ref, useId, useRef, useState } from 'react';
 import { formatSize } from '@/lib/format';
+import { toGtin13 } from '@/lib/gtin';
 import { Product } from '@/lib/models';
-import { productImageSrc } from '@/lib/photo';
-import { PriceProductChoice } from '@/lib/price-form';
+import { PhotoDraft, productImageSrc } from '@/lib/photo';
+import { manualOffer, manualProductForm, PriceProductChoice } from '@/lib/price-form';
+import { ProductForm } from '@/lib/product-form';
 import { getSepaProduct, sepaEnabled, SepaProduct, suggestedName } from '@/lib/sepa';
 import { filterProducts, useStore } from '@/lib/store';
-import PhotoField from './PhotoField';
+import ManualProductFields, { ManualEanError } from './ManualProductFields';
 import ProductImage from './ProductImage';
 import ScanButton from './ScanButton';
 import SepaResults from './SepaResults';
+import { EanAnswer } from './useManualEan';
 import { useProductPhotos } from './useProductPhotos';
 import { useSepaImages } from './useSepaImages';
-import { useSepaSearch } from './useSepaSearch';
+import { SepaSearchState, useSepaSearch } from './useSepaSearch';
 
-const LINK_CLASS = 'inline-flex min-h-11 items-center px-1 text-sm font-semibold text-primary-700 underline underline-offset-2 hover:text-primary-800';
+const LINK_CLASS = 'inline-flex min-h-11 items-center px-1 text-left text-sm font-semibold text-primary-700 underline underline-offset-2 hover:text-primary-800';
 const OWN_LIMIT = 5;
 
 // ── Código leído (o de la URL) ─────────────────────────────
 
-/** Consulta de un código que no es de un producto propio: buscando, fuera del catálogo, falló o sin Supabase */
-export interface EanLookup {
-  ean: string;
-  status: 'loading' | 'missing' | 'failed' | 'off';
-}
-
 /**
- * Resuelve un código como en la tabla de la spec 26: propio → ese producto; en Precios Claros → caso A; fuera del
- * catálogo, si falla la consulta o sin Supabase → caso B. Una respuesta vieja (otro código leído, o `cancel` porque
- * se editó el buscador o se cambió el producto) se descarta
+ * Resuelve un código: propio → ese producto; en Precios Claros → caso A; fuera del catálogo, si falla la consulta o sin
+ * Supabase → el formulario con el código (spec 34), con la respuesta para no consultarlo otra vez. Una respuesta vieja
+ * (otro código leído, o `cancel` porque se editó el buscador o se cambió el producto) se descarta
  */
-export function useEanLookup(onChoice: (choice: PriceProductChoice | null) => void) {
-  const [lookup, setLookup] = useState<EanLookup | null>(null);
+export function useEanLookup(onChoice: (choice: PriceProductChoice | null, answer: EanAnswer | null) => void) {
+  const [searching, setSearching] = useState(false);
   const pending = useRef<string | null>(null);
+
+  function finish(choice: PriceProductChoice, answer: EanAnswer | null) {
+    pending.current = null;
+    setSearching(false);
+    onChoice(choice, answer);
+  }
 
   function resolve(ean: string) {
     const own = useStore.getState().products.find(p => p.ean === ean);
-    if (own) {
-      pending.current = null;
-      setLookup(null);
-      onChoice({ kind: 'own', product: own });
-      return;
-    }
-    const unknown: PriceProductChoice = { kind: 'new', ean, name: '', brand: '' };
-    if (!sepaEnabled) {
-      pending.current = null;
-      setLookup({ ean, status: 'off' });
-      onChoice(unknown);
-      return;
-    }
+    if (own) return finish({ kind: 'own', product: own }, null);
+    const unknown: PriceProductChoice = { kind: 'new', form: manualProductForm(ean) };
+    if (!sepaEnabled) return finish(unknown, null);
     pending.current = ean;
-    setLookup({ ean, status: 'loading' });
-    onChoice(null);
+    setSearching(true);
+    onChoice(null, null);
     getSepaProduct(ean).then(
       sepa => {
         if (pending.current !== ean) return;
-        pending.current = null;
-        setLookup(sepa ? null : { ean, status: 'missing' });
-        onChoice(sepa ? { kind: 'sepa', sepa } : unknown);
+        if (sepa) finish({ kind: 'sepa', sepa }, null);
+        else finish(unknown, { ean, status: 'missing' });
       },
-      () => {
-        if (pending.current !== ean) return;
-        pending.current = null;
-        setLookup({ ean, status: 'failed' });
-        onChoice(unknown);
-      },
+      () => { if (pending.current === ean) finish(unknown, { ean, status: 'failed' }); },
     );
   }
 
   function cancel() {
     pending.current = null;
-    setLookup(null);
+    setSearching(false);
   }
 
-  return { lookup, resolve, cancel };
+  return { searching, resolve, cancel };
 }
 
 // ── Bloque del producto ────────────────────────────────────
 
 interface Props {
   value: PriceProductChoice | null;
-  onChange: (choice: PriceProductChoice | null) => void;
-  lookup: EanLookup | null;
+  /** Elegido de la lista o con "Usar este producto" */
+  onChoose: (choice: PriceProductChoice) => void;
+  /** "Cambiar": vuelve al buscador */
+  onChangeProduct: () => void;
+  /** Texto del buscador: se conserva mientras hay un producto elegido */
+  query: string;
+  onQueryChange: (query: string) => void;
+  /** Hay un código leído consultándose */
+  searching: boolean;
   onScan: (ean: string) => void;
-  /** Se editó el buscador o se cambió el producto: descarta la consulta de un código en curso */
-  onCancelLookup: () => void;
+  /** "Cargar … a mano", con lo que el buscador ya averiguó del código */
+  onManual: (form: ProductForm, answer: EanAnswer | null) => void;
+  /** Lo que se sabe del código del producto nuevo al abrir el formulario */
+  knownEan: EanAnswer | null;
+  onEditForm: (patch: Partial<ProductForm>) => void;
+  onPhoto: (photo: PhotoDraft | null) => void;
+  onUse: (choice: PriceProductChoice) => void;
   /** "Elegí el producto" al guardar sin producto */
   error?: string;
-  /** "Completá el nombre" en los casos B y C */
   nameError?: string;
-  /** Buscador (sin producto) o campo Nombre (casos B y C): Cargar precio lo enfoca ante un error o al guardar */
+  eanError?: ManualEanError;
+  /** Buscador (sin producto) o campo Nombre (producto nuevo): Cargar precio lo enfoca */
   inputRef?: Ref<HTMLInputElement>;
+  eanRef?: Ref<HTMLInputElement>;
 }
 
 function details(parts: (string | null | undefined)[]): string {
@@ -109,47 +110,79 @@ function sepaDetails(product: SepaProduct): string {
 }
 
 /**
- * Bloque "Producto" de Cargar precio (spec 26): un buscador de los propios y de Precios Claros, el lector y "No tiene
- * código de barras". Nada se crea al elegir: el producto se resuelve al guardar
+ * Bloque "Producto" de Cargar precio (spec 26): un buscador de los propios y de Precios Claros, el lector y, cuando no
+ * está, "Cargar … a mano" (spec 34). Nada se crea al elegir: el producto se resuelve al guardar
  */
 export default function PriceProductPicker(props: Props) {
-  const { value, onChange, onCancelLookup } = props;
+  const { value, query, onChangeProduct } = props;
   const titleId = useId();
+  // Acá y no en ProductSearch: al volver con "Cambiar", los resultados siguen
+  const sepaSearch = useSepaSearch(query);
 
-  function change() {
-    onCancelLookup();
-    onChange(null);
+  if (value === null) {
+    return (
+      <section aria-labelledby={titleId} className="card p-4">
+        <ProductSearch {...props} sepaSearch={sepaSearch} titleId={titleId} />
+      </section>
+    );
   }
 
   return (
     <section aria-labelledby={titleId} className="card p-4">
-      {value === null
-        ? <ProductSearch {...props} titleId={titleId} />
-        : (
-          <>
-            <h2 id={titleId} className="font-semibold mb-2">Producto *</h2>
-            {value.kind === 'new'
-              ? <NewProductFields {...props} value={value} onChangeProduct={change} />
-              : <ChosenProduct choice={value} onChangeProduct={change} />}
-          </>
-        )}
+      {value.kind === 'new' ? (
+        <>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 id={titleId} className="font-semibold">Producto nuevo</h2>
+            <button type="button" onClick={onChangeProduct} aria-label="Cambiar el producto" className={`${LINK_CLASS} shrink-0`}>
+              Cambiar
+            </button>
+          </div>
+          <ManualProductFields value={value} known={props.knownEan} onEdit={props.onEditForm} onPhoto={props.onPhoto}
+            onUse={props.onUse} nameError={props.nameError} eanError={props.eanError}
+            nameRef={props.inputRef} eanRef={props.eanRef} />
+        </>
+      ) : (
+        <>
+          <h2 id={titleId} className="font-semibold mb-2">Producto *</h2>
+          <ChosenProduct choice={value} onChangeProduct={onChangeProduct} />
+        </>
+      )}
     </section>
   );
 }
 
-function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputRef, titleId }: Props & { titleId: string }) {
+/** Lo que la búsqueda ya averiguó de un texto que es un código; null si no es un código o no se consultó */
+function answerFromSearch(query: string, search: SepaSearchState): EanAnswer | null {
+  const ean = toGtin13(query.trim());
+  if (!ean) return null;
+  if (search.status === 'error') return { ean, status: 'failed' };
+  if (search.status !== 'done') return null;
+  const sepa = search.results.find(r => r.ean === ean);
+  return sepa ? { ean, status: 'sepa', sepa } : { ean, status: 'missing' };
+}
+
+function ProductSearch({
+  query, onQueryChange, onChoose, searching, onScan, onManual, error, inputRef, sepaSearch, titleId,
+}: Props & { sepaSearch: SepaSearchState; titleId: string }) {
   const products = useStore(s => s.products);
-  const [query, setQuery] = useState('');
   const errorId = useId();
   const text = query.trim();
   const own = text ? filterProducts(products, text).slice(0, OWN_LIMIT) : [];
-  const sepaSearch = useSepaSearch(text);
   const ownEans = new Set(products.map(p => p.ean));
   const catalog = { ...sepaSearch, results: sepaSearch.results.filter(r => !ownEans.has(r.ean)) };
+  const offer = searching ? null : manualOffer({
+    query,
+    ownCount: own.length,
+    catalog: { status: catalog.status, count: catalog.results.length },
+    catalogEnabled: sepaEnabled,
+  });
   const images = useSepaImages(own.map(p => p.ean));
   // La foto propia va antes que la del catálogo (spec 27)
   const photoUrl = useProductPhotos(own);
-  const searching = lookup?.status === 'loading';
+
+  function openManual() {
+    onManual(manualProductForm(query), answerFromSearch(query, sepaSearch));
+  }
 
   return (
     <>
@@ -160,7 +193,7 @@ function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputR
           ref={inputRef}
           type="search"
           value={query}
-          onChange={e => { setQuery(e.target.value); onCancelLookup(); }}
+          onChange={e => onQueryChange(e.target.value)}
           placeholder="Buscá un producto"
           autoComplete="off"
           enterKeyHint="search"
@@ -168,24 +201,19 @@ function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputR
           aria-describedby={error ? errorId : undefined}
           className="input-field min-w-0 flex-1"
         />
-        <ScanButton onDetected={ean => { setQuery(''); onScan(ean); }} />
+        <ScanButton onDetected={onScan} />
       </div>
       {error && <p id={errorId} role="alert" className="mt-1 text-sm text-red-700">{error}</p>}
       <div role="status">
         {searching && <p className="mt-2 text-sm text-gray-600">Buscando el código…</p>}
       </div>
-      <button type="button" onClick={() => { onCancelLookup(); onChange({ kind: 'new', name: query.trim(), brand: '' }); }}
-        className={LINK_CLASS}>
-        No tiene código de barras
-      </button>
-
       {own.length > 0 && (
         <div className="mt-3">
           <p className="mb-2 text-sm font-semibold text-gray-700">Tus productos</p>
           <ul className="rounded-xl border border-gray-200 divide-y divide-gray-200 overflow-hidden">
             {own.map(product => (
               <li key={product.id}>
-                <button type="button" onClick={() => onChange({ kind: 'own', product })} className="list-row">
+                <button type="button" onClick={() => onChoose({ kind: 'own', product })} className="list-row">
                   <ProductImage src={productImageSrc(product, photoUrl(product), product.ean ? images.get(product.ean) : undefined)} name={product.name} size={48} />
                   <span className="min-w-0 flex-1">
                     <span className="block font-semibold break-words">{product.name}</span>
@@ -200,18 +228,33 @@ function ProductSearch({ onChange, lookup, onScan, onCancelLookup, error, inputR
         </div>
       )}
 
-      {sepaEnabled && catalog.status !== 'idle' && (
+      {sepaEnabled && catalog.status !== 'idle' && !offer?.prominent && (
         <div className="mt-3">
           <p className="text-sm font-semibold text-gray-700">En Precios Claros</p>
           <SepaResults
             search={catalog}
             renderItem={(product, info) => (
-              <button type="button" onClick={() => onChange({ kind: 'sepa', sepa: product })} className="list-row">
+              <button type="button" onClick={() => onChoose({ kind: 'sepa', sepa: product })} className="list-row">
                 {info}
               </button>
             )}
           />
         </div>
+      )}
+
+      {/* Queda montada para que el mensaje se anuncie */}
+      <div role="status">
+        {offer?.message && <p className="mt-3 text-sm text-gray-700 wrap-anywhere">{offer.message}</p>}
+      </div>
+      {offer?.prominent && (
+        <button type="button" onClick={openManual}
+          className="btn-secondary mt-2 flex w-full items-center justify-center gap-2">
+          <CirclePlus aria-hidden="true" className="size-5 shrink-0" />
+          <span className="min-w-0 wrap-anywhere">{offer.label}</span>
+        </button>
+      )}
+      {offer && !offer.prominent && (
+        <button type="button" onClick={openManual} className={`${LINK_CLASS} mt-2 wrap-anywhere`}>{offer.label}</button>
       )}
     </>
   );
@@ -243,54 +286,6 @@ function ChosenProduct({ choice, onChangeProduct }: {
         className={`${LINK_CLASS} shrink-0`}>
         Cambiar
       </button>
-    </div>
-  );
-}
-
-/** Casos B (con código) y C (sin código): Nombre (obligatorio), Marca y Foto (opcionales) */
-function NewProductFields({ value, onChange, lookup, nameError, inputRef, onChangeProduct }: Props & {
-  value: Extract<PriceProductChoice, { kind: 'new' }>;
-  onChangeProduct: () => void;
-}) {
-  const id = useId();
-  const note = value.ean && lookup?.ean === value.ean
-    ? lookup.status === 'missing' ? `El código ${value.ean} no está en Precios Claros.`
-      : lookup.status === 'failed' ? 'No se pudo consultar Precios Claros.'
-        : null
-    : null;
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <p className="min-w-0 flex-1 text-sm text-gray-600 break-words">
-          {value.ean ? <>Código <span className="tabular-nums">{value.ean}</span></> : 'Sin código de barras'}
-        </p>
-        <button type="button" onClick={onChangeProduct} aria-label="Cambiar el producto" className={`${LINK_CLASS} shrink-0`}>
-          Cambiar
-        </button>
-      </div>
-      {note && <p role="status" className="text-sm text-gray-700">{note}</p>}
-      <div>
-        <label htmlFor={`${id}-name`} className="mb-1 block text-sm text-gray-600">Nombre</label>
-        <input id={`${id}-name`} ref={inputRef} type="text" value={value.name} autoComplete="off"
-          placeholder="Ej: Alfajor de maicena"
-          onChange={e => onChange({ ...value, name: e.target.value })}
-          aria-invalid={nameError ? true : undefined} aria-describedby={nameError ? `${id}-error` : undefined}
-          className="input-field" />
-        {nameError && <p id={`${id}-error`} role="alert" className="mt-1 text-sm text-red-700">{nameError}</p>}
-      </div>
-      <div>
-        <label htmlFor={`${id}-brand`} className="mb-1 block text-sm text-gray-600">
-          Marca <span className="text-gray-500">(opcional)</span>
-        </label>
-        <input id={`${id}-brand`} type="text" value={value.brand} autoComplete="off" placeholder="Ej: La Luna"
-          onChange={e => onChange({ ...value, brand: e.target.value })} className="input-field" />
-      </div>
-      <PhotoField
-        value={value.photo ?? null}
-        productName={value.name}
-        onChange={photo => onChange({ ...value, photo: photo ?? undefined })}
-      />
     </div>
   );
 }

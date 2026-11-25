@@ -70,7 +70,7 @@ interface PhotoFieldProps {
 }
 
 /**
- * Campo "Foto (opcional)" de los formularios de producto nuevo (Cargar precio B y C, Agregar producto). La foto vive
+ * Campo "Foto (opcional)" de los formularios de producto nuevo (Cargar precio, Agregar producto). La foto vive
  * en memoria: nada se escribe en IndexedDB hasta guardar el producto.
  */
 export default function PhotoField({ value, onChange, productName, labelClassName }: PhotoFieldProps) {

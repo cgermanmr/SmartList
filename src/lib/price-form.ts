@@ -2,8 +2,8 @@ import { distanceKm, LatLng } from './geo';
 import { toGtin13 } from './gtin';
 import { Price, Product, Purchase, StoreRef } from './models';
 import type { PhotoDraft } from './photo';
-import { productFromSepa } from './product-form';
-import { NearBranch, nearestBranches, SepaBranch, SepaProduct } from './sepa';
+import { EMPTY_PRODUCT_FORM, ProductForm, productFromForm, productFromSepa } from './product-form';
+import { isSearchableQuery, NearBranch, nearestBranches, SepaBranch, SepaProduct } from './sepa';
 import { NO_BARRIO, priceStoreRef, storeKey } from './store';
 
 // Funciones puras de la pestaña "Cargar precio" (spec 26): comercio, producto y el precio a registrar.
@@ -12,7 +12,7 @@ import { NO_BARRIO, priceStoreRef, storeKey } from './store';
 export type PriceProductChoice =
   | { kind: 'own'; product: Product }
   | { kind: 'sepa'; sepa: SepaProduct }                         // caso A
-  | { kind: 'new'; ean?: string; name: string; brand: string; photo?: PhotoDraft }; // casos B (con ean) y C; foto: spec 27
+  | { kind: 'new'; form: ProductForm; photo?: PhotoDraft };     // cargado a mano (spec 34); foto: spec 27
 
 /** Radio para ofrecer "¿Estás en…?" con la posición del GPS */
 const AT_POINT_KM = 0.2;
@@ -82,18 +82,50 @@ export function resolvePriceProduct(choice: PriceProductChoice, products: Produc
   { product: Product; isNew: boolean } {
   if (choice.kind === 'own') return { product: choice.product, isNew: false };
 
-  const rawEan = choice.kind === 'sepa' ? choice.sepa.ean : choice.ean;
+  const rawEan = choice.kind === 'sepa' ? choice.sepa.ean : choice.form.ean.trim();
   const ean = rawEan ? toGtin13(rawEan) ?? rawEan : undefined;
   const existing = ean ? products.find(p => p.ean === ean) : undefined;
   if (existing) return { product: existing, isNew: false };
 
   if (choice.kind === 'sepa') return { product: productFromSepa({ ...choice.sepa, ean: ean! }, newId), isNew: true };
 
-  const product: Product = { id: newId, name: clean(choice.name) };
-  const brand = clean(choice.brand);
-  if (brand) product.brand = brand;
-  if (ean) product.ean = ean;
-  return { product, isNew: true };
+  const { form } = choice;
+  const cleaned = { ...form, name: clean(form.name), category: clean(form.category), brand: clean(form.brand) };
+  return { product: productFromForm(cleaned, newId, ean), isNew: true };
+}
+
+// ── Cargar a mano (spec 34) ────────────────────────────────
+
+/** Formulario con el que se abre la carga a mano: lo escrito va al nombre o, si es un código válido, al código */
+export function manualProductForm(query: string): ProductForm {
+  const text = query.trim();
+  const ean = toGtin13(text);
+  return ean ? { ...EMPTY_PRODUCT_FORM, ean } : { ...EMPTY_PRODUCT_FORM, name: text };
+}
+
+/**
+ * La oferta "Cargar … a mano" debajo de los resultados: destacada (con mensaje) si no hay ninguno, discreta al final
+ * si los hay o si el texto es muy corto para el catálogo. null: sin texto o todavía buscando
+ */
+export function manualOffer({ query, ownCount, catalog, catalogEnabled }: {
+  query: string;
+  ownCount: number;
+  catalog: { status: 'idle' | 'loading' | 'done' | 'error'; count: number };
+  catalogEnabled: boolean;
+}): { prominent: boolean; message: string | null; label: string } | null {
+  const text = query.trim();
+  if (!text || catalog.status === 'loading') return null;
+
+  const ean = toGtin13(text);
+  const label = ean ? `Cargar el código ${ean} a mano` : `Cargar "${text}" a mano`;
+  if (ownCount > 0 || catalog.count > 0 || !isSearchableQuery(text)) {
+    return { prominent: false, message: null, label: `¿No está? ${label}` };
+  }
+  if (catalog.status === 'error') return { prominent: true, message: 'No se pudo consultar Precios Claros', label };
+
+  const places = catalogEnabled ? 'en tus productos ni en Precios Claros' : 'en tus productos';
+  const message = ean ? `El código ${ean} no está ${places}.` : `No encontramos "${text}" ${places}.`;
+  return { prominent: true, message, label };
 }
 
 // ── Precios propios en "Comercios cercanos" ────────────────

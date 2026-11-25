@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Product } from './models';
 import {
-  checkEan, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, productFromSepa, sepaLinkChanges,
+  CATEGORIES, categorySuggestions, checkEan, EMPTY_PRODUCT_FORM, formFromSepa, productFromForm, productFromSepa, sepaLinkChanges,
 } from './product-form';
 import { SepaProduct } from './sepa';
 
@@ -153,5 +153,34 @@ describe('productFromSepa', () => {
   it('la presentación va completa o no va', () => {
     expect(productFromSepa({ ...sepaProduct, sizeUnit: null }, 'p3').size).toBeUndefined();
     expect(productFromSepa({ ...sepaProduct, size: 0 }, 'p4').sizeUnit).toBeUndefined();
+  });
+});
+
+describe('categorySuggestions', () => {
+  const withCategory = (id: string, category?: string): Product => ({ id, name: `Producto ${id}`, category });
+
+  it('sin productos propios, las fijas en orden alfabético', () => {
+    expect(categorySuggestions([]))
+      .toEqual(['Aceites', 'Almacen', 'Bebidas', 'Frutas', 'Lacteos', 'Limpieza', 'Proteina', 'Verduras']);
+    expect(CATEGORIES).toHaveLength(8);
+  });
+
+  it('suma las propias en su lugar del orden alfabético', () => {
+    expect(categorySuggestions([withCategory('1', 'Mascotas'), withCategory('2', 'Ñoquis')]))
+      .toEqual(['Aceites', 'Almacen', 'Bebidas', 'Frutas', 'Lacteos', 'Limpieza', 'Mascotas', 'Ñoquis', 'Proteina', 'Verduras']);
+  });
+
+  it('no repite por mayúsculas ni acentos: queda la escritura propia', () => {
+    const result = categorySuggestions([withCategory('1', 'lácteos'), withCategory('2', 'ALMACÉN')]);
+    expect(result).toEqual(['Aceites', 'ALMACÉN', 'Bebidas', 'Frutas', 'lácteos', 'Limpieza', 'Proteina', 'Verduras']);
+  });
+
+  it('una categoría de varios productos aparece una vez', () => {
+    const result = categorySuggestions([withCategory('1', 'Mascotas'), withCategory('2', ' mascotas '), withCategory('3', 'Mascotas')]);
+    expect(result.filter(c => c.toLowerCase().trim() === 'mascotas')).toEqual(['Mascotas']);
+  });
+
+  it('ignora los productos sin categoría o con una en blanco', () => {
+    expect(categorySuggestions([withCategory('1'), withCategory('2', '  ')])).toEqual(categorySuggestions([]));
   });
 });

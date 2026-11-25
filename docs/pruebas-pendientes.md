@@ -34,7 +34,7 @@ No se probó la interfaz, ni Storage real, ni el login.
 
 ### Fotos sin cuenta (spec 27)
 
-- [ ] **1.** Cargar precio → "No tiene código de barras", elegir foto: dice "Solo la ves vos.". Guardar: se ve en Buscar
+- [ ] **1.** Cargar precio → buscar algo que no exista → "Cargar … a mano", elegir foto: dice "Solo la ves vos.". Guardar: se ve en Buscar
       y en el detalle, también después de recargar.
 - [ ] **2.** Agregar producto: elegir uno del catálogo con imagen y sumarle una foto: se ve la propia. En el detalle,
       **Cambiar foto** la cambia y **Quitar foto** pide confirmación y vuelve la del catálogo. "Solo la ves vos" también

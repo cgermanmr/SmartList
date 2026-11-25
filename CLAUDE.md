@@ -167,8 +167,13 @@ src/
 │   │                           #   (resumen + 3), precios por cadena, "¿Cuánto sale acá?" y "Cargar precio acá"; ScanResult
 │   ├── PriceStorePicker.tsx    # Bloque "Comercio" de Cargar precio: GPS (sucursales a menos de 200 m), comercios
 │   │                           #   usados, "Otro comercio" / "Otro comercio acá"; elegido con "Cambiar"
-│   ├── PriceProductPicker.tsx  # Bloque "Producto" de Cargar precio: propios y del catálogo, lector, "No tiene código
-│   │                           #   de barras", casos B y C (con foto); useEanLookup (resuelve un código leído o de la URL)
+│   ├── PriceProductPicker.tsx  # Bloque "Producto" de Cargar precio: propios y del catálogo, lector y "Cargar … a mano"
+│   │                           #   (spec 34); useEanLookup (resuelve un código leído o de la URL)
+│   ├── ManualProductFields.tsx # Formulario del producto nuevo de Cargar precio (spec 34), con el aviso del código y
+│   │                           #   "Usar este producto"
+│   ├── useManualEan.ts         # Hook: el código de ese formulario (propio, en Precios Claros, fuera, falló)
+│   ├── CategoryInput.tsx       # Campo Categoría con sugerencias propias y fijas (Cargar precio y Agregar producto)
+│   ├── SizeInput.tsx           # Campo Presentación: número y unidad (los mismos dos formularios)
 │   ├── PhotoField.tsx          # Campo "Foto (opcional)" (spec 27): botón, input file oculto, compresión, vista previa,
 │   │                           #   Cambiar, Quitar, "Solo la ves vos."; usePhotoPicker y PhotoStatus (también el detalle)
 │   ├── CatalogActions.tsx      # AddToCartButton ("Buscando precio…") y EditLink, de Buscar y de la oferta del lector
@@ -204,7 +209,8 @@ src/
     ├── store.ts                # useStore (estado + acciones) y consultas puras (getPriceStats, getCartTotal, ...)
     ├── unit-price.ts           # Funciones puras de la calculadora (precio unitario, promos, comparación)
     ├── price-form.ts           # Cargar precio (spec 26): PriceProductChoice, storesAtPoint, recentStores, otherStore,
-    │                           #   resolvePriceProduct, priceAt; ownPricesNear (precios propios en Comercios cercanos)
+    │                           #   resolvePriceProduct, priceAt, manualProductForm y manualOffer (spec 34); ownPricesNear
+    │                           #   (precios propios en Comercios cercanos)
     ├── shelf-price.ts          # "¿Cuánto sale acá?" (spec 24): shelfComparison contra el más barato cercano (sin los
     │                           #   Dudosos del grupo) o la referencia, y contra el último precio propio; centsDiff
     ├── basket.ts               # ¿Dónde conviene el carrito?: basketLines, compareNearby, compareChains, savingsLine,
@@ -253,7 +259,7 @@ src/
     │                           #   sucursales y precios cercanos (getSepaBranches, nearestBranches,
     │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch); imágenes
     │                           #   (getSepaImages, con caché; imageSource)
-    ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges;
+    ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges, categorySuggestions;
     │                           #   productFromSepa (producto propio desde el catálogo, sin categoría)
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
@@ -710,8 +716,8 @@ interface CalculatorState {
 - Tab **Cargar precio** ([SPEC 26](specs/26-cargar-precio-en-el-comercio.md), `PriceForm`): tres tarjetas en orden,
   **Comercio**, **Producto** y **Precio**, y "Guardar precio". Queda montada al cambiar de pestaña (`hidden`): el
   comercio elegido se conserva al navegar y se pierde al recargar. Validación al guardar, con el error junto al
-  campo y el foco en el primero: "Elegí el comercio", "Elegí el producto", "Completá el nombre" (casos B y C) y
-  "Completá el precio" (vacío, 0 o no numérico)
+  campo y el foco en el primero: "Elegí el comercio", "Elegí el producto", "Completá el nombre" y "Código
+  de barras inválido" (producto nuevo) y "Completá el precio" (vacío, 0 o no numérico)
   - **Comercio** (`PriceStorePicker`, obligatorio): **Usar mi ubicación** (con `geolocationAvailable`) hace una
     lectura de alta precisión (`requestPosition({ highAccuracy: true })`) que **no cambia la ubicación de la app**,
     baja las sucursales recién ahí y ofrece hasta 3 a menos de **200 m** (`storesAtPoint`) como "¿Estás en…?", con
@@ -723,17 +729,27 @@ interface CalculatorState {
     obligatorio, dirección y barrio opcionales; no es un `<form>`: Enter usa el comercio). El barrio ya no es
     obligatorio. Elegido: nombre, dirección o barrio, ícono de ubicación si tiene coordenadas y **Cambiar**
   - **Producto** (`PriceProductPicker`): "Buscá un producto" con "Tus productos" (`filterProducts`, hasta 5) y "En
-    Precios Claros" (sin los propios, imagen de 48 px), el lector y **No tiene código de barras** (caso C, con lo
-    escrito como nombre). Un código leído (`useEanLookup`): propio → ese; en el catálogo → caso A; fuera, con error
-    o sin Supabase → caso B ("El código … no está en Precios Claros." / "No se pudo consultar Precios Claros.");
-    "Buscando el código…" mientras tanto y una respuesta vieja se descarta. Elegido: imagen, nombre (del catálogo, el
-    sugerido), marca y presentación, "Precios Claros" si es del catálogo y **Cambiar**; en B y C, Nombre (obligatorio),
-    Marca (opcional) y **Foto (opcional)** (`PhotoField`, spec 27) con el código arriba en B. Cambiar de producto
-    descarta la foto elegida
+    Precios Claros" (sin los propios, imagen de 48 px), el lector y la carga a mano. Un código leído
+    (`useEanLookup`): propio → ese; en el catálogo → el del catálogo; fuera, con error o sin Supabase → el formulario
+    del producto nuevo con el código; "Buscando el código…" mientras tanto y una respuesta vieja se descarta. Elegido:
+    imagen, nombre (del catálogo, el sugerido), marca y presentación, "Precios Claros" si es del catálogo y
+    **Cambiar**, que vuelve al buscador con el texto buscado y el foco (vacío si se llegó por el lector o la URL)
+  - **Cargar a mano** ([SPEC 34](specs/34-cargar-producto-a-mano.md), `manualOffer`): con algo escrito y la búsqueda
+    terminada, debajo de los resultados. Sin ninguno, destacada: "No encontramos "…" en tus productos ni en Precios
+    Claros." (sin Supabase, solo "en tus productos"; si falla, "No se pudo consultar Precios Claros"; con un código
+    válido, "El código … no está…") y el botón **Cargar "…" a mano** (o **Cargar el código … a mano**), en lugar de la
+    sección del catálogo. Con resultados, o con menos de 3 caracteres, discreta: **¿No está? Cargar "…" a mano**
+  - **Producto nuevo** (`ManualProductFields`, se abre con el foco en Nombre): Nombre (obligatorio, con lo buscado),
+    Código de barras con lector, Marca, Presentación, Categoría y Foto (`PhotoField`), opcionales. El código
+    (`useManualEan`: al leerlo o 300 ms después de escribirlo; no se repite la consulta que acaba de hacer el buscador
+    o el lector) avisa: de un propio, "Ya tenés este producto: …" y no deja guardar; en Precios Claros, "Este código
+    está en Precios Claros: …" y deja guardar lo escrito (los dos con **Usar este producto**, que descarta lo
+    completado y lleva el foco a Precio); "El código … no está en Precios Claros." o "No se pudo consultar Precios
+    Claros.". Inválido, recién al guardar. Cambiar descarta lo completado y la foto
   - **Precio**: "Precio ($)" con teclado decimal; con precios propios, "Último precio $Y · dd/mm"
   - **Guardar**: el producto se resuelve recién ahí (`resolvePriceProduct`: propio; A → el propio con ese EAN si
-    apareció mientras tanto, si no `productFromSepa`; B y C → nuevo, sin categoría), y se registra `priceAt`
-    (`storeRef`, `store` = su nombre, `barrio` = el suyo o "Sin especificar"). Aviso fijo abajo "Precio guardado:
+    apareció mientras tanto, si no `productFromSepa`; nuevo → `productFromForm`, sin espacios de más), y se registra
+    `priceAt` (`storeRef`, `store` = su nombre, `barrio` = el suyo o "Sin especificar"). Aviso fijo abajo "Precio guardado:
     <producto> $X en <comercio>. Solo lo ves vos." (3 s; con " No se pudo guardar la foto." si falló IndexedDB).
     **Queda el comercio**; producto, foto y monto se limpian y el foco vuelve al buscador
   - `?tab=precio&ean=…&monto=…` abre la pestaña con el producto resuelto como al leer el código y el monto (> 0),
@@ -742,7 +758,8 @@ interface CalculatorState {
     "¿Cuánto sale acá?")
 - Tab **producto**: nombre (requerido, "Completá el nombre"); "Categoría (opcional)", código de barras, marca,
   **foto** (`PhotoField`, spec 27) y presentación (número + unidad), opcionales. Sin categoría, el producto se guarda
-  sin `category`
+  sin `category`. Las sugerencias de categoría (`categorySuggestions`, también en Cargar precio) son las de los
+  productos propios y las 8 fijas, sin repetir por mayúsculas ni acentos
 - Buscador **Buscar en Precios Claros** (espera de 300 ms, "Buscando…", "Sin resultados", error): al elegir un
   resultado completa nombre sugerido (descripción en formato título sin la marca repetida), marca, presentación y
   EAN, todo editable; la categoría es manual (opcional) y el foco pasa a ella
@@ -1378,6 +1395,8 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
 - [x] Compartir por WhatsApp el carrito, un comercio o una compra, con un link que muestra la lista y la carga (spec 31)
 - [x] Versiones DEV y LOCAL distinguibles por nombre, ícono, título y etiqueta en el header; ícono PNG para el iPhone
   (spec 32)
+- [x] Cargar a mano, al cargar un precio, un producto que no aparece: nombre, código, marca, presentación, categoría y
+  foto (spec 34)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---
