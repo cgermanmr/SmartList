@@ -1,13 +1,14 @@
 'use client';
 
 import { LocateFixed, MapPin, Store } from 'lucide-react';
-import { KeyboardEvent, Ref, useId, useMemo, useState, useSyncExternalStore } from 'react';
+import { Ref, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import { formatDistance, LatLng } from '@/lib/geo';
 import { geolocationAvailable, LOCATION_ERROR_MESSAGE, LocationError, requestPosition } from '@/lib/location';
 import { StoreRef } from '@/lib/models';
-import { otherStore, recentStores, storesAtPoint } from '@/lib/price-form';
+import { recentStores, storesAtPoint } from '@/lib/price-form';
 import { branchLabel, storeRefFromBranch } from '@/lib/sepa';
 import { useStore } from '@/lib/store';
+import OtherStoreForm from './OtherStoreForm';
 import { useSepaBranches } from './useNearby';
 
 const noSubscribe = () => () => {};
@@ -183,80 +184,14 @@ function StoreChooser({ onChoose, describedBy }: { onChoose: (store: StoreRef) =
       ) : (
         <OtherStoreForm
           key={otherMode}
-          point={otherMode === 'here' ? point ?? undefined : undefined}
+          title={otherMode === 'here' ? 'Otro comercio acá' : 'Otro comercio'}
+          gps={otherMode === 'here' ? point ?? undefined : undefined}
+          submitLabel="Usar este comercio"
+          className="rounded-xl border border-gray-200 p-3"
           onSave={onChoose}
           onCancel={noBranches ? undefined : () => setOther('closed')}
         />
       )}
-    </div>
-  );
-}
-
-interface OtherProps {
-  /** Con la lectura del GPS ("Otro comercio acá"), el comercio guarda sus coordenadas */
-  point?: LatLng;
-  onSave: (store: StoreRef) => void;
-  onCancel?: () => void;
-}
-
-/**
- * Nombre (obligatorio), dirección y barrio. No es un <form>: está adentro del formulario de Cargar precio, así que
- * Enter en un campo usa este comercio en vez de guardar el precio
- */
-function OtherStoreForm({ point, onSave, onCancel }: OtherProps) {
-  const id = useId();
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [barrio, setBarrio] = useState('');
-  const [error, setError] = useState('');
-
-  function save() {
-    if (!name.trim()) {
-      setError('Completá el nombre del comercio');
-      document.getElementById(`${id}-name`)?.focus();
-      return;
-    }
-    onSave(otherStore({ name, address, barrio, point }));
-  }
-
-  function onEnter(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    save();
-  }
-
-  return (
-    <div role="group" aria-labelledby={`${id}-title`} className="rounded-xl border border-gray-200 p-3">
-      <p id={`${id}-title`} className="mb-3 font-semibold">{point ? 'Otro comercio acá' : 'Otro comercio'}</p>
-      <div className="grid grid-cols-1 gap-3">
-        <div>
-          <label htmlFor={`${id}-name`} className="mb-1 block text-sm text-gray-600">Nombre</label>
-          <input id={`${id}-name`} type="text" value={name} autoComplete="off" placeholder="Ej: Super Luna"
-            onChange={e => { setName(e.target.value); setError(''); }} onKeyDown={onEnter}
-            aria-invalid={error ? true : undefined} aria-describedby={error ? `${id}-error` : undefined}
-            className="input-field" />
-          {error && <p id={`${id}-error`} role="alert" className="mt-1 text-sm text-red-700">{error}</p>}
-        </div>
-        <div>
-          <label htmlFor={`${id}-address`} className="mb-1 block text-sm text-gray-600">
-            Dirección <span className="text-gray-500">(opcional)</span>
-          </label>
-          <input id={`${id}-address`} type="text" value={address} autoComplete="off" placeholder="Ej: Av. Rivadavia 5000"
-            onChange={e => setAddress(e.target.value)} onKeyDown={onEnter} className="input-field" />
-        </div>
-        <div>
-          <label htmlFor={`${id}-barrio`} className="mb-1 block text-sm text-gray-600">
-            Barrio <span className="text-gray-500">(opcional)</span>
-          </label>
-          <input id={`${id}-barrio`} type="text" value={barrio} autoComplete="off" placeholder="Ej: Caballito"
-            onChange={e => setBarrio(e.target.value)} onKeyDown={onEnter} className="input-field" />
-        </div>
-      </div>
-      {point && <p className="mt-2 text-xs text-gray-500">Se guarda con la ubicación de este comercio.</p>}
-      <div className="mt-3 flex gap-2">
-        <button type="button" onClick={save} className="btn-primary flex-1">Usar este comercio</button>
-        {onCancel && <button type="button" onClick={onCancel} className="btn-secondary">Cancelar</button>}
-      </div>
     </div>
   );
 }

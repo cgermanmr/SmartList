@@ -1,6 +1,6 @@
 # SPEC 35 — Dirección y punto en el mapa de un comercio nuevo
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 14](14-carrito-por-comercio.md), [SPEC 15](15-precios-y-comercios-cercanos.md), [SPEC 16](16-mapa-y-como-llegar.md), [SPEC 26](26-cargar-precio-en-el-comercio.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Al agregar un comercio en Cargar precio o en el carrito, sugerir direcciones reales ordenadas por cercanía y permitir marcar su punto en el mapa.
@@ -223,29 +223,29 @@ ajustar el punto con el dedo y elegir una sugerencia.
 
 ## Criterios de aceptación
 
-- [ ] Con la localidad Parque Patricios, escribir "Caseros" ofrece primero "Av. Caseros"; con Olivos, primero "Caseros".
-- [ ] "Caseros 2500, Olivos" ofrece esa dirección aunque la ubicación sea otra.
-- [ ] Sin ubicación se ofrecen direcciones de todo el país con su partido y provincia, y no se pide el permiso.
-- [ ] Elegir "Av. Caseros 2500" guarda dirección y coordenadas; el precio aparece con distancia y **Mapa**.
-- [ ] Elegir "Av. Caseros" pide la altura, y al escribir 2500 ofrece solo esa calle.
-- [ ] Editar la dirección después de elegirla saca el punto de la sugerencia.
-- [ ] Una dirección inexistente se puede guardar como texto, con el aviso.
-- [ ] Sin conexión o con Georef caído, el comercio se puede guardar igual.
-- [ ] "Otro comercio acá" sin tocar nada más guarda el punto del GPS y no consulta Nominatim.
-- [ ] **Completar la dirección** llena dirección y barrio; un barrio escrito a mano no cambia.
-- [ ] Mover el mapa y **Usar este punto** guarda el punto y reemplaza la dirección; sin mover, no se consulta nada.
-- [ ] Si Nominatim no responde, el punto queda y los campos no cambian.
-- [ ] Con zoom menor a 16, **Usar este punto** está deshabilitado y dice por qué.
-- [ ] **Quitar** deja el comercio sin coordenadas.
-- [ ] Ninguna consulta a Georef lleva coordenadas.
-- [ ] Usar el GPS en el formulario o en su mapa no cambia la ubicación de Buscar.
-- [ ] En el carrito, un comercio con punto tiene **Mapa** y entra en el recorrido; uno ya cargado sin dirección la recibe
+- [x] Con la localidad Parque Patricios, escribir "Caseros" ofrece primero "Av. Caseros"; con Olivos, primero "Caseros".
+- [x] "Caseros 2500, Olivos" ofrece esa dirección aunque la ubicación sea otra.
+- [x] Sin ubicación se ofrecen direcciones de todo el país con su partido y provincia, y no se pide el permiso.
+- [x] Elegir "Av. Caseros 2500" guarda dirección y coordenadas; el precio aparece con distancia y **Mapa**.
+- [x] Elegir "Av. Caseros" pide la altura, y al escribir 2500 ofrece solo esa calle.
+- [x] Editar la dirección después de elegirla saca el punto de la sugerencia.
+- [x] Una dirección inexistente se puede guardar como texto, con el aviso.
+- [x] Sin conexión o con Georef caído, el comercio se puede guardar igual.
+- [x] "Otro comercio acá" sin tocar nada más guarda el punto del GPS y no consulta Nominatim.
+- [x] **Completar la dirección** llena dirección y barrio; un barrio escrito a mano no cambia.
+- [x] Mover el mapa y **Usar este punto** guarda el punto y reemplaza la dirección; sin mover, no se consulta nada.
+- [x] Si Nominatim no responde, el punto queda y los campos no cambian.
+- [x] Con zoom menor a 16, **Usar este punto** está deshabilitado y dice por qué.
+- [x] **Quitar** deja el comercio sin coordenadas.
+- [x] Ninguna consulta a Georef lleva coordenadas.
+- [x] Usar el GPS en el formulario o en su mapa no cambia la ubicación de Buscar.
+- [x] En el carrito, un comercio con punto tiene **Mapa** y entra en el recorrido; uno ya cargado sin dirección la recibe
       en todos sus ítems.
-- [ ] Escape en la lista o en el mapa no cierra el modal del carrito.
-- [ ] El mapa de un comercio, la ruta y el recorrido (spec 16) siguen igual, y Leaflet no entra en el JS inicial.
-- [ ] `/privacidad` dice qué se envía a Georef y a OpenStreetMap, y cuándo.
+- [x] Escape en la lista o en el mapa no cierra el modal del carrito.
+- [x] El mapa de un comercio, la ruta y el recorrido (spec 16) siguen igual, y Leaflet no entra en el JS inicial.
+- [x] `/privacidad` dice qué se envía a Georef y a OpenStreetMap, y cuándo.
 - [ ] Teclado y lector de pantalla: elegir una sugerencia y marcar un punto sin mouse.
-- [ ] 320 y 375 px sin scroll horizontal; `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
+- [x] 320 y 375 px sin scroll horizontal; `npm run lint`, `npm test` y `npm run build` sin errores ni warnings.
 
 ## Decisiones
 

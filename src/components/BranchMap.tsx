@@ -6,6 +6,7 @@ import { distanceKm, formatDistance, LatLng } from '@/lib/geo';
 import { geolocationAvailable, gpsLocation, LocationError, requestPosition } from '@/lib/location';
 import { formatDuration, getRoute, googleMapsUrl, MapStop, osrmUrl, Route, TravelMode } from '@/lib/route';
 import { useStore } from '@/lib/store';
+import { LeafletModule, useLeafletMap } from './useLeafletMap';
 
 export type { MapStop } from '@/lib/route';
 
@@ -16,9 +17,6 @@ interface BranchMapProps {
   notes?: string[];
   onClose: () => void;
 }
-
-type LeafletModule = typeof import('leaflet');
-type LeafletMap = import('leaflet').Map;
 
 const noSubscribe = () => () => {};
 
@@ -115,43 +113,8 @@ function MapView({ stops, notes = [], titleId, onClose }: MapViewProps) {
   );
 
   // ── Mapa ───────────────────────────────────────────────────
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [leaflet, setLeaflet] = useState<{ L: LeafletModule; map: LeafletMap } | null>(null);
   // Sin conexión (o si no carga Leaflet) quedan el nombre, la dirección y el botón de Google Maps
-  const [mapFailed, setMapFailed] = useState(() => !navigator.onLine);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let cancelled = false;
-    let map: LeafletMap | null = null;
-    let observer: ResizeObserver | null = null;
-
-    // Leaflet usa window: se carga recién acá, la primera vez que se abre un mapa
-    Promise.all([import('leaflet'), import('leaflet/dist/leaflet.css')]).then(
-      ([L]) => {
-        if (cancelled) return;
-        map = L.map(container, { zoomControl: false });
-        map.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener noreferrer">Leaflet</a>');
-        L.control.zoom({ position: 'bottomright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' }).addTo(map);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a>',
-        }).addTo(map);
-        // El modal cambia de tamaño al girar el celular o al sumar la leyenda de la ruta
-        observer = new ResizeObserver(() => map?.invalidateSize());
-        observer.observe(container);
-        setLeaflet({ L, map });
-      },
-      () => { if (!cancelled) setMapFailed(true); },
-    );
-
-    return () => {
-      cancelled = true;
-      observer?.disconnect();
-      map?.remove();
-    };
-  }, []);
+  const { containerRef, leaflet, failed: mapFailed } = useLeafletMap();
 
   // Marcadores y encuadre: todos los puntos con margen; con uno solo, centrado
   useEffect(() => {

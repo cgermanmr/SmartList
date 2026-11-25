@@ -213,6 +213,59 @@ describe('setCartItemStore', () => {
     expect(useStore.getState().cart[0].store).toBeUndefined();
     expect('store' in saved<CartItem[]>(CART_KEY)[0]).toBe(false);
   });
+
+  // ── Completar los demás ítems del mismo comercio (spec 35) ──
+  const luna: StoreRef = { name: 'Super Luna' };
+  const lunaFull: StoreRef = { name: 'Super luna', address: 'Av. Caseros 2500', lat: -34.6356, lng: -58.3974 };
+
+  it('los demás ítems del mismo comercio toman la dirección y el punto, en un solo cambio', () => {
+    const s = useStore.getState();
+    s.setCartItemStore('item-1', luna);
+    let changes = 0;
+    const unsubscribe = useStore.subscribe(() => { changes++; });
+    s.setCartItemStore('item-2', lunaFull);
+    unsubscribe();
+    expect(changes).toBe(1);
+    expect(useStore.getState().cart.map(i => i.store)).toEqual([lunaFull, lunaFull]);
+    expect(useStore.getState().cart[0]).toMatchObject({ price: 100, quantity: 2, subtotal: 200 });
+  });
+
+  it('también con el ítem que ya estaba en ese comercio', () => {
+    const s = useStore.getState();
+    s.setCartItemStore('item-1', luna);
+    s.setCartItemStore('item-2', luna);
+    s.setCartItemStore('item-1', lunaFull);
+    expect(useStore.getState().cart.map(i => i.store)).toEqual([lunaFull, lunaFull]);
+  });
+
+  it('no toca los ítems de otro comercio, ni los que no tienen', () => {
+    const s = useStore.getState();
+    s.addToCart(item('3', 10));
+    s.setCartItemStore('item-1', { name: 'Super Luna', barrio: 'Caballito' });
+    const [otherBarrio, , none] = useStore.getState().cart;
+    s.setCartItemStore('item-2', lunaFull);
+    expect(useStore.getState().cart[0]).toBe(otherBarrio);
+    expect(useStore.getState().cart[2]).toBe(none);
+    s.setCartItemStore('item-2');
+    expect(useStore.getState().cart[2]).toBe(none);
+  });
+
+  it('un comercio escrito sin dirección ni punto no borra los que ya había: el ítem toma esos', () => {
+    const s = useStore.getState();
+    s.setCartItemStore('item-1', lunaFull);
+    const first = useStore.getState().cart[0];
+    s.setCartItemStore('item-2', luna);
+    expect(useStore.getState().cart[0]).toBe(first);
+    expect(useStore.getState().cart[1].store).toEqual(lunaFull);
+  });
+
+  it('un ítem que ya tiene esos datos no cambia', () => {
+    const s = useStore.getState();
+    s.setCartItemStore('item-1', lunaFull);
+    const first = useStore.getState().cart[0];
+    s.setCartItemStore('item-2', { ...lunaFull });
+    expect(useStore.getState().cart[0]).toBe(first);
+  });
 });
 
 describe('moveCartItems', () => {

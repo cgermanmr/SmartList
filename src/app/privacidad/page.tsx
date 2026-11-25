@@ -68,15 +68,26 @@ export default function PrivacyPage() {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Tu ubicación</h2>
         <p>
-          La ubicación que usás para ver comercios cercanos no se guarda en tu cuenta ni sale del teléfono. La única
-          excepción es el mapa con la ruta a un comercio: para marcarla, tu ubicación se envía a OpenStreetMap, y el
-          mapa lo avisa.
+          La ubicación que usás para ver comercios cercanos no se guarda en tu cuenta ni sale del teléfono, salvo en dos
+          casos. Uno es el mapa con la ruta a un comercio: para marcarla, tu ubicación se envía a OpenStreetMap, y el
+          mapa lo avisa. El otro es la dirección de un comercio nuevo, que se explica acá abajo.
         </p>
         <p>
           Al cargar un precio, &ldquo;Usar mi ubicación&rdquo; busca los comercios que tenés cerca sin cambiar la ubicación
           de comercios cercanos. Si elegís &ldquo;Otro comercio acá&rdquo;, el precio guarda las coordenadas de ese comercio
           (redondeadas, a unos 10 metros) para mostrar su distancia y su mapa, y con cuenta se sincronizan junto con el
           precio. Son las del comercio, no un registro de por dónde andás.
+        </p>
+        <p>
+          Al agregar un comercio, mientras escribís la dirección el texto se envía a Georef (datos.gob.ar, del Estado
+          argentino) para sugerirte direcciones. Tu ubicación no se envía: para mostrarte primero las cercanas, van los
+          códigos de los 15 partidos o comunas más próximos, que dan una idea gruesa de la zona.
+        </p>
+        <p>
+          El punto del comercio se envía a OpenStreetMap para buscar su dirección solo si tocás{' '}
+          <strong>Completar la dirección</strong> o si movés el mapa y tocás <strong>Usar este punto</strong>. Si ese
+          punto es tu ubicación, es tu ubicación lo que se envía. La app lo avisa en los dos lugares. El mapa también
+          pide a OpenStreetMap las imágenes de la zona que se ve.
         </p>
       </section>
 

@@ -7,6 +7,10 @@
 
 > **Nota:** la [SPEC 34](34-cargar-producto-a-mano.md) reemplaza el link "No tiene código de barras" y los formularios
 > de los casos B y C por "Cargar … a mano" y un solo formulario.
+>
+> La [SPEC 35](35-direccion-y-punto-del-comercio.md) suma a "Otro comercio" las sugerencias de dirección y el punto en el
+> mapa, y cambia la decisión "Sin geocodificación inversa": la dirección de un punto se busca solo cuando el usuario lo
+> pide.
 
 ## Por qué existe esta spec
 

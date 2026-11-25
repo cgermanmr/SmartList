@@ -189,6 +189,20 @@ Con una cuenta de prueba en dos dispositivos (A y B) y un producto sin código d
 - [ ] **65.** Con TalkBack o VoiceOver, en un producto que está en una compra: el botón se anuncia deshabilitado y se lee
       el motivo.
 
+### Dirección y punto del comercio (spec 35)
+
+En la calle, con el celular, en **Cargar precio**.
+
+- [ ] **66.** **Usar mi ubicación** → **Otro comercio acá** → **Completar la dirección**: la calle es la correcta y la
+      altura, cercana.
+- [ ] **67.** **Ver o ajustar**: mover el mapa y hacer zoom con los dedos. El pin no se corre al acercar; **Usar este
+      punto** cambia la dirección.
+- [ ] **68.** Escribir una dirección con el teclado abierto: se ven las sugerencias y se puede elegir una con el dedo. Al
+      elegir una calle, el teclado sigue abierto para escribir la altura.
+- [ ] **69.** Lo mismo en el carrito, en **Cambiar comercio**.
+- [ ] **70.** Con TalkBack o VoiceOver: se anuncia la cantidad de direcciones y se puede elegir una; en el mapa se lee el
+      nombre del mapa y cuándo falta acercarlo.
+
 ## Resultados
 
 | Prueba | Fecha | Resultado |

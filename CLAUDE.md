@@ -24,7 +24,9 @@ comercios/barrios, armen un carrito de compras comparando contra precios anterio
   ([SPEC 10](specs/10-productos-con-codigo-de-barras.md)) y sus precios por cadena como referencia
   ([SPEC 12](specs/12-precio-de-referencia-sepa.md)), y sus sucursales para mostrar el precio en los comercios
   cercanos ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)); los datos propios siguen en localStorage. El mapa
-  de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md)). Las imágenes
+  de un comercio con la ruta para llegar usa OpenStreetMap ([SPEC 16](specs/16-mapa-y-como-llegar.md)); las direcciones
+  de un comercio nuevo se sugieren con Georef (datos.gob.ar) y su punto se marca en el mapa
+  ([SPEC 35](specs/35-direccion-y-punto-del-comercio.md)). Las imágenes
   de los productos con código de barras salen de Open Food Facts y del portal Precios Claros, resueltas por un script
   semanal ([SPEC 17](specs/17-imagenes-de-productos.md)); cada producto propio puede llevar una foto propia, privada,
   en el teléfono y con cuenta en un bucket privado ([SPEC 27](specs/27-fotos-propias.md)). Con cuenta, un grupo
@@ -168,6 +170,12 @@ src/
 │   │                           #   (resumen + 3), precios por cadena, "¿Cuánto sale acá?" y "Cargar precio acá"; ScanResult
 │   ├── PriceStorePicker.tsx    # Bloque "Comercio" de Cargar precio: GPS (sucursales a menos de 200 m), comercios
 │   │                           #   usados, "Otro comercio" / "Otro comercio acá"; elegido con "Cambiar"
+│   ├── OtherStoreForm.tsx      # Formulario "Otro comercio" de Cargar precio y del carrito (spec 35): nombre, dirección,
+│   │                           #   barrio y la fila del punto (Marcar en el mapa, Quitar, Completar la dirección)
+│   ├── AddressField.tsx        # Campo Dirección con sugerencias de Georef (combobox en el flujo, no flotante)
+│   ├── useAddressSearch.ts     # Hook: sugerencias para lo escrito, con espera de 400 ms
+│   ├── PointMapDialog.tsx      # Modal "Marcar el comercio": pin fijo en el centro y el mapa se mueve
+│   ├── useLeafletMap.ts        # Hook: crea y destruye el mapa de Leaflet (BranchMap y PointMapDialog)
 │   ├── PriceProductPicker.tsx  # Bloque "Producto" de Cargar precio: propios y del catálogo, lector y "Cargar … a mano"
 │   │                           #   (spec 34); useEanLookup (resuelve un código leído o de la URL)
 │   ├── ManualProductFields.tsx # Formulario del producto nuevo de Cargar precio (spec 34), con el aviso del código y
@@ -223,6 +231,10 @@ src/
     │                           #   lastMonthsTotals, monthVariation, byStore (por cadena o comercio), byPayment
     ├── ids.ts                  # newId() / uniqueId() (los registros nuevos usan uniqueId: spec 21)
     ├── geo.ts                  # distanceKm (haversine) y formatDistance ("350 m", "1,2 km")
+    ├── address.ts              # Direcciones (spec 35): parseAddressQuery, formatStreet, parseGeoref, searchAddresses
+    │                           #   (Georef, caché de sesión) y reverseAddress (Nominatim)
+    ├── store-draft.ts          # Estado del formulario "Otro comercio" (spec 35): emptyDraft, typeAddress,
+    │                           #   chooseSuggestion, markPoint, removePoint, applyReverse, mapCenter, draftStore
     ├── route.ts                # Ruta del mapa: getRoute (OSRM, caché y 8 s de límite), parseOsrmRoute, googleMapsUrl,
     │                           #   formatDuration, mapStops (paradas a partir de comercios con coordenadas)
     ├── location.ts             # UserLocation, RADIUS_OPTIONS, parseLocationState, gpsLocation, requestPosition
@@ -349,7 +361,7 @@ src/
   cuentan; `null` si no queda ninguno); orden por cantidad de productos, total, distancia y nombre. "Pasar todo"
   llama a `moveCartItems(store, moves)`: un solo `set` (un cambio para la persistencia y la sincronización)
 - **Comercios cercanos** ([SPEC 15](specs/15-precios-y-comercios-cercanos.md)) — **la ubicación no sale del dispositivo**
-  (única excepción: la ruta del mapa, ver *Mapa y ruta*):
+  (excepciones: la ruta del mapa, ver *Mapa y ruta*, y la dirección de un punto, ver *Dirección y punto*):
   `getSepaBranches()` baja todas las sucursales una vez por sesión (de a 1.000 filas, caché de módulo) y
   `nearestBranches` calcula las distancias en el navegador (haversine, línea recta): hasta **40** dentro del radio
   (1, 3, 5 o 10 km; 3 por defecto). `getNearbyPrices(eans, sucursales)` llama a `sepa_precios_en_sucursales` solo
@@ -371,10 +383,23 @@ src/
   mapa reabierto enseguida). Los marcadores son `L.divIcon` con SVG propio y el nombre con `textContent`. El
   origen es `location` del store **solo si `source === 'gps'`**. La ruta (`getRoute`) se pide al OSRM público de
   `routing.openstreetmap.de` con 8 s de límite y caché de módulo por puntos + modo (un fallo no se guarda); sin
-  respuesta, línea recta punteada. **Es la única excepción a "la ubicación no sale del dispositivo"**: las
+  respuesta, línea recta punteada. **Es una excepción a "la ubicación no sale del dispositivo"**: las
   coordenadas viajan a ese servicio solo al abrir un mapa con ubicación de GPS, y el modal lo avisa. El link a
   Google Maps (`googleMapsUrl`) nunca lleva `origin`. Sin conexión (`navigator.onLine`) o si no carga Leaflet, el
   modal queda sin mapa
+- **Dirección y punto de un comercio nuevo** ([SPEC 35](specs/35-direccion-y-punto-del-comercio.md)) —
+  `searchAddresses` consulta Georef con el texto y los ids de los **15 departamentos** de centro más cercano a la
+  referencia (el punto del GPS o marcado en el formulario; si no, la ubicación de la app): **nunca lleva coordenadas**,
+  la distancia se calcula acá. Sin referencia, sin resultados cerca o sin los departamentos (se piden una vez por sesión,
+  2 s de espera), todo el país; con coma, `localidad` y después `departamento` ("CABA": Georef no encuentra el nombre
+  completo); una altura que no existe vuelve a buscar sin ella (`unknownNumber`). Georef devuelve **una fila por
+  cuadra** y sin orden: se piden hasta 1.000 y `parseGeoref` las junta por calle, altura y localidad. 5 s para toda la
+  búsqueda; caché por texto y zona. Con una calle elegida se busca solo su altura, en su localidad. El formulario es un
+  borrador (`StoreDraft`) con funciones puras: el punto de una sugerencia se descarta al escribir en Dirección (vuelve el
+  del GPS si no se había quitado), el marcado no. `reverseAddress` (Nominatim, 8 s, la nueva cancela la anterior) se
+  llama **solo** con **Completar la dirección** o al confirmar en el mapa un punto movido (más de 3 m), y los dos lugares
+  lo avisan; si mientras tanto se escribe en Dirección o cambia el punto, la respuesta se descarta. En el mapa el zoom se
+  hace sobre el centro (`touchZoom: 'center'`…) para no correr el punto
 - **Imágenes de productos** ([SPEC 17](specs/17-imagenes-de-productos.md)) — el SEPA no trae imágenes: el script
   `sepa:images` guarda en `sepa_imagenes` la URL de la imagen de cada EAN (Open Food Facts primero, después el portal
   Precios Claros). La app **no guarda imágenes en el dispositivo**: las busca por EAN al mostrar, así que los
@@ -479,7 +504,8 @@ src/
 - **Diálogos** — `alert()` / `confirm()` nativos del navegador (carrito y detalle); modal propio en el historial;
   `ConfirmDialog` (`<dialog>`) en `/cuenta`, `/grupo` y al eliminar un producto;
   `<dialog>` nativo con `showModal()` en el detalle (`SepaLinkDialog`: cierra con Escape y devuelve el foco), en el
-  carrito (`CartStoreDialog`, se cierra también al ocultarse la página con `<Activity>`) y en el lector de códigos
+  carrito (`CartStoreDialog`, se cierra también al ocultarse la página con `<Activity>`; ignora el `close` del mapa que
+  se abre encima, que React propaga) y en el lector de códigos
   de barras (`BarcodeScanner`, a pantalla completa).
 
 ### Persistencia (localStorage)
@@ -737,8 +763,8 @@ interface CalculatorState {
     a menos de 200 m" con ese formulario abierto. Errores: "Sin permiso para usar tu ubicación. Elegí el comercio a
     mano." / "No se pudo obtener tu ubicación. Elegí el comercio a mano.". **Comercios que usaste** (`recentStores`:
     hasta 5 de precios y compras, del más reciente, distintos por `storeKey`) y **Otro comercio** (nombre
-    obligatorio, dirección y barrio opcionales; no es un `<form>`: Enter usa el comercio). El barrio ya no es
-    obligatorio. Elegido: nombre, dirección o barrio, ícono de ubicación si tiene coordenadas y **Cambiar**
+    obligatorio, dirección, barrio y punto opcionales, ver *Otro comercio*; no es un `<form>`: Enter usa el comercio). El
+    barrio ya no es obligatorio. Elegido: nombre, dirección o barrio, ícono de ubicación si tiene coordenadas y **Cambiar**
   - **Producto** (`PriceProductPicker`): "Buscá un producto" con "Tus productos" (`filterProducts`, hasta 5) y "En
     Precios Claros" (sin los propios, imagen de 48 px), el lector y la carga a mano. Un código leído
     (`useEanLookup`): propio → ese; en el catálogo → el del catálogo; fuera, con error o sin Supabase → el formulario
@@ -782,6 +808,25 @@ interface CalculatorState {
   producto" con link; en el catálogo → completa el formulario igual que el buscador; si no, completa solo el EAN y
   deja el resto como estaba
 - Mensajes de éxito/error del tab producto que se ocultan a los 3 s
+
+### Otro comercio (`OtherStoreForm`, [SPEC 35](specs/35-direccion-y-punto-del-comercio.md))
+- El mismo formulario en Cargar precio ("Usar este comercio") y en "Cambiar comercio" del carrito ("Mover a este
+  comercio"): Nombre ("Completá el nombre del comercio"), Dirección, Barrio y punto, opcionales. Sin elegir una sugerencia
+  la dirección se guarda como texto
+- **Sugerencias** desde 3 caracteres, hasta 6, de la más cercana a la más lejana: "Av. Caseros 2500" y "Comuna 4, CABA · a
+  250 m" ("aprox." con localidad); pie "Direcciones: Georef — datos.gob.ar". Flechas para recorrer, Enter elige la
+  resaltada (sin resaltada, usa el comercio), Escape cierra solo la lista. "Caseros 2500, Olivos" busca en esa localidad.
+  Con altura completa dirección y punto; una calle sola pide "Agregá la altura" y después busca solo en esa calle. Avisos:
+  "Buscando direcciones…", "No encontramos esa dirección. Podés marcarla en el mapa.", "No encontramos esa altura. Elegí
+  la calle y marcá el punto en el mapa." y "No se pudo validar la dirección. Podés guardarla igual."
+- **Punto**: "Sin punto en el mapa" con **Marcar en el mapa**; "Punto: tu ubicación" / "el de la dirección" / "marcado en
+  el mapa" con **Ver o ajustar** y **Quitar**; el del GPS ("Otro comercio acá"), con la dirección vacía, también
+  **Completar la dirección** ("El punto se envía a OpenStreetMap")
+- **Marcar el comercio** (`PointMapDialog`): el pin queda fijo en el centro y se mueve el mapa (también con las flechas, +
+  y −); se abre en el punto, la calle elegida, la ubicación de la app o todo el país. **Usar mi ubicación** solo centra el
+  mapa. **Usar este punto** pide zoom 16 ("Acercá el mapa para marcar el punto"); con el punto movido busca su dirección,
+  que reemplaza la escrita, y el barrio si está vacío o lo había completado la app. Sin dirección: "No encontramos la
+  dirección de este punto. Revisá que coincida con la escrita." Sin conexión, "No se pudo cargar el mapa"
 
 ### Lector de códigos de barras (`BarcodeScanner`)
 - Modal negro a pantalla completa: video de la cámara trasera (`facingMode: { ideal: 'environment' }`), recuadro guía
@@ -878,10 +923,11 @@ interface CalculatorState {
 - **Cerca tuyo** en "Cambiar comercio" (ítems con EAN, con ubicación): las sucursales cercanas con su precio; al
   elegir una cambian el comercio **y el precio** del ítem (la cantidad no)
 - **Cambiar comercio** (link debajo de cada ítem, `CartStoreDialog`): comercios ya usados (`getCartStores`), "Sin
-  comercio" u "Otro comercio" (nombre requerido, barrio opcional). No cambia cantidad ni precio
-  (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`)
+  comercio" u "Otro comercio" (el formulario de *Otro comercio*). No cambia cantidad ni precio
+  (`setCartItemStore(itemId, store, price?)`; el precio solo con `price`). Los demás ítems del mismo comercio
+  (`storeKey`) toman su dirección y su punto, en un solo cambio; uno escrito sin ninguno de los dos no borra los que había
 - **Mapa** ([SPEC 16](specs/16-mapa-y-como-llegar.md)): botón de solo ícono en el encabezado de cada comercio con
-  coordenadas (los del SEPA) y, con 2 o más, **Ver recorrido** junto al total: todos esos comercios en el orden
+  coordenadas (los del SEPA y los que tienen punto) y, con 2 o más, **Ver recorrido** junto al total: todos esos comercios en el orden
   del carrito, hasta 9 ("Se muestran los primeros 9 comercios"). Los que no tienen coordenadas se aclaran en el
   mapa ("1 comercio sin ubicación no aparece en el mapa")
 - **Compartir por WhatsApp** ([SPEC 31](specs/31-compartir-carrito-por-whatsapp.md), `ShareCartLink`): debajo del
@@ -1417,6 +1463,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   (spec 32)
 - [x] Cargar a mano, al cargar un precio, un producto que no aparece: nombre, código, marca, presentación, categoría y
   foto (spec 34)
+- [x] Dirección con sugerencias y punto en el mapa de un comercio nuevo, en Cargar precio y en el carrito (spec 35)
 - [x] Eliminar desde su detalle un producto sin código de barras y sin compras, también en los demás dispositivos (spec 33)
 - [ ] Supabase: tiempo real (Fase 2)
 

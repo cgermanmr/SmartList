@@ -53,7 +53,10 @@ export interface AppState {
   removeFromCart: (itemId: string) => void;
   /** El checkout de un grupo saca solo sus ítems */
   removeCartItems: (itemIds: string[]) => void;
-  /** Cambia el comercio (undefined → "Sin comercio"); el precio solo cambia si se pasa `price` */
+  /**
+   * Cambia el comercio (undefined → "Sin comercio"); el precio solo cambia si se pasa `price`. Los demás ítems del mismo
+   * comercio (storeKey) toman su dirección y su punto (spec 35); si no trae ninguno de los dos, quedan los que había
+   */
   setCartItemStore: (itemId: string, store?: StoreRef, price?: number) => void;
   /**
    * Pasa esos ítems a ese comercio con su precio (cantidad igual, subtotal recalculado), en un solo cambio (spec 25).
@@ -164,14 +167,21 @@ export const useStore = create<AppState>()((set, get) => ({
 
   removeCartItems: itemIds => set(s => ({ cart: s.cart.filter(i => !itemIds.includes(i.id)) })),
 
-  setCartItemStore: (itemId, store, price) => set(s => ({
-    cart: s.cart.map(i => {
-      if (i.id !== itemId) return i;
-      // store: undefined lo saca del JSON guardado (JSON.stringify omite la clave)
-      const moved: CartItem = { ...i, store };
-      return price !== undefined && price > 0 ? { ...moved, price, subtotal: price * i.quantity } : moved;
-    }),
-  })),
+  setCartItemStore: (itemId, store, price) => set(s => {
+    const key = storeKey(store);
+    const group = key === '' ? [] : s.cart.filter(i => storeKey(i.store) === key);
+    // Un comercio escrito sin dirección ni punto no borra los que ya había
+    const known = hasPlace(store) ? undefined : group.find(i => hasPlace(i.store))?.store;
+    const target = known ?? store;
+    return {
+      cart: s.cart.map(i => {
+        if (i.id !== itemId) return group.includes(i) && !sameStore(i.store, target) ? { ...i, store: target } : i;
+        // store: undefined lo saca del JSON guardado (JSON.stringify omite la clave)
+        const moved: CartItem = { ...i, store: target };
+        return price !== undefined && price > 0 ? { ...moved, price, subtotal: price * i.quantity } : moved;
+      }),
+    };
+  }),
 
   moveCartItems: (store, moves) => {
     const prices = new Map(moves.filter(m => m.price > 0).map(m => [m.itemId, m.price]));
@@ -413,6 +423,18 @@ export function storeKey(store?: StoreRef): string {
   const name = normalizeText(store.name);
   if (!name) return '';
   return `${name}|${normalizeText(store.barrio)}`;
+}
+
+/** Tiene dirección o punto */
+function hasPlace(store: StoreRef | undefined): boolean {
+  return !!store && (!!store.address || (store.lat !== undefined && store.lng !== undefined));
+}
+
+function sameStore(a: StoreRef | undefined, b: StoreRef | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys: (keyof StoreRef)[] = ['name', 'barrio', 'address', 'sepaId', 'chain', 'lat', 'lng'];
+  return keys.every(key => a[key] === b[key]);
 }
 
 export interface CartGroup<T = CartItem> {

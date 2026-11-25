@@ -1,8 +1,9 @@
 import { LatLng } from './geo';
 import { StoreRef } from './models';
 
-// Ruta por calles para el mapa de un comercio (spec 16). Es el único módulo que manda coordenadas a un servicio
-// externo: solo se llama al abrir un mapa, y el link a Google Maps nunca lleva el origen.
+// Ruta por calles para el mapa de un comercio (spec 16). Con lib/address.ts (la dirección de un punto, spec 35), son los
+// únicos módulos que mandan coordenadas a un servicio externo: este solo se llama al abrir un mapa, y el link a Google
+// Maps nunca lleva el origen.
 
 export type TravelMode = 'foot' | 'car';
 
