@@ -34,13 +34,13 @@ No se probó la interfaz, ni Storage real, ni el login.
 
 ### Fotos sin cuenta (spec 27)
 
-- [ ] **1.** Cargar precio → buscar algo que no exista → "Cargar … a mano", elegir foto: dice "Solo la ves vos.". Guardar: se ve en Buscar
+- [x] **1.** Cargar precio → buscar algo que no exista → "Cargar … a mano", elegir foto: dice "Solo la ves vos.". Guardar: se ve en Buscar
       y en el detalle, también después de recargar.
-- [ ] **2.** Agregar producto: elegir uno del catálogo con imagen y sumarle una foto: se ve la propia. En el detalle,
+- [x] **2.** Agregar producto: elegir uno del catálogo con imagen y sumarle una foto: se ve la propia. En el detalle,
       **Cambiar foto** la cambia y **Quitar foto** pide confirmación y vuelve la del catálogo. "Solo la ves vos" también
       está en el detalle.
-- [ ] **3.** Elegir como foto un archivo que no sea imagen: "No se pudo leer la imagen. Probá con otra." y nada cambia.
-- [ ] **4.** En Cargar precio, elegir foto y tocar **Cambiar** producto: la foto desaparece y en DevTools → Application →
+- [x] **3.** Elegir como foto un archivo que no sea imagen: "No se pudo leer la imagen. Probá con otra." y nada cambia.
+- [x] **4.** En Cargar precio, elegir foto y tocar **Cambiar** producto: la foto desaparece y en DevTools → Application →
       IndexedDB → `el-changuito` → `photos` no hay una nueva.
 - [ ] **5.** Con una foto sacada con el celular: en IndexedDB es `image/jpeg` y pesa 200 KB o menos (300 KB como mucho).
 
@@ -97,55 +97,55 @@ No se probó la interfaz, ni Storage real, ni el login.
 
 ### Lector (spec 24)
 
-- [ ] **31.** Con ubicación, leer un código del catálogo: "Desde $X · …", los 3 más baratos, "Ver N más", Mapa, y
+- [x] **31.** Con ubicación, leer un código del catálogo: "Desde $X · …", los 3 más baratos, "Ver N más", Mapa, y
       **Agregar** lo deja en ese comercio y a ese precio.
-- [ ] **32.** Leer un producto propio no sale de Buscar: "Ya tenés <nombre>.", último precio, **Agregar al carrito** y
+- [x] **32.** Leer un producto propio no sale de Buscar: "Ya tenés <nombre>.", último precio, **Agregar al carrito** y
       **Ver detalle**.
-- [ ] **33.** Sin ubicación: resumen por cadena, "Ver precios por cadena" y "Activá tu ubicación arriba para ver comercios
+- [x] **33.** Sin ubicación: resumen por cadena, "Ver precios por cadena" y "Activá tu ubicación arriba para ver comercios
       cercanos".
-- [ ] **34.** "¿Cuánto sale acá?": mayor que el más barato cercano (rojo), menor (verde), contra la referencia sin
+- [x] **34.** "¿Cuánto sale acá?": mayor que el más barato cercano (rojo), menor (verde), contra la referencia sin
       cercanos, y "La última vez pagaste…" en uno propio. Con monto, **Agregar al carrito** usa ese precio en "Sin
       comercio". Leer otro código lo vacía.
-- [ ] **35.** Un código fuera del catálogo ofrece "Agregar producto".
+- [x] **35.** Un código fuera del catálogo ofrece "Agregar producto".
 
 ### ¿Dónde conviene el carrito? (spec 25)
 
-- [ ] **36.** Con 2 o más productos con código aparece la tarjeta; con 0 o 1, no. "Tiene N de M", total y ahorro coinciden
+- [x] **36.** Con 2 o más productos con código aparece la tarjeta; con 0 o 1, no. "Tiene N de M", total y ahorro coinciden
       con los precios (los de $0 no cuentan); los sin código se aclaran.
-- [ ] **37.** Modal: 10 opciones y "Ver N más", faltantes al desplegar, el radio recalcula, Mapa encima del modal, y las
+- [x] **37.** Modal: 10 opciones y "Ver N más", faltantes al desplegar, el radio recalcula, Mapa encima del modal, y las
       sucursales sin ningún producto se cuentan en el pie.
-- [ ] **38.** **Pasar todo a este comercio**: pasan solo los que tiene, a su precio y con su cantidad; aviso "N productos
+- [x] **38.** **Pasar todo a este comercio**: pasan solo los que tiene, a su precio y con su cantidad; aviso "N productos
       pasaron a…"; después, "Tu carrito ya está en este comercio". Un ítem en $0 deja de pedir precio.
-- [ ] **39.** Sin ubicación compara por cadena y no ofrece "Pasar todo". Cambiar de pestaña con el modal abierto no
+- [x] **39.** Sin ubicación compara por cadena y no ofrece "Pasar todo". Cambiar de pestaña con el modal abierto no
       bloquea la página.
 
 ### Cargar precio en el comercio (spec 26)
 
-- [ ] **40.** Sin comercio: "Elegí el comercio" y no guarda. "Otro comercio" con solo el nombre guarda con barrio "Sin
+- [x] **40.** Sin comercio: "Elegí el comercio" y no guarda. "Otro comercio" con solo el nombre guarda con barrio "Sin
       especificar".
-- [ ] **41.** A menos de 200 m de una sucursal, "¿Estás en…?" con la distancia. No cambia la ubicación de Buscar. Sin
+- [x] **41.** A menos de 200 m de una sucursal, "¿Estás en…?" con la distancia. No cambia la ubicación de Buscar. Sin
       permiso: "Sin permiso para usar tu ubicación. Elegí el comercio a mano."
-- [ ] **42.** "Comercios que usaste" (hasta 5). Después de guardar queda el comercio y se limpian producto y precio.
-- [ ] **43.** Producto del catálogo, código desconocido (pide Nombre) y sin código: cada uno se crea **al guardar**; elegir
+- [x] **42.** "Comercios que usaste" (hasta 5). Después de guardar queda el comercio y se limpian producto y precio.
+- [x] **43.** Producto del catálogo, código desconocido (pide Nombre) y sin código: cada uno se crea **al guardar**; elegir
       y tocar "Cambiar" no crea nada.
-- [ ] **44.** "Cargar precio acá" desde el lector lleva el producto y el monto.
-- [ ] **45.** Un precio propio con coordenadas dentro del radio aparece en Comercios cercanos con distancia, "Cargado por
+- [x] **44.** "Cargar precio acá" desde el lector lleva el producto y el monto.
+- [x] **45.** Un precio propio con coordenadas dentro del radio aparece en Comercios cercanos con distancia, "Cargado por
       vos · dd/mm" y Mapa.
 
 ### Buscador fijo (spec 29)
 
 - [ ] **46.** En el celular, tocar el campo lo sube arriba de todo y se ven los primeros resultados con el teclado abierto,
       también con pocos resultados. En la computadora no se mueve.
-- [ ] **47.** El buscador queda fijo al desplazar; el lector, el mapa y el aviso "… en el carrito" quedan por encima.
+- [x] **47.** El buscador queda fijo al desplazar; el lector, el mapa y el aviso "… en el carrito" quedan por encima.
 
 ### Sueltos (specs 11 y 15 a 19)
 
 - [ ] **48.** iPhone: el lector lee un código sin abrir el video a pantalla completa, y enfocar un campo no hace zoom.
-- [ ] **49.** La cámara se apaga al detectar, al cerrar y al cambiar de página.
-- [ ] **50.** Con el permiso de ubicación denegado se ve el mensaje y se puede elegir localidad; las distancias dicen
+- [x] **49.** La cámara se apaga al detectar, al cerrar y al cambiar de página.
+- [x] **50.** Con el permiso de ubicación denegado se ve el mensaje y se puede elegir localidad; las distancias dicen
       "aprox.".
-- [ ] **51.** Las filas de "Cerca tuyo" en "Cambiar comercio" no tienen botón Mapa.
-- [ ] **52.** Imágenes (o la inicial) en "Buscar en Precios Claros" de Agregar producto, el modal de vincular, la oferta
+- [x] **51.** Las filas de "Cerca tuyo" en "Cambiar comercio" no tienen botón Mapa.
+- [x] **52.** Imágenes (o la inicial) en "Buscar en Precios Claros" de Agregar producto, el modal de vincular, la oferta
       del lector y una compra expandida del historial.
 - [ ] **53.** El favicon y el ícono instalado muestran el changuito; el aviso "… en el carrito" se ve entero sobre la
       barra inferior.
@@ -168,7 +168,7 @@ En Vercel, antes de publicar: *Automatically expose System Environment Variables
 dev borra sus datos si no tiene cuenta** (en el iPhone, siempre): son datos de prueba, pero revisar antes que sea la de
 dev. Producción no hace falta reinstalarla, salvo para ver el ícono nuevo en el iPhone.
 
-- [ ] **58.** Preview de `dev`, en la computadora: etiqueta DEV, pestaña "DEV · El Changuito", favicon amarillo con la
+- [x] **58.** Preview de `dev`, en la computadora: etiqueta DEV, pestaña "DEV · El Changuito", favicon amarillo con la
       cinta y `/manifest.json` con "DEV Changuito".
 - [ ] **59.** Android: desinstalar la de dev, instalarla de nuevo desde la preview y tener también la de producción. Se
       distinguen por el nombre y el ícono; el recorte no corta el changuito ni el texto.
@@ -205,6 +205,25 @@ En la calle, con el celular, en **Cargar precio**.
 
 ## Resultados
 
+Pruebas del 25/11/2026 en la computadora (Chrome, build local de `dev` con la base real de Precios Claros, sin
+cuenta). La cámara, el GPS, la falta de permisos y las fallas de red se simularon desde la página.
+
 | Prueba | Fecha | Resultado |
 |---|---|---|
-| | | |
+| 1–4 | 25/11 | Bien. |
+| 5 | 25/11 | Parcial: con una imagen de 3000 × 2000 generada, queda en JPEG de 137 KB. Falta con una foto del celular. |
+| 14 | 25/11 | Parcial: sin sesión, Buscar, el lector y el detalle no hablan del grupo. Falta sin conexión. |
+| 25 | 25/11 | Parcial: 14 pantallas a 320 y 375 px, sin desplazamiento horizontal, en su estado inicial (sin modales abiertos). Falta en el celular. |
+| 31–45 | 25/11 | Bien. En la 31 la oferta muestra los 3 más baratos y "Ver 35 más"; en la 34 se vieron las tres líneas, la de la última compra y la de la referencia. |
+| 46 | — | No se puede en la computadora (necesita puntero táctil). |
+| 47 | 25/11 | Bien: a 375 px el buscador queda fijo debajo del header; el aviso va después en el DOM con el mismo z-index y el lector y el mapa son `<dialog>` modales. |
+| 49 | 25/11 | Bien al cerrar y al cambiar de página (con una cámara simulada). Falta al detectar un código real. |
+| 50–52 | 25/11 | Bien. |
+| 53 | 25/11 | Parcial: el aviso queda entero sobre la barra inferior a 375 px y el favicon es el changuito. Falta el ícono instalado. |
+| 54 | 25/11 | Parcial: el link de una compra arma el mensaje y la vista previa abre; Combinar suma bien. Falta WhatsApp. |
+| 55 | 25/11 | Parcial: con 40 productos el link a wa.me tiene 8.564 caracteres; con 100, 13.347 (el mensaje lista 40 y el link lleva los 100; la vista previa los muestra). Con 101, "Se pueden compartir hasta 100 productos". Falta ver si WhatsApp lo corta. |
+| 56 | 25/11 | Parcial: pegar el mensaje con un link de otro dominio abre la vista previa; un texto sin link dice "No hay un carrito compartido en ese texto". Falta el iPhone. |
+| 58 | 25/11 | Bien. |
+| 61 | 25/11 | Parcial: producción sin etiqueta, título "El Changuito" y manifest "El Changuito". Falta la app instalada en Android. |
+| 65 | 25/11 | Parcial: el botón tiene `aria-disabled`, se puede enfocar y `aria-describedby` lee "No se puede eliminar: está en 1 compra de tu historial.". Falta con TalkBack o VoiceOver. |
+| 70 | 25/11 | Parcial: la cantidad de direcciones se anuncia en un `role="status"` y el mapa tiene nombre y el aviso del zoom. Falta con TalkBack o VoiceOver. |
