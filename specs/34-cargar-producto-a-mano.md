@@ -1,6 +1,6 @@
 # SPEC 34 — Cargar un producto a mano al cargar un precio
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 11](11-lector-codigo-de-barras.md), [SPEC 26](26-cargar-precio-en-el-comercio.md), [SPEC 27](27-fotos-propias.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Ofrecer en el buscador de Cargar precio, cuando el producto no aparece, cargarlo a mano con nombre, código de barras, marca, presentación, categoría y foto.

@@ -1,6 +1,6 @@
 # SPEC 33 — Eliminar producto
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 26](26-cargar-precio-en-el-comercio.md), [SPEC 27](27-fotos-propias.md)
 > **Fecha:** 2026-11-24
 > **Objetivo:** Eliminar desde su detalle un producto propio sin código de barras que no participa de ninguna compra, junto con sus precios, su foto y su lugar en el carrito.
