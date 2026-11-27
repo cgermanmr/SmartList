@@ -4,6 +4,9 @@ export interface ProductPhoto {
   takenAt: string;   // ISO, al elegirla
 }
 
+/** De dónde salió un producto (spec 36): del catálogo de Precios Claros o cargado a mano */
+export type ProductOrigin = 'sepa' | 'manual';
+
 export interface Product {
   id: string;
   name: string;
@@ -14,6 +17,7 @@ export interface Product {
   size?: number;      // presentación: 500
   sizeUnit?: Unit;    // va junto con size: los dos o ninguno
   photo?: ProductPhoto;  // foto propia (spec 27); solo la ve quien la cargó
+  origin?: ProductOrigin;  // spec 36: se escribe al crearlo; opcional solo para los guardados antes (withOrigins)
 }
 
 /** Comercio de un ítem del carrito: viaja dentro del ítem, sin catálogo de comercios */

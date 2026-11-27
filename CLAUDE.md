@@ -275,7 +275,8 @@ src/
     │                           #   getNearbyPrices, branchLocalities, storeRefFromBranch); imágenes
     │                           #   (getSepaImages, con caché; imageSource)
     ├── product-form.ts         # Formulario de producto: checkEan, formFromSepa, productFromForm, sepaLinkChanges, categorySuggestions;
-    │                           #   productFromSepa (producto propio desde el catálogo, sin categoría)
+    │                           #   productFromSepa (producto propio desde el catálogo, sin categoría); origen (spec 36):
+    │                           #   inferOrigin, withOrigins, isFromSepa
     └── *.test.ts               # Tests de Vitest junto a cada módulo
 ```
 
@@ -332,6 +333,15 @@ src/
   vuelta un producto que otro dispositivo eliminó y este tenía, si lo usa un precio (los de ejemplo no cuentan), el
   carrito o una compra: como estaba, sin la foto. Se encola con `restoreTime`, siempre posterior al borrado aunque el
   reloj atrase: con una fecha anterior la base conservaría el borrado y se restauraría en cada vuelta
+- **Origen del producto** ([SPEC 36](specs/36-vinculo-solo-en-productos-a-mano.md)) — `Product.origin` se escribe al
+  crearlo: `'sepa'` desde `productFromSepa` (Buscar, el lector, Cargar precio con un resultado del catálogo, un carrito
+  compartido con el EAN en el catálogo) y en Agregar producto si el EAN guardado es el del último producto del catálogo
+  que completó el formulario; `'manual'` en todo lo demás (formulario de Cargar precio aunque el código esté en el
+  catálogo, carrito compartido fuera del catálogo, Repetir compra). Vincular, cambiar o quitar el vínculo no lo cambian.
+  Los productos guardados antes lo reciben con `withOrigins` (`inferOrigin`: con código y sin categoría, `'sepa'`) en
+  dos lugares: `hydrate`, en un segundo `set` que se guarda y, con cuenta, se encola; y `applyRows`, después de
+  `dedupeByEan`, para las filas bajadas sin origen (otro dispositivo con la versión anterior), que vuelven a subir.
+  `withOrigins` devuelve el mismo array si no cambió nada. Sin origen, `isFromSepa` es `false`
 - **Catálogo SEPA (solo lectura)** — `lib/supabase.ts` crea el cliente con `NEXT_PUBLIC_SUPABASE_URL` y
   `NEXT_PUBLIC_SUPABASE_ANON_KEY` (clave publishable `sb_publishable_…`), sin sesión. Si falta alguna, `supabase` es
   `null`, `sepaEnabled` es `false` y la UI no muestra nada del catálogo (el resto funciona igual). `lib/sepa.ts`
@@ -575,6 +585,7 @@ interface Product {
   size?: number;      // presentación: 500
   sizeUnit?: Unit;    // va junto con size: los dos o ninguno
   photo?: ProductPhoto;  // foto propia (spec 27): el archivo está en IndexedDB y, con cuenta, en el bucket privado
+  origin?: ProductOrigin;  // 'sepa' | 'manual' (spec 36); opcional solo para los guardados antes de la migración
 }
 
 interface ProductPhoto {
@@ -865,7 +876,8 @@ interface CalculatorState {
   y **Agregar foto**. "Preparando la foto…" mientras se comprime; un archivo que no es una imagen → "No se pudo leer
   la imagen. Probá con otra." y no cambia nada
 - Línea gris debajo del nombre: "Marca · 500 g · EAN 7793704000911" (lo que exista); "Categoría: X" solo si tiene
-- Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN, **Cambiar vínculo** y **Quitar vínculo**.
+- Con Supabase: sin EAN, **Vincular con Precios Claros**; con EAN y cargado a mano, **Cambiar vínculo** y **Quitar
+  vínculo**; un producto de Precios Claros (`isFromSepa`, spec 36) no lleva ninguno de los dos.
   Vincular completa marca y presentación solo si están vacías; cambiar las reemplaza por las del catálogo; quitar
   pide confirmación y borra solo el EAN. Ninguno cambia el nombre ni la categoría (`sepaLinkChanges`)
 - Estadísticas: actual, mínimo, máximo, promedio (`getPriceStats`)
@@ -890,8 +902,9 @@ interface CalculatorState {
 - Agregar al carrito con el precio actual
 - **Eliminar producto** ([SPEC 33](specs/33-eliminar-producto.md), `DeleteProduct`), al pie: solo los que no tienen código
   de barras y no están en ninguna compra. Si no, el botón queda deshabilitado (`aria-disabled`, se puede enfocar) con el
-  motivo en `aria-describedby`: "No se puede eliminar: está en 2 compras de tu historial.", o que tiene código (con
-  Supabase, "Quitá el vínculo primero"); con los dos, el de las compras. También mientras se prepara una foto.
+  motivo en `aria-describedby`: "No se puede eliminar: está en 2 compras de tu historial.", "No se puede eliminar: es un
+  producto de Precios Claros." (spec 36) o, cargado a mano, que tiene código (con Supabase, "Quitá el vínculo
+  primero"); con las compras, siempre el de las compras. También mientras se prepara una foto.
   `ConfirmDialog` nombra lo que se pierde (precios, foto, carrito y, con sesión, todos los dispositivos) y "No se puede
   deshacer.". Al confirmar va a Buscar reemplazando el detalle en el historial del navegador, con el aviso "<nombre>
   eliminado" (3 s). Cargar precio suelta el producto si estaba elegido (el comercio y el monto quedan) y la oferta del
@@ -1465,6 +1478,7 @@ prerrequisitos en [`docs/README.md`](docs/README.md). Ideas sin analizar en [`do
   foto (spec 34)
 - [x] Dirección con sugerencias y punto en el mapa de un comercio nuevo, en Cargar precio y en el carrito (spec 35)
 - [x] Eliminar desde su detalle un producto sin código de barras y sin compras, también en los demás dispositivos (spec 33)
+- [x] Origen de cada producto (Precios Claros o a mano): Cambiar y Quitar vínculo solo en los cargados a mano (spec 36)
 - [ ] Supabase: tiempo real (Fase 2)
 
 ---

@@ -397,19 +397,19 @@ describe('resolveSharedCart', () => {
         cartOf([{ ean: LECHE, name: 'Otro nombre', quantity: 1 }]), context({ catalog: new Map([[LECHE, sepaLeche]]) }),
       );
       expect(load.products).toEqual([
-        { id: 'n1', name: 'Leche Entera', ean: LECHE, brand: 'SERENISIMA', size: 1000, sizeUnit: 'ml' },
+        { id: 'n1', name: 'Leche Entera', ean: LECHE, brand: 'SERENISIMA', size: 1000, sizeUnit: 'ml', origin: 'sepa' },
       ]);
       expect(load.items[0]).toMatchObject({ productId: 'n1', productName: 'Leche Entera' });
     });
 
     it('fuera del catálogo lo crea con el nombre del link y su EAN', () => {
       expect(resolveSharedCart(cartOf([{ ean: LECHE, name: 'Leche rara', quantity: 1 }]), context()).products)
-        .toEqual([{ id: 'n1', name: 'Leche rara', ean: LECHE }]);
+        .toEqual([{ id: 'n1', name: 'Leche rara', ean: LECHE, origin: 'manual' }]);
     });
 
     it('sin nombre en ningún lado es "Producto <EAN>"', () => {
       expect(resolveSharedCart(cartOf([{ ean: LECHE, quantity: 1 }]), context()).products)
-        .toEqual([{ id: 'n1', name: `Producto ${LECHE}`, ean: LECHE }]);
+        .toEqual([{ id: 'n1', name: `Producto ${LECHE}`, ean: LECHE, origin: 'manual' }]);
     });
 
     it('sin EAN usa el propio sin EAN con el mismo nombre, sin mayúsculas ni espacios de más', () => {
@@ -420,11 +420,11 @@ describe('resolveSharedCart', () => {
       expect(load.items[0].productId).toBe('pan');
     });
 
-    it('sin EAN y sin uno igual lo crea solo con el nombre', () => {
+    it('sin EAN y sin uno igual lo crea con el nombre, cargado a mano', () => {
       const load = resolveSharedCart(cartOf([{ name: 'Pan lactal', quantity: 1 }]), context({
         products: [{ id: 'con-ean', name: 'Pan lactal', ean: YERBA }],
       }));
-      expect(load.products).toEqual([{ id: 'n1', name: 'Pan lactal' }]);
+      expect(load.products).toEqual([{ id: 'n1', name: 'Pan lactal', origin: 'manual' }]);
     });
 
     it('dos ítems del mismo producto se suman con el comercio y el precio del primero', () => {

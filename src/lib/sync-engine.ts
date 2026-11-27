@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { clearGroupPrices } from './group';
 import { clearLocalPhotos, releaseLocalPhotos, syncPhotos } from './photo-sync';
 import { loadFromStorage, OUTBOX_KEY, removeFromStorage, saveToStorage, SYNC_KEY } from './storage';
+import { withOrigins } from './product-form';
 import { onUserDataChange, syncDataOf, useStore } from './store';
 import {
   acknowledge, changesToRecords, dedupeByEan, dedupeCart, enqueue, mergeRemote, pullSince, pushOrder, RemoteRow,
@@ -228,7 +229,10 @@ function applyRows(rows: RemoteRow[]): void {
   for (const r of pending) if (r.collection === 'cart') cartTimes.set(r.id, r.modifiedAt);
 
   const { data: restored, restoredIds } = restoreUsedProducts(local, merged, rows);
-  const deduped = dedupeByEan(restored);
+  const unique = dedupeByEan(restored);
+  // Spec 36: un producto bajado sin origen (otro dispositivo con la versión anterior) lo recibe acá y vuelve a subir
+  const products = withOrigins(unique.products);
+  const deduped = products === unique.products ? unique : { ...unique, products };
   const cart = dedupeCart(deduped.cart, cartTimes);
   const final = cart === deduped.cart ? deduped : { ...deduped, cart };
 

@@ -143,6 +143,7 @@ describe('resolvePriceProduct', () => {
     expect(resolvePriceProduct({ kind: 'new', form }, [own], 'n')).toEqual({
       product: {
         id: 'n', name: 'Alfajor Luna', category: 'Cosas dulces', ean: '7791234567898', brand: 'La Luna', size: 50, sizeUnit: 'g',
+        origin: 'manual',
       },
       isNew: true,
     });
@@ -162,12 +163,12 @@ describe('resolvePriceProduct', () => {
   it('nuevo solo con el nombre → sin claves vacías en el JSON guardado', () => {
     const { product, isNew } = resolvePriceProduct({ kind: 'new', form: { ...EMPTY_PRODUCT_FORM, name: 'Pan casero', brand: ' ', category: ' ' } }, [own], 'n');
     expect(isNew).toBe(true);
-    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan casero' });
+    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan casero', origin: 'manual' });
   });
 
   it('nuevo con la presentación en 0 → sin número ni unidad', () => {
     const { product } = resolvePriceProduct({ kind: 'new', form: { ...EMPTY_PRODUCT_FORM, name: 'Pan', size: '0', sizeUnit: 'kg' } }, [own], 'n');
-    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan' });
+    expect(JSON.parse(JSON.stringify(product))).toEqual({ id: 'n', name: 'Pan', origin: 'manual' });
   });
 });
 

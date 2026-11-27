@@ -35,6 +35,8 @@ export default function UploadForm() {
   const [productForm, setProductForm] = useState<ProductForm>(EMPTY_PRODUCT_FORM);
   // Foto elegida (spec 27): en memoria hasta guardar el producto
   const [photo, setPhoto] = useState<PhotoDraft | null>(null);
+  // Spec 36: EAN del último producto del catálogo que completó el formulario; guardado con ese EAN, es de Precios Claros
+  const [catalogEan, setCatalogEan] = useState<string | null>(null);
   const saving = useRef(false);
   const [eanError, setEanError] = useState<EanError | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
@@ -69,6 +71,7 @@ export default function UploadForm() {
     if (opensProduct) {
       setActiveTab('product');
       setProductForm(form => ({ ...EMPTY_PRODUCT_FORM, category: form.category, ean: urlEan ?? '' }));
+      setCatalogEan(null);
       setEanError(null);
       setPhoto(null);
     }
@@ -118,7 +121,8 @@ export default function UploadForm() {
       return;
     }
 
-    const product = productFromForm(productForm, uniqueId(), check.status === 'ok' ? check.ean : undefined);
+    const ean = check.status === 'ok' ? check.ean : undefined;
+    const product = productFromForm(productForm, uniqueId(), ean, ean !== undefined && ean === catalogEan ? 'sepa' : 'manual');
     // Spec 27: primero la foto en IndexedDB y después el producto con `photo`; si falla, el producto va sin foto
     let photoFailed = false;
     if (photo) {
@@ -135,6 +139,7 @@ export default function UploadForm() {
     addProduct(product);
     showMessage(photoFailed ? 'Producto agregado. No se pudo guardar la foto.' : 'Producto agregado exitosamente!', 'ok');
     setProductForm(EMPTY_PRODUCT_FORM);
+    setCatalogEan(null);
     setPhoto(null);
     // Sin el ean en la URL, recargar no vuelve a completar el formulario con el producto recién guardado
     if (searchParams.has('ean')) router.replace('/upload?tab=producto', { scroll: false });
@@ -176,6 +181,7 @@ export default function UploadForm() {
   /** Completa el formulario con el resultado elegido; la categoría (opcional) es lo único que falta */
   function selectSepaProduct(product: SepaProduct) {
     setProductForm(form => formFromSepa(product, form.category));
+    setCatalogEan(product.ean);
     setEanError(null);
     categoryInput.current?.focus();
   }

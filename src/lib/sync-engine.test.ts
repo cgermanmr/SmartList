@@ -58,7 +58,7 @@ function saved<T>(key: string): T | null {
 }
 
 function product(id: string, ean?: string): Product {
-  return { id, name: `Producto ${id}`, ...(ean && { ean }) };
+  return { id, name: `Producto ${id}`, ...(ean && { ean }), origin: 'manual' };
 }
 
 function price(id: string, productId: string): Price {
@@ -350,6 +350,50 @@ describe('fotos propias (spec 27)', () => {
     expect(engine.syncUserId()).toBe('u1');
     engine.stopSync();
     expect(engine.syncUserId()).toBeNull();
+  });
+});
+
+describe('origen de los productos (spec 36)', () => {
+  const EAN = '7790000000017';
+
+  it('con cuenta, los productos guardados sin origen se migran al abrir y se encolan; la segunda vez, nada', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    storage.setItem('preciolocal_products', JSON.stringify([{ id: 'a', name: 'Yerba', ean: EAN }, { id: 'b', name: 'Pan' }]));
+    const first = await load();
+    expect(first.useStore.getState().products.map(p => p.origin)).toEqual(['sepa', 'manual']);
+    const queued = saved<SyncRecord[]>(OUTBOX)!;
+    expect(queued.map(r => `${r.collection}/${r.id}/${(r.data as Product).origin}`)).toEqual(['products/a/sepa', 'products/b/manual']);
+
+    storage.setItem(OUTBOX, JSON.stringify([]));
+    const second = await load();
+    expect(second.engine.pendingCount()).toBe(0);
+  });
+
+  it('un producto bajado sin origen queda migrado y se vuelve a subir con él', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { remote, useStore, engine } = await load();
+    vi.mocked(remote.pullRows).mockResolvedValueOnce([row('products', 'a', { id: 'a', name: 'Yerba', ean: EAN })]);
+
+    await engine.startSync('u1');
+
+    expect(useStore.getState().products).toEqual([{ id: 'a', name: 'Yerba', ean: EAN, origin: 'sepa' }]);
+    const pushed = vi.mocked(remote.pushRecords).mock.calls.at(-1)![1];
+    expect(pushed.map(r => `${r.collection}/${r.id}/${(r.data as Product).origin}`)).toEqual(['products/a/sepa']);
+    expect(engine.pendingCount()).toBe(0);
+  });
+
+  it('las mismas filas, ya con origen, no encolan nada en la vuelta siguiente', async () => {
+    storage.setItem(SYNC, JSON.stringify({ userId: 'u1', cursor: null }));
+    const { remote, engine } = await load();
+    const migrated = row('products', 'a', { id: 'a', name: 'Yerba', ean: EAN, origin: 'sepa' });
+    vi.mocked(remote.pullRows).mockResolvedValue([migrated]);
+
+    await engine.startSync('u1');
+    vi.mocked(remote.pushRecords).mockClear();
+    await engine.syncNow();
+
+    expect(vi.mocked(remote.pushRecords)).not.toHaveBeenCalled();
+    expect(engine.pendingCount()).toBe(0);
   });
 });
 

@@ -9,6 +9,7 @@ import { forgetPhotoUrl } from '@/components/useProductPhotos';
 import { Product } from '@/lib/models';
 import { discardPhoto } from '@/lib/photo-sync';
 import { deleteBlockedReason, deleteMessage } from '@/lib/product-delete';
+import { isFromSepa } from '@/lib/product-form';
 import { sepaEnabled } from '@/lib/sepa';
 import { getPricesForProduct, purchasesWithProduct, useStore } from '@/lib/store';
 
@@ -36,6 +37,7 @@ export default function DeleteProduct({ product, busy, onLeaving }: Props) {
     purchases: purchasesWithProduct(purchases, product.id),
     ean: product.ean !== undefined,
     canUnlink: sepaEnabled,
+    fromSepa: isFromSepa(product),
   });
   const disabled = reason !== null || busy;
 

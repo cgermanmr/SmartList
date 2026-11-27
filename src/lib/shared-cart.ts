@@ -204,7 +204,9 @@ function nameKey(name: string | undefined): string {
 function newProduct(item: SharedItem, { catalog, newId }: SharedContext): Product {
   const sepa = item.ean ? catalog.get(item.ean) : undefined;
   if (sepa) return productFromSepa(sepa, newId());
-  return { id: newId(), name: item.name ?? unknownProductName(item.ean), ...(item.ean && { ean: item.ean }) };
+  return {
+    id: newId(), name: item.name ?? unknownProductName(item.ean), ...(item.ean && { ean: item.ean }), origin: 'manual',
+  };
 }
 
 // ── Link ────────────────────────────────────────────────────

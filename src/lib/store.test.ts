@@ -79,6 +79,29 @@ describe('hydrate', () => {
     expect(useStore.getState().calculator).toEqual(defaultCalculator());
   });
 
+  it('escribe el origen de los productos guardados sin él y lo guarda (spec 36)', () => {
+    storage.setItem(PRODUCTS_KEY, JSON.stringify([
+      { id: 'p1', name: 'Yerba', ean: '7793704000508' },
+      { id: 'p2', name: 'Café', ean: '7790000000017', category: 'Almacen' },
+      { id: 'p3', name: 'Pan' },
+      { id: 'p4', name: 'Leche', ean: '7790000000024', origin: 'manual' },
+    ]));
+    useStore.getState().hydrate();
+    const origins = (products: Product[]) => products.map(p => `${p.id}/${p.origin}`);
+    const expected = ['p1/sepa', 'p2/manual', 'p3/manual', 'p4/manual'];
+    expect(origins(useStore.getState().products)).toEqual(expected);
+    expect(origins(saved<Product[]>(PRODUCTS_KEY))).toEqual(expected);
+  });
+
+  it('con todos los productos con origen no los vuelve a guardar', () => {
+    const raw = JSON.stringify([{ id: 'p1', name: 'Pan', origin: 'manual' }]);
+    storage.setItem(PRODUCTS_KEY, raw);
+    const setItem = vi.spyOn(storage, 'setItem');
+    useStore.getState().hydrate();
+    expect(setItem).not.toHaveBeenCalledWith(PRODUCTS_KEY, expect.anything());
+    setItem.mockRestore();
+  });
+
   it('no guarda nada antes de hidratar', () => {
     useStore.getState().addProduct({ id: 'x', name: 'X', category: 'Y' });
     expect(storage.getItem(PRODUCTS_KEY)).toBeNull();
@@ -88,11 +111,11 @@ describe('hydrate', () => {
 describe('updateProduct', () => {
   const linked: Product = {
     id: 'p1', name: 'Yerba', category: 'Almacen',
-    ean: '7793704000508', brand: 'Playadito', size: 500, sizeUnit: 'g',
+    ean: '7793704000508', brand: 'Playadito', size: 500, sizeUnit: 'g', origin: 'manual',
   };
 
   beforeEach(() => {
-    storage.setItem(PRODUCTS_KEY, JSON.stringify([linked, { id: 'p2', name: 'Arroz', category: 'Almacen' }]));
+    storage.setItem(PRODUCTS_KEY, JSON.stringify([linked, { id: 'p2', name: 'Arroz', category: 'Almacen', origin: 'manual' }]));
     useStore.getState().hydrate();
   });
 
@@ -112,7 +135,7 @@ describe('updateProduct', () => {
   it('con ean undefined quita el vínculo del JSON guardado y conserva marca y presentación', () => {
     useStore.getState().updateProduct('p1', { ean: undefined });
     expect(saved<Product[]>(PRODUCTS_KEY)[0]).toEqual({
-      id: 'p1', name: 'Yerba', category: 'Almacen', brand: 'Playadito', size: 500, sizeUnit: 'g',
+      id: 'p1', name: 'Yerba', category: 'Almacen', brand: 'Playadito', size: 500, sizeUnit: 'g', origin: 'manual',
     });
   });
 });
@@ -392,7 +415,7 @@ describe('loadPurchaseToCart', () => {
     useStore.getState().loadPurchaseToCart(purchase, merge);
     expect(useStore.getState().products).toEqual([
       { id: '2', name: 'Pan propio', category: 'Panadería' },
-      { id: '1', name: 'Producto 1' },
+      { id: '1', name: 'Producto 1', origin: 'manual' },
     ]);
     expect(saved<Product[]>(PRODUCTS_KEY)).toHaveLength(2);
     expect(useStore.getState().cart.map(i => i.productId)).toEqual(['1', '2']);
@@ -642,7 +665,9 @@ describe('addSepaToCart', () => {
   it('crea el producto vinculado sin categoría y lo agrega sin comercio con la referencia', () => {
     const product = useStore.getState().addSepaToCart(sepa, 1500);
     const s = useStore.getState();
-    expect(product).toMatchObject({ name: 'Yerba Mate', ean: '7793704000911', brand: 'PLAYADITO', size: 500, sizeUnit: 'g' });
+    expect(product).toMatchObject({
+      name: 'Yerba Mate', ean: '7793704000911', brand: 'PLAYADITO', size: 500, sizeUnit: 'g', origin: 'sepa',
+    });
     expect(product.category).toBeUndefined();
     expect(s.products).toHaveLength(2);
     expect(s.cart).toHaveLength(1);

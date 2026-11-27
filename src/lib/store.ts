@@ -3,7 +3,7 @@ import { toGtin13 } from './gtin';
 import { uniqueId } from './ids';
 import { DEFAULT_RADIUS, RadiusKm, UserLocation } from './location';
 import { Product, Price, CartItem, Purchase, CalculatorState, StoreRef } from './models';
-import { productFromSepa } from './product-form';
+import { productFromSepa, withOrigins } from './product-form';
 import type { SepaProduct } from './sepa';
 import type { SharedLoad } from './shared-cart';
 import type { SyncData } from './sync';
@@ -107,6 +107,10 @@ export const useStore = create<AppState>()((set, get) => ({
       calculator: loadCalculator(),
       ...loadLocation(),
     });
+    // Spec 36: los productos guardados sin origen lo reciben en un cambio aparte, que se guarda y, con cuenta, sube
+    const products = get().products;
+    const migrated = withOrigins(products);
+    if (migrated !== products) set({ products: migrated });
   },
 
   // ── Productos ─────────────────────────────────────────────
@@ -232,7 +236,7 @@ export const useStore = create<AppState>()((set, get) => ({
     for (const { productId, productName } of purchase.items) {
       if (known.has(productId)) continue;
       known.add(productId);
-      missing.push({ id: productId, name: productName });
+      missing.push({ id: productId, name: productName, origin: 'manual' });
     }
     return missing.length > 0 ? { products: [...s.products, ...missing], cart: base } : { cart: base };
   }),

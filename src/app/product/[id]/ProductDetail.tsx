@@ -22,6 +22,7 @@ import { CartItem, Price, Product } from '@/lib/models';
 import { productImageSrc } from '@/lib/photo';
 import { discardPhoto, savePhoto } from '@/lib/photo-sync';
 import { priceValidation, validationSummary } from '@/lib/price-validation';
+import { isFromSepa } from '@/lib/product-form';
 import { imageSource, sepaEnabled } from '@/lib/sepa';
 import { getPriceStats, getPricesForProduct, useStore } from '@/lib/store';
 
@@ -187,7 +188,8 @@ export default function ProductDetail() {
           </div>
         </div>
 
-        {sepaEnabled && (
+        {/* Spec 36: un producto de Precios Claros no se vuelve a vincular ni se desvincula; sin código, Vincular como siempre */}
+        {sepaEnabled && (product.ean === undefined || !isFromSepa(product)) && (
           <div ref={linkActions} className="flex flex-wrap gap-2 mb-4">
             {product.ean === undefined ? (
               <button type="button" onClick={() => setLinkOpen(true)} className="btn-secondary">

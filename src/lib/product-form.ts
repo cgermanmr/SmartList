@@ -1,5 +1,5 @@
 import { toGtin13 } from './gtin';
-import { Product, Unit } from './models';
+import { Product, ProductOrigin, Unit } from './models';
 import { SepaProduct, suggestedName } from './sepa';
 
 // Reglas del formulario de producto: validación del código de barras y paso de catálogo a formulario y a producto.
@@ -84,9 +84,10 @@ export function sepaLinkChanges(product: Product, sepa: SepaProduct): Partial<Om
 
 /**
  * Producto desde el formulario. `ean` ya pasó por checkEan; la presentación va completa o no va. La categoría es
- * opcional: vacía no se guarda (ni como texto vacío)
+ * opcional: vacía no se guarda (ni como texto vacío). El origen es 'manual' salvo que quien llama sepa que el
+ * formulario lo completó el catálogo con ese mismo EAN (Agregar producto, spec 36)
  */
-export function productFromForm(form: ProductForm, id: string, ean?: string): Product {
+export function productFromForm(form: ProductForm, id: string, ean?: string, origin: ProductOrigin = 'manual'): Product {
   const size = Number(form.size);
   const hasSize = size > 0;
   return {
@@ -97,6 +98,7 @@ export function productFromForm(form: ProductForm, id: string, ean?: string): Pr
     brand: form.brand.trim() || undefined,
     size: hasSize ? size : undefined,
     sizeUnit: hasSize ? form.sizeUnit : undefined,
+    origin,
   };
 }
 
@@ -111,5 +113,24 @@ export function productFromSepa(sepa: SepaProduct, id: string): Product {
     brand: sepa.brand?.trim() || undefined,
     size: hasSize ? size : undefined,
     sizeUnit: hasSize ? sizeUnit : undefined,
+    origin: 'sepa',
   };
+}
+
+// ── Origen del producto (spec 36) ────────────────────────────
+
+/** Origen de un producto guardado antes de la spec 36: con código y sin categoría es lo que deja productFromSepa */
+export function inferOrigin(product: Product): ProductOrigin {
+  return product.ean && !product.category ? 'sepa' : 'manual';
+}
+
+/** Escribe el origen de los productos que no lo tienen; el mismo array si no cambió ninguno */
+export function withOrigins(products: Product[]): Product[] {
+  if (products.every(p => p.origin !== undefined)) return products;
+  return products.map(p => p.origin !== undefined ? p : { ...p, origin: inferOrigin(p) });
+}
+
+/** Producto de Precios Claros: sin Cambiar vínculo ni Quitar vínculo. Sin origen cuenta como cargado a mano */
+export function isFromSepa(product: Product): boolean {
+  return product.origin === 'sepa';
 }

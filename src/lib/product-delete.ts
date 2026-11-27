@@ -1,11 +1,15 @@
 // ── Eliminar un producto: textos (spec 33) ───────────────────
 
 /** "No se puede eliminar: está en 2 compras de tu historial."; null si se puede */
-export function deleteBlockedReason(info: { purchases: number; ean: boolean; canUnlink: boolean }): string | null {
+export function deleteBlockedReason(
+  info: { purchases: number; ean: boolean; canUnlink: boolean; fromSepa: boolean },
+): string | null {
   // Con los dos motivos va el de las compras: quitar el vínculo no alcanzaría
   if (info.purchases > 0) {
     return `No se puede eliminar: está en ${info.purchases} ${info.purchases === 1 ? 'compra' : 'compras'} de tu historial.`;
   }
+  // Un producto de Precios Claros no tiene Quitar vínculo (spec 36): no se puede pedir que lo quite
+  if (info.fromSepa) return 'No se puede eliminar: es un producto de Precios Claros.';
   if (!info.ean) return null;
   return info.canUnlink
     ? 'No se puede eliminar: está vinculado con Precios Claros o tiene código de barras. Quitá el vínculo primero.'

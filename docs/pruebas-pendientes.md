@@ -203,6 +203,16 @@ En la calle, con el celular, en **Cargar precio**.
 - [ ] **70.** Con TalkBack o VoiceOver: se anuncia la cantidad de direcciones y se puede elegir una; en el mapa se lee el
       nombre del mapa y cuándo falta acercarlo.
 
+### Origen del producto (spec 36)
+
+Con una cuenta de prueba que ya tenga productos creados antes de la spec 36, en dos dispositivos (A y B).
+
+- [ ] **71.** Abrir la versión nueva en A: en `user_records`, las filas de `products` suben con `origin` (`'sepa'` los que
+      tienen código y no tienen categoría, `'manual'` los demás), y `/cuenta` queda en "Sincronizado".
+- [ ] **72.** Abrir B: los productos bajan con el mismo origen y no se vuelven a subir (la segunda vuelta no encola nada).
+- [ ] **73.** En A, el detalle de un producto agregado desde Buscar no muestra **Cambiar vínculo** ni **Quitar vínculo**;
+      uno cargado a mano y vinculado después, sí.
+
 ## Resultados
 
 Pruebas del 25/11/2026 en la computadora (Chrome, build local de `dev` con la base real de Precios Claros, sin
