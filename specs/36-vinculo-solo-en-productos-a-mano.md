@@ -1,6 +1,6 @@
 # SPEC 36 — Cambiar y quitar el vínculo solo en los productos cargados a mano
 
-> **Estado:** Aprobada
+> **Estado:** Implementada
 > **Depende de:** [SPEC 10](10-productos-con-codigo-de-barras.md), [SPEC 18](18-agregar-al-carrito-sin-alta.md), [SPEC 21](21-cuenta-y-sincronizacion.md), [SPEC 26](26-cargar-precio-en-el-comercio.md), [SPEC 31](31-compartir-carrito-por-whatsapp.md), [SPEC 33](33-eliminar-producto.md), [SPEC 34](34-cargar-producto-a-mano.md)
 > **Fecha:** 2026-11-26
 > **Objetivo:** Guardar en cada producto si salió de Precios Claros o se cargó a mano, y mostrar **Cambiar vínculo** y **Quitar vínculo** en su detalle solo en los cargados a mano.
